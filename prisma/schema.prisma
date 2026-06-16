@@ -12,6 +12,17 @@ enum ConversationStatus {
   CLOSED
 }
 
+enum ConversationState {
+  IDLE
+  WAITING_MEDICINE_NAME
+  WAITING_PRESENTATION
+  WAITING_QUANTITY
+  WAITING_CEP
+  WAITING_ADDRESS_NUMBER
+  WAITING_CONFIRMATION
+  WAITING_PIX
+}
+
 enum MessageDirection {
   INBOUND
   OUTBOUND
@@ -79,14 +90,19 @@ model Address {
 }
 
 model Conversation {
-  id             String             @id @default(cuid())
-  customerId     String             @map("customer_id")
-  whatsappChatId String?            @map("whatsapp_chat_id")
-  status         ConversationStatus @default(OPEN)
-  createdAt      DateTime           @default(now()) @map("created_at")
-  updatedAt      DateTime           @updatedAt @map("updated_at")
-  customer       Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  messages       Message[]
+  id                   String             @id @default(cuid())
+  customerId           String             @map("customer_id")
+  whatsappChatId       String?            @map("whatsapp_chat_id")
+  status               ConversationStatus @default(OPEN)
+  lastIntent           String?            @map("last_intent")
+  pendingAction        ConversationState  @default(IDLE) @map("pending_action")
+  lastMedicine         String?            @map("last_medicine")
+  selectedPresentation Json?              @map("selected_presentation")
+  candidateOptions     Json?              @map("candidate_options")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  customer             Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messages             Message[]
 
   @@index([customerId])
   @@index([status])

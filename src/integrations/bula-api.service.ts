@@ -15,6 +15,25 @@ export interface MedicineQuestion {
   medicineName: string;
 }
 
+export interface CommercialMedicineOption {
+  optionId: number;
+  productId: number;
+  presentationId: number;
+  productName: string;
+  medicineName: string;
+  label: string;
+  formGroup: string;
+  strength?: string;
+  pricePf?: number;
+  selectionReason?: string;
+}
+
+export interface MedicineLookupSummary {
+  medicineName: string;
+  products: BulaApiProduct[];
+  options: CommercialMedicineOption[];
+}
+
 interface BulaApiListResponse<T> {
   data?: T;
 }
@@ -52,27 +71,20 @@ interface BulaApiPresentation {
   strength?: string;
   package_quantity?: number;
   package_description?: string | null;
-  ean?: string | null;
   product?: {
     id: number;
     name: string;
   };
-  registration?: {
-    registro_ms?: string;
-    status?: string;
-    expires_at?: string | null;
-  } | null;
 }
 
 interface BulaApiPrice {
   pf_prices?: Record<string, number | string | null | undefined>;
 }
 
-export interface MedicineLookupSummary {
-  medicineName: string;
-  products: BulaApiProduct[];
-  presentations: BulaApiPresentation[];
-  highestPfPrice?: number;
+interface CommercialProductSelection {
+  product: BulaApiProduct;
+  reason: string;
+  score: number;
 }
 
 @Injectable()
@@ -81,10 +93,17 @@ export class BulaApiService {
 
   constructor(private readonly configService: ConfigService) {}
 
+  isPriceQuestionWithoutMedicine(message: string) {
+    const normalized = this.normalize(message).trim();
+    return (
+      /^(qual\s+)?(preco|valor)(\?)?$/.test(normalized) ||
+      /^quanto\s+custa(\?)?$/.test(normalized)
+    );
+  }
+
   detectMedicineQuestion(message: string): MedicineQuestion | null {
     const normalized = this.normalize(message);
     const compact = normalized.replace(/[?!.:,;]/g, " ");
-
     const intentPatterns: Array<{
       intent: MedicineIntent;
       patterns: RegExp[];
@@ -154,7 +173,54 @@ export class BulaApiService {
       }
     }
 
-    return null;
+    const bareMedicine = this.detectBareMedicineName(compact);
+    return bareMedicine
+      ? { intent: "purchase", medicineName: bareMedicine }
+      : null;
+  }
+
+  async lookupMedicine(
+    medicineName: string,
+  ): Promise<MedicineLookupSummary | null> {
+    const baseUrl = this.getBaseUrl();
+    this.logger.log(`Chamando BulAPI para: ${medicineName}`);
+
+    try {
+      const products = await this.searchCommercialProducts(
+        baseUrl,
+        medicineName,
+      );
+      this.logger.log(
+        `Produtos retornados pela busca: ${products.map((product) => product.name).join(", ") || "nenhum"}`,
+      );
+
+      const selection = this.selectCommercialProduct(medicineName, products);
+
+      if (selection) {
+        this.logger.log(
+          `Produto comercial selecionado: ${selection.product.name}. Motivo da selecao: ${selection.reason}`,
+        );
+      }
+
+      const options = await this.getCommercialOptions(
+        baseUrl,
+        medicineName,
+        products,
+      );
+      this.logger.log(`Opcoes filtradas: ${options.length}`);
+
+      return {
+        medicineName,
+        products,
+        options,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Falha ao consultar BulAPI para "${medicineName}"`,
+        error,
+      );
+      return null;
+    }
   }
 
   async buildMedicineReply(question: MedicineQuestion): Promise<string | null> {
@@ -165,170 +231,434 @@ export class BulaApiService {
     }
 
     if (summary.products.length === 0) {
-      return `Nao encontrei "${question.medicineName}" na base de medicamentos. Pode confirmar o nome do remedio ou enviar uma foto da embalagem?`;
+      return this.formatNotFound(question.medicineName);
     }
 
-    return this.formatMedicineReply(question, summary);
+    if (question.intent === "price") {
+      return this.formatPriceReply(summary);
+    }
+
+    return this.formatPresentationChoiceReply(summary);
   }
 
-  async lookupMedicine(
+  selectCommercialProduct(
     medicineName: string,
-  ): Promise<MedicineLookupSummary | null> {
-    const baseUrl = this.getBaseUrl();
-    this.logger.log(`Chamando BulaAPI para "${medicineName}"`);
+    products: BulaApiProduct[],
+  ): CommercialProductSelection | null {
+    const ranked = this.rankProducts(products, medicineName);
+    const product = ranked[0];
 
-    try {
-      const search = await this.fetchJson<BulaApiSearchResponse>(
-        `${baseUrl}/search?q=${encodeURIComponent(medicineName)}`,
-      );
-      const directProducts = search.data?.products || [];
-      const substances = search.data?.substances || [];
-      let products = this.rankProducts(directProducts, medicineName).slice(
-        0,
-        3,
-      );
-
-      if (products.length === 0 && substances[0]) {
-        const substanceProducts = await this.fetchJson<
-          BulaApiListResponse<BulaApiProduct[]>
-        >(`${baseUrl}/substances/${substances[0].id}/products?per_page=3`);
-        products = this.rankProducts(
-          substanceProducts.data || [],
-          medicineName,
-        );
-      }
-
-      const presentations = await this.getPresentationsForProducts(
-        baseUrl,
-        products.slice(0, 3),
-      );
-      const highestPfPrice = await this.getHighestPfPrice(
-        baseUrl,
-        presentations,
-      );
-
-      return {
-        medicineName,
-        products,
-        presentations,
-        highestPfPrice,
-      };
-    } catch (error) {
-      this.logger.error(
-        `Falha ao consultar BulaAPI para "${medicineName}"`,
-        error,
-      );
+    if (!product) {
       return null;
     }
+
+    return {
+      product,
+      reason: this.getProductSelectionReason(product, medicineName),
+      score: this.getProductScore(product, this.normalize(medicineName)),
+    };
   }
 
-  private async getPresentationsForProducts(
+  async getHighestPfForSelectedProduct(
     baseUrl: string,
-    products: BulaApiProduct[],
+    product: BulaApiProduct,
+    presentation: BulaApiPresentation,
   ) {
-    const presentations: BulaApiPresentation[] = [];
+    const response = await this.fetchJson<BulaApiListResponse<BulaApiPrice[]>>(
+      `${baseUrl}/presentations/${presentation.id}/prices`,
+    );
+    const prices: number[] = [];
 
-    for (const product of products) {
-      const response = await this.fetchJson<
-        BulaApiListResponse<BulaApiPresentation[]>
-      >(`${baseUrl}/products/${product.id}/presentations?per_page=3`);
+    for (const price of response.data || []) {
+      for (const value of Object.values(price.pf_prices || {})) {
+        const numericValue =
+          typeof value === "number"
+            ? value
+            : Number(String(value).replace(",", "."));
 
-      presentations.push(...(response.data || []));
+        if (Number.isFinite(numericValue)) {
+          prices.push(numericValue);
+        }
+      }
     }
 
-    return presentations;
+    this.logger.log(
+      `PFs disponiveis para o produto selecionado ${product.name} ${this.formatOptionLabel(presentation)}: ${prices.join(", ") || "nenhum"}`,
+    );
+    const highestPf = prices.length > 0 ? Math.max(...prices) : undefined;
+    this.logger.log(
+      `Maior PF escolhido dentro do produto selecionado: ${highestPf ?? "nenhum"}`,
+    );
+
+    return highestPf;
   }
 
-  private async getHighestPfPrice(
+  formatNotFound(medicineName: string) {
+    return `Nao encontrei "${medicineName}" na base de medicamentos. Pode confirmar o nome do remedio ou enviar uma foto da embalagem?`;
+  }
+
+  formatPresentationChoiceReply(summary: MedicineLookupSummary) {
+    if (summary.options.length === 0) {
+      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas nao achei apresentacoes comuns de varejo. Pode me dizer se voce quer comprimido, gotas, capsula ou xarope?`;
+    }
+
+    if (summary.options.length === 1) {
+      const option = summary.options[0];
+      return [
+        `Encontrei ${this.title(option.productName)} ${option.label}.`,
+        option.pricePf
+          ? `Valor: ${this.formatCurrency(option.pricePf)}.`
+          : "Nao encontrei preco regulado para essa apresentacao.",
+        "",
+        "Quantas unidades voce deseja?",
+      ].join("\n");
+    }
+
+    const lines = [
+      `Encontrei ${this.title(summary.medicineName)}. Qual apresentacao voce deseja?`,
+      "",
+    ];
+
+    for (const option of summary.options.slice(0, 3)) {
+      lines.push(
+        `${option.optionId}. ${this.title(option.productName)} ${option.label}`,
+      );
+    }
+
+    const optionNumbers = summary.options
+      .slice(0, 3)
+      .map((option) => option.optionId)
+      .join(", ");
+    lines.push("", `Responda ${optionNumbers}.`);
+    return lines.join("\n");
+  }
+
+  formatPriceReply(summary: MedicineLookupSummary) {
+    if (summary.options.length === 0) {
+      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas nao achei preco regulado para apresentacao comum de varejo. Pode me dizer se voce quer comprimido, gotas, capsula ou xarope?`;
+    }
+
+    if (summary.options.length === 1) {
+      const option = summary.options[0];
+      return [
+        `Encontrei ${this.title(option.productName)} ${option.label}.`,
+        option.pricePf
+          ? `Valor: ${this.formatCurrency(option.pricePf)}.`
+          : "Nao encontrei preco regulado para essa apresentacao.",
+        "",
+        "Quantas unidades voce deseja?",
+      ].join("\n");
+    }
+
+    const lines = [
+      `Encontrei algumas opcoes de ${this.title(summary.medicineName)}:`,
+      "",
+    ];
+
+    for (const option of summary.options.slice(0, 3)) {
+      lines.push(
+        `${option.optionId}. ${this.title(option.productName)} ${option.label}`,
+      );
+    }
+
+    lines.push("", "Qual voce prefere?");
+    return lines.join("\n");
+  }
+
+  findOptionByReply(
+    message: string,
+    options: CommercialMedicineOption[],
+  ): CommercialMedicineOption | null {
+    const normalized = this.normalize(message).trim();
+    const numericChoice = Number(normalized);
+
+    if (Number.isInteger(numericChoice)) {
+      return (
+        options.find((option) => option.optionId === numericChoice) || null
+      );
+    }
+
+    let candidates = options;
+    const requestedBrand = this.detectBrandPreference(message);
+    const requestedGeneric = this.detectGenericPreference(message);
+    const requestedGroup = this.detectPresentationKeyword(message);
+
+    if (requestedBrand) {
+      candidates = candidates.filter((option) =>
+        this.normalize(option.productName).includes(requestedBrand),
+      );
+    }
+
+    if (requestedGeneric) {
+      candidates = candidates.filter((option) =>
+        this.isGenericProductName(option.productName),
+      );
+    }
+
+    if (requestedGroup) {
+      candidates = candidates.filter(
+        (option) => option.formGroup === requestedGroup,
+      );
+    }
+
+    return candidates[0] || null;
+  }
+
+  detectPresentationKeyword(message: string) {
+    const normalized = this.normalize(message);
+
+    if (/\bcomprim/.test(normalized)) return "comprimido";
+    if (/\bcaps/.test(normalized)) return "capsula";
+    if (/\bgotas?\b/.test(normalized)) return "gotas";
+    if (/\bxarope\b/.test(normalized)) return "xarope";
+    if (/\bsuspensao\b/.test(normalized)) return "suspensao oral";
+    if (/\bsolucao\s+oral\b|\boral\b/.test(normalized)) return "solucao oral";
+    if (/\bpomada\b/.test(normalized)) return "pomada";
+    if (/\bcreme\b/.test(normalized)) return "creme";
+    if (/\bgel\b/.test(normalized)) return "gel";
+    if (/\bspray\b/.test(normalized)) return "spray";
+
+    return null;
+  }
+
+  private async searchCommercialProducts(
     baseUrl: string,
-    presentations: BulaApiPresentation[],
+    medicineName: string,
   ) {
-    const pfPrices: number[] = [];
+    const productMap = new Map<number, BulaApiProduct>();
 
-    for (const presentation of presentations) {
-      const response = await this.fetchJson<
-        BulaApiListResponse<BulaApiPrice[]>
-      >(`${baseUrl}/presentations/${presentation.id}/prices`);
+    for (const term of this.getCommercialQueryTerms(medicineName)) {
+      const search = await this.fetchJson<BulaApiSearchResponse>(
+        `${baseUrl}/search?q=${encodeURIComponent(term)}`,
+      );
 
-      for (const price of response.data || []) {
-        for (const value of Object.values(price.pf_prices || {})) {
-          const numericValue =
-            typeof value === "number"
-              ? value
-              : Number(String(value).replace(",", "."));
+      for (const product of search.data?.products || []) {
+        if (this.productMatchesMedicine(product, medicineName)) {
+          productMap.set(product.id, product);
+        }
+      }
 
-          if (Number.isFinite(numericValue)) {
-            pfPrices.push(numericValue);
+      const substance = search.data?.substances?.find((item) =>
+        this.normalize(item.name).includes(this.normalize(medicineName)),
+      );
+
+      if (substance) {
+        const substanceProducts = await this.fetchJson<
+          BulaApiListResponse<BulaApiProduct[]>
+        >(`${baseUrl}/substances/${substance.id}/products?per_page=20`);
+
+        for (const product of substanceProducts.data || []) {
+          if (this.productMatchesMedicine(product, medicineName)) {
+            productMap.set(product.id, product);
           }
         }
       }
     }
 
-    return pfPrices.length > 0 ? Math.max(...pfPrices) : undefined;
+    return this.rankProducts([...productMap.values()], medicineName).slice(
+      0,
+      16,
+    );
   }
 
-  private formatMedicineReply(
-    question: MedicineQuestion,
-    summary: MedicineLookupSummary,
+  private async getCommercialOptions(
+    baseUrl: string,
+    medicineName: string,
+    products: BulaApiProduct[],
   ) {
-    const mainProduct = summary.products[0];
-    const substance = mainProduct.substance?.name;
-    const manufacturer = mainProduct.manufacturer?.name;
-    const category = mainProduct.regulatory_category;
-    const presentationLines = summary.presentations
-      .slice(0, 3)
-      .map((presentation) => this.formatPresentation(presentation))
-      .filter(Boolean);
-    const priceLine =
-      summary.highestPfPrice !== undefined
-        ? `Maior preco PF encontrado: ${this.formatCurrency(summary.highestPfPrice)}.`
-        : "Nao encontrei preco PF na base consultada.";
+    const options: CommercialMedicineOption[] = [];
 
-    const lines = [
-      `Encontrei "${mainProduct.name}" na base Bulapi.`,
-      substance ? `Principio ativo: ${substance}.` : null,
-      manufacturer ? `Fabricante: ${manufacturer}.` : null,
-      category ? `Categoria regulatoria: ${category}.` : null,
-      presentationLines.length > 0
-        ? `Apresentacoes encontradas: ${presentationLines.join("; ")}.`
-        : null,
-    ].filter(Boolean) as string[];
+    for (const product of products) {
+      const productSelection = this.selectCommercialProduct(medicineName, [
+        product,
+      ]);
+      const response = await this.fetchJson<
+        BulaApiListResponse<BulaApiPresentation[]>
+      >(`${baseUrl}/products/${product.id}/presentations?per_page=30`);
 
-    if (question.intent === "price") {
-      lines.push(priceLine);
+      for (const presentation of response.data || []) {
+        if (!this.isRetailPresentation(presentation)) {
+          continue;
+        }
+
+        const pricePf = await this.getHighestPfForSelectedProduct(
+          baseUrl,
+          product,
+          presentation,
+        );
+        options.push({
+          optionId: 0,
+          productId: product.id,
+          presentationId: presentation.id,
+          productName: product.name,
+          medicineName: product.substance?.name || product.name,
+          label: this.formatOptionLabel(presentation),
+          formGroup: this.getPresentationGroup(presentation),
+          strength: presentation.strength,
+          pricePf,
+          selectionReason: productSelection?.reason,
+        });
+      }
     }
+
+    return this.rankOptions(options, medicineName)
+      .slice(0, 6)
+      .map((option, index) => ({ ...option, optionId: index + 1 }));
+  }
+
+  private isRetailPresentation(presentation: BulaApiPresentation) {
+    const text = this.normalize(this.presentationText(presentation));
 
     if (
-      ["contraindication", "dosage", "composition", "leaflet"].includes(
-        question.intent,
-      )
+      /\b(sol inj|inj|injetavel|ampola|amp|iv|im|hospitalar|uso hospitalar)\b/.test(
+        text,
+      ) ||
+      /cx\s*(50|100)\b/.test(text) ||
+      /x\s*(50|100|240)\b/.test(text)
     ) {
-      lines.push(
-        "Nao vou enviar bula completa por aqui. Para contraindicacoes, composicao e posologia, confirme com o farmaceutico ou com a bula oficial da embalagem, especialmente em caso de alergia, gestacao, criancas ou uso de outros medicamentos.",
-      );
+      return false;
     }
 
-    if (question.intent === "purchase") {
-      lines.push(
-        "Se quiser, me diga a dosagem e a apresentacao desejada para eu ajudar a separar a opcao correta.",
-      );
-    }
-
-    return lines.join("\n");
+    return this.getPresentationGroup(presentation) !== "outro";
   }
 
-  private formatPresentation(presentation: BulaApiPresentation) {
-    const details = [
-      presentation.strength,
+  private rankOptions(
+    options: CommercialMedicineOption[],
+    medicineName: string,
+  ) {
+    const deduped = new Map<string, CommercialMedicineOption>();
+
+    for (const option of options) {
+      const key = this.normalize(
+        `${option.productName}-${option.formGroup}-${option.strength}`,
+      );
+      const current = deduped.get(key);
+
+      if (!current || this.optionScore(option) > this.optionScore(current)) {
+        deduped.set(key, option);
+      }
+    }
+
+    const ranked = [...deduped.values()].sort(
+      (a, b) => this.optionScore(b) - this.optionScore(a),
+    );
+
+    if (this.normalize(medicineName).includes("dipirona")) {
+      return this.diversifyDipironaOptions(ranked);
+    }
+
+    return ranked;
+  }
+
+  private diversifyDipironaOptions(options: CommercialMedicineOption[]) {
+    const picked: CommercialMedicineOption[] = [];
+    const pick = (predicate: (option: CommercialMedicineOption) => boolean) => {
+      const option = options.find(
+        (candidate) =>
+          predicate(candidate) &&
+          !picked.some(
+            (item) => item.presentationId === candidate.presentationId,
+          ),
+      );
+
+      if (option) {
+        picked.push(option);
+      }
+    };
+
+    pick(
+      (option) =>
+        this.normalize(option.productName).includes("novalgina") &&
+        option.formGroup === "comprimido" &&
+        this.normalize(option.strength || "").includes("500"),
+    );
+    pick(
+      (option) =>
+        this.isGenericProductName(option.productName) &&
+        option.formGroup === "comprimido" &&
+        this.normalize(option.strength || "").includes("500"),
+    );
+    pick(
+      (option) =>
+        this.isGenericProductName(option.productName) &&
+        ["gotas", "solucao oral"].includes(option.formGroup),
+    );
+    pick((option) => ["gotas", "solucao oral"].includes(option.formGroup));
+    pick(
+      (option) =>
+        this.normalize(option.productName).includes("novalgina") &&
+        option.formGroup === "comprimido" &&
+        this.normalize(option.strength || "").includes("1"),
+    );
+
+    for (const option of options) {
+      if (
+        !picked.some((item) => item.presentationId === option.presentationId)
+      ) {
+        picked.push(option);
+      }
+    }
+
+    return picked;
+  }
+
+  private optionScore(option: CommercialMedicineOption) {
+    const priority: Record<string, number> = {
+      comprimido: 100,
+      capsula: 95,
+      gotas: 90,
+      "solucao oral": 88,
+      "suspensao oral": 86,
+      xarope: 84,
+      pomada: 82,
+      creme: 80,
+      gel: 78,
+      spray: 76,
+    };
+
+    return (
+      (priority[option.formGroup] || 0) +
+      this.productNameScore(option.productName) +
+      this.strengthScore(option.strength)
+    );
+  }
+
+  private formatOptionLabel(presentation: BulaApiPresentation) {
+    const group = this.getPresentationGroup(presentation);
+    const details = [this.title(group), presentation.strength]
+      .filter((item) => item && item !== "unknown")
+      .join(" ");
+
+    return details || this.title(group);
+  }
+
+  private getPresentationGroup(presentation: BulaApiPresentation) {
+    const text = this.normalize(this.presentationText(presentation));
+
+    if (/\bcomprim/.test(text)) return "comprimido";
+    if (/\bcaps/.test(text)) return "capsula";
+    if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
+    if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text))
+      return "solucao oral";
+    if (/\bsuspensao oral\b|\bsusp oral\b/.test(text)) return "suspensao oral";
+    if (/\bxarope\b/.test(text)) return "xarope";
+    if (/\bpomada\b/.test(text)) return "pomada";
+    if (/\bcreme\b/.test(text)) return "creme";
+    if (/\bgel\b/.test(text)) return "gel";
+    if (/\bspray\b/.test(text)) return "spray";
+
+    return "outro";
+  }
+
+  private presentationText(presentation: BulaApiPresentation) {
+    return [
       presentation.dose_form,
       presentation.route,
-      presentation.package_quantity
-        ? `${presentation.package_quantity} unidade(s)`
-        : null,
+      presentation.strength,
       presentation.package_description,
-    ].filter((detail) => detail && detail !== "unknown" && detail !== "outro");
-
-    return details.join(" ");
+    ]
+      .filter(Boolean)
+      .join(" ");
   }
 
   private async fetchJson<T>(url: string): Promise<T> {
@@ -339,7 +669,7 @@ export class BulaApiService {
     });
 
     if (!response.ok) {
-      throw new Error(`BulaAPI respondeu ${response.status} em ${url}`);
+      throw new Error(`BulAPI respondeu ${response.status} em ${url}`);
     }
 
     return (await response.json()) as T;
@@ -352,6 +682,34 @@ export class BulaApiService {
     ).replace(/\/$/, "");
   }
 
+  private getCommercialQueryTerms(medicineName: string) {
+    const normalized = this.normalize(medicineName);
+    const terms = [medicineName];
+
+    if (normalized.includes("dipirona")) {
+      terms.push("novalgina", "dipirona generico", "dipirona monoidratada");
+    }
+
+    return [...new Set(terms)];
+  }
+
+  private productMatchesMedicine(
+    product: BulaApiProduct,
+    medicineName: string,
+  ) {
+    const target = this.normalize(medicineName);
+    const productName = this.normalize(product.name);
+    const substanceName = this.normalize(product.substance?.name || "");
+
+    if (target.includes("dipirona")) {
+      return (
+        substanceName.includes("dipirona") || productName.includes("novalgina")
+      );
+    }
+
+    return productName.includes(target) || substanceName.includes(target);
+  }
+
   private cleanMedicineName(value?: string) {
     if (!value) {
       return null;
@@ -362,14 +720,42 @@ export class BulaApiService {
         /\b(por favor|pfv|pra mim|para mim|remedio|medicamento)\b/gi,
         " ",
       )
-      .replace(/\b(comprimido|capsula|gotas|xarope|solucao|mg|ml)\b.*$/i, " ")
       .replace(/\s+/g, " ")
       .trim();
 
     return cleaned.length >= 3 ? cleaned : null;
   }
 
-  private formatCurrency(value: number) {
+  private detectBareMedicineName(value: string) {
+    const cleaned = this.cleanMedicineName(value);
+    const stopWords = new Set([
+      "oi",
+      "ola",
+      "bom dia",
+      "boa tarde",
+      "boa noite",
+      "obrigado",
+      "obrigada",
+      "sim",
+      "nao",
+      "qual valor",
+      "preco",
+      "valor",
+    ]);
+
+    if (!cleaned || stopWords.has(cleaned)) {
+      return null;
+    }
+
+    const words = cleaned.split(/\s+/);
+    return words.length <= 3 ? cleaned : null;
+  }
+
+  private formatCurrency(value: number | undefined) {
+    if (value === undefined) {
+      return "";
+    }
+
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
@@ -391,27 +777,94 @@ export class BulaApiService {
     const substanceName = this.normalize(product.substance?.name || "");
     let score = 0;
 
-    if (productName === target) {
-      score += 100;
+    if (target.includes("dipirona")) {
+      if (productName.includes("novalgina")) score += 900;
+      if (this.isGenericProduct(product)) score += 220;
+      if (productName === "dipirona" || productName.includes("dipirona")) {
+        score += 160;
+      }
+      if (productName.includes("lqfex")) score -= 120;
     }
 
-    if (substanceName === target) {
-      score += 80;
+    if (productName === target) score += 100;
+    if (substanceName === target) score += 80;
+    if (productName.includes(target)) score += 30;
+    if (substanceName.includes(target)) score += 20;
+    if (productName.includes("+") || substanceName.includes(";")) score -= 80;
+
+    return score;
+  }
+
+  private getProductSelectionReason(
+    product: BulaApiProduct,
+    medicineName: string,
+  ) {
+    const productName = this.normalize(product.name);
+    const target = this.normalize(medicineName);
+
+    if (target.includes("dipirona") && productName.includes("novalgina")) {
+      return "preferencia comercial para Dipirona: marca Novalgina";
+    }
+
+    if (this.isGenericProduct(product)) {
+      return "produto generico de varejo comum";
     }
 
     if (productName.includes(target)) {
-      score += 30;
+      return "nome do produto corresponde ao medicamento buscado";
     }
 
-    if (substanceName.includes(target)) {
-      score += 20;
-    }
+    return "melhor pontuacao comercial disponivel";
+  }
 
-    if (productName.includes("+") || substanceName.includes(";")) {
-      score -= 15;
-    }
+  private productNameScore(productName: string) {
+    const normalized = this.normalize(productName);
 
-    return score;
+    if (normalized.includes("novalgina")) return 900;
+    if (normalized === "dipirona" || normalized.includes("dipirona"))
+      return 160;
+    if (normalized.includes("lqfex")) return -120;
+
+    return 0;
+  }
+
+  private strengthScore(strength?: string) {
+    const normalized = this.normalize(strength || "");
+
+    if (/\b500\s*mg\b/.test(normalized)) return 40;
+    if (/\b1\s*g\b/.test(normalized)) return 25;
+
+    return 0;
+  }
+
+  private detectBrandPreference(message: string) {
+    const normalized = this.normalize(message);
+
+    if (normalized.includes("novalgina")) return "novalgina";
+
+    return null;
+  }
+
+  private detectGenericPreference(message: string) {
+    return /\bgeneric[oa]?\b/.test(this.normalize(message));
+  }
+
+  private isGenericProduct(product: BulaApiProduct) {
+    return (
+      product.regulatory_category === "generic" ||
+      this.isGenericProductName(product.name)
+    );
+  }
+
+  private isGenericProductName(productName: string) {
+    const normalized = this.normalize(productName);
+    return normalized === "dipirona" || normalized.includes("dipirona sodica");
+  }
+
+  private title(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
   private normalize(value: string) {
