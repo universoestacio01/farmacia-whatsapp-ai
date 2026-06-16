@@ -45,6 +45,7 @@ Copie `.env.example` para `.env` e ajuste:
 - `WHATSAPP_PHONE_NUMBER_ID`: ID do numero do WhatsApp no painel da Meta.
 - `WHATSAPP_APP_SECRET`: segredo do app da Meta, usado para validar o header `X-Hub-Signature-256` nos webhooks recebidos.
 - `OPENAI_API_KEY`: chave da OpenAI.
+- `BULA_API_BASE_URL`: URL base da Bulapi, por padrao `https://bulapi.com.br/api/v1`.
 
 ## Configuracao do webhook na Meta
 

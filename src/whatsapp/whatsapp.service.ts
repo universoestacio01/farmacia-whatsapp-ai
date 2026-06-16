@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { MessageDirection, MessageRole, MessageStatus } from "@prisma/client";
 import { AiService } from "../ai/ai.service";
+import { BulaApiService } from "../integrations/bula-api.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   WhatsappIncomingMessage,
@@ -37,6 +38,7 @@ export class WhatsappService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
+    private readonly bulaApiService: BulaApiService,
   ) {}
 
   enqueueWebhook(payload: WhatsappWebhookPayload) {
@@ -147,7 +149,13 @@ export class WhatsappService {
       },
     });
 
-    const reply = await this.aiService.generatePharmacyReply(text);
+    const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
+    const bulaReply = medicineQuestion
+      ? await this.bulaApiService.buildMedicineReply(medicineQuestion)
+      : null;
+    const reply =
+      bulaReply || (await this.aiService.generatePharmacyReply(text));
+
     await this.replyAndRecord(activeConversation.id, message.from, reply);
   }
 
