@@ -6,6 +6,7 @@ import {
   CommercialMedicineOption,
   MedicineQuestion,
 } from "../integrations/bula-api.service";
+import { MedicineSearchOrchestratorService } from "../integrations/medicine-search-orchestrator.service";
 import { ViaCepAddress, ViaCepService } from "../integrations/via-cep.service";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -32,6 +33,7 @@ export class ConversationEngineService {
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
     private readonly bulaApiService: BulaApiService,
+    private readonly medicineSearch: MedicineSearchOrchestratorService,
     private readonly viaCepService: ViaCepService,
   ) {}
 
@@ -148,6 +150,12 @@ export class ConversationEngineService {
       });
 
       return "Qual produto você deseja consultar?";
+    }
+
+    const symptomReply = this.medicineSearch.findSymptomOptions(text);
+
+    if (symptomReply) {
+      return symptomReply;
     }
 
     if (medicineQuestion) {
@@ -361,7 +369,7 @@ export class ConversationEngineService {
     });
     this.logger.log("Contexto anterior limpo");
 
-    const summary = await this.bulaApiService.lookupMedicine(medicineName);
+    const summary = await this.medicineSearch.searchMedicine(medicineName);
 
     if (!summary) {
       return this.aiService.generatePharmacyReply(medicineName);
@@ -384,7 +392,7 @@ export class ConversationEngineService {
 
     const shouldAskQuantity = summary.options.length === 1;
     const selectedOption = shouldAskQuantity
-      ? await this.bulaApiService.priceSelectedOption(summary.options[0])
+      ? await this.ensureSelectedOptionPrice(summary.options[0])
       : null;
 
     await this.prisma.conversation.update({
@@ -454,9 +462,21 @@ export class ConversationEngineService {
       return null;
     }
 
-    const pricedOption = await this.bulaApiService.priceSelectedOption(option);
+    const pricedOption = await this.ensureSelectedOptionPrice(option);
     this.logger.log(`Opcao escolhida: ${pricedOption.label}`);
     return pricedOption;
+  }
+
+  private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
+    if (
+      option.pricePf !== undefined ||
+      option.selectionReason?.includes("fonte pharmadb") ||
+      option.selectionReason?.includes("fonte popular_manual")
+    ) {
+      return option;
+    }
+
+    return this.bulaApiService.priceSelectedOption(option);
   }
 
   private async saveSelectedOption(

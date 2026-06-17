@@ -64,9 +64,17 @@ export class CommercialMedicineSelector {
     nimesulida: "nimesulida",
     amoxicilina: "amoxicilina",
     dorflex: "dorflex",
+    torsilax: "torsilax",
+    neosoro: "neosoro",
+    "soro fisiologico nasal": "neosoro",
+    cimegripe: "cimegripe",
     buscopan: "buscopan",
     "butilbrometo de escopolamina": "buscopan",
     benegrip: "benegrip",
+    engov: "engov",
+    luftal: "luftal",
+    simeticona: "luftal",
+    neosaldina: "neosaldina",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
@@ -74,8 +82,14 @@ export class CommercialMedicineSelector {
     ibuprofeno: ["alivium", "advil"],
     paracetamol: ["tylenol"],
     dorflex: ["dorflex"],
+    torsilax: ["torsilax"],
+    neosoro: ["neosoro", "soro fisiologico nasal"],
+    cimegripe: ["cimegripe"],
     buscopan: ["buscopan"],
     benegrip: ["benegrip"],
+    engov: ["engov"],
+    luftal: ["luftal", "simeticona"],
+    neosaldina: ["neosaldina"],
   };
 
   normalizeMedicineName(text: string) {
@@ -139,6 +153,10 @@ export class CommercialMedicineSelector {
       return false;
     }
 
+    if (brands.some((brand) => this.hasWordOrPhrase(productText, brand))) {
+      return true;
+    }
+
     if (this.hasConflictingKnownMedicine(canonical, productText)) {
       return false;
     }
@@ -193,6 +211,7 @@ export class CommercialMedicineSelector {
     const unitPatterns = [
       /\b(?:caixa|cx|ct|bl|frasco|fr)?\s*(?:com|x)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
       /\b(?:caixa|cx|ct)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
+      /\b(\d+)\s*(?:unid|unidade|unidades)\b/,
       /\b(?:x|com)\s*(\d+)\b(?!\s*ml)/,
     ];
     let unitCount: number | undefined;
@@ -234,18 +253,26 @@ export class CommercialMedicineSelector {
   }
 
   private getPresentationGroupFromText(text: string) {
-    if (/\bcomprim/.test(text)) return "comprimido";
-    if (/\bcaps/.test(text)) return "capsula";
+    if (/\bcomprim|\bcom\b/.test(text)) return "comprimido";
+    if (/\bcaps|\bcap\b/.test(text)) return "capsula";
     if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
     if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text)) {
       return "solucao oral";
     }
     if (/\bsuspensao oral\b|\bsusp oral\b/.test(text)) return "suspensao oral";
     if (/\bxarope\b/.test(text)) return "xarope";
+    if (
+      /\bsolucao nasal\b|\bsol nasal\b|\bsol nas\b|\bsoro fisiologico nasal\b|\bnasal\b/.test(
+        text,
+      )
+    ) {
+      return "solucao nasal";
+    }
     if (/\bpomada\b/.test(text)) return "pomada";
     if (/\bcreme\b/.test(text)) return "creme";
     if (/\bgel\b/.test(text)) return "gel";
     if (/\bspray\b/.test(text)) return "spray";
+    if (/\bdragea\b|\bdrg\b/.test(text)) return "dragea";
 
     return "outro";
   }
@@ -454,10 +481,12 @@ export class CommercialMedicineSelector {
       "solucao oral": 88,
       "suspensao oral": 86,
       xarope: 84,
+      "solucao nasal": 83,
       pomada: 82,
       creme: 80,
       gel: 78,
       spray: 76,
+      dragea: 74,
     };
     const canonical = this.getCanonicalMedicineName(optionMedicineName);
     const config = COMMERCIAL_MEDICINES[canonical];
@@ -510,7 +539,9 @@ export class CommercialMedicineSelector {
     }
 
     if (config?.preferredSmallPacks.includes(packageInfo.unitCount)) {
-      return 180 - config.preferredSmallPacks.indexOf(packageInfo.unitCount) * 5;
+      return (
+        220 - config.preferredSmallPacks.indexOf(packageInfo.unitCount) * 12
+      );
     }
 
     if (

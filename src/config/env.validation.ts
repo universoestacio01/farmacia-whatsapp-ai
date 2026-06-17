@@ -42,6 +42,19 @@ const envSchema = z.object({
   WHATSAPP_API_VERSION: z.string().trim().default("v21.0"),
   OPENAI_API_KEY: z.string().trim().optional(),
   OPENAI_MODEL: z.string().trim().default("gpt-4o-mini"),
+  PHARMADB_API_BASE_URL: z
+    .string()
+    .trim()
+    .url()
+    .default("https://api.pharmadb.com.br/v1"),
+  PHARMADB_API_KEY: z.string().trim().optional(),
+  PHARMADB_PMC_PRICE_MULTIPLIER: z.coerce
+    .number()
+    .positive()
+    .default(0.5),
+  MEDICINE_PRIMARY_PROVIDER: z
+    .enum(["pharmadb", "bulapi", "popular_manual"])
+    .default("pharmadb"),
   BULA_API_BASE_URL: z.string().trim().url().optional(),
   VIACEP_BASE_URL: z.string().trim().url().optional(),
   PIX_PROVIDER: z.string().trim().default("none"),
