@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
 import {
   RETAIL_PRODUCTS,
   RetailProductConfig,
@@ -19,16 +20,43 @@ export class ManualRetailProductService implements ProductProvider {
       return [];
     }
 
-    return RETAIL_PRODUCTS[key].options.map((option, index) => ({
+    return RETAIL_PRODUCTS[key].options.map((option, index) => {
+      const salePrice = calculateRetailSalePrice(option);
+
+      return {
+        source: "manual_catalog",
+        sourceId: `${key}:${index + 1}`,
+        productName: option.productName,
+        displayName: option.displayName,
+        description: option.description,
+        brand: option.brand,
+        category: option.category,
+        salePrice: salePrice.price,
+        salePriceSource: salePrice.source,
+        raw: option,
+      };
+    });
+  }
+
+  createManualProduct(query: string, category: string, brand?: string) {
+    const displayName = this.formatManualDisplayName(category, brand, query);
+    const product: NormalizedRetailProduct = {
       source: "manual_catalog",
-      sourceId: `${key}:${index + 1}`,
-      productName: option.productName,
-      displayName: option.displayName,
-      description: option.description,
-      brand: option.brand,
-      category: option.category,
-      raw: option,
-    }));
+      sourceId: `manual:${this.normalize(displayName).replace(/\s+/g, "-")}`,
+      productName: displayName,
+      displayName,
+      description: displayName,
+      brand,
+      category,
+      raw: { query, category, brand },
+    };
+    const salePrice = calculateRetailSalePrice(product);
+
+    return {
+      ...product,
+      salePrice: salePrice.price,
+      salePriceSource: salePrice.source,
+    };
   }
 
   async findByGtin(): Promise<NormalizedRetailProduct | null> {
@@ -117,6 +145,22 @@ export class ManualRetailProductService implements ProductProvider {
     );
   }
 
+  extractBrandFromQuery(category: string, query: string) {
+    const normalized = this.normalize(query)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalizedCategory = this.normalize(category);
+    const cleaned = normalized
+      .replace(new RegExp(`\\b${normalizedCategory}\\b`, "g"), " ")
+      .replace(/\b(tem|teria|vende|vendem|quero|queria|preciso|valor|preco|quanto custa)\b/g, " ")
+      .replace(/\b(do|da|de|o|a|um|uma)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return cleaned || null;
+  }
+
   isRetailProductQuery(query: string) {
     return Boolean(this.findCatalogKey(query) || this.extractGtin(query));
   }
@@ -136,5 +180,23 @@ export class ManualRetailProductService implements ProductProvider {
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase();
+  }
+
+  private formatManualDisplayName(
+    category: string,
+    brand: string | undefined,
+    query: string,
+  ) {
+    const categoryLabel = category
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    if (brand?.trim()) {
+      return `${categoryLabel} ${brand.trim()}`;
+    }
+
+    return query
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
   }
 }

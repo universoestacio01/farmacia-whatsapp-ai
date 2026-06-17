@@ -559,15 +559,11 @@ export class ConversationEngineService {
     const summary = await this.productSearch.searchProducts(productQuery);
 
     if (summary.options.length === 0) {
-      const notFoundReply = this.formatRetailNoPricedResults(summary);
-
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
-          lastIntent: summary.category ? "RETAIL_SIMILARS" : "RETAIL_PRODUCT",
-          pendingAction: summary.category
-            ? ConversationState.WAITING_RETAIL_BRAND
-            : ConversationState.WAITING_MEDICINE_NAME,
+          lastIntent: "RETAIL_PRODUCT",
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
           currentMedicineQuery: productQuery,
           currentRetailCategory: summary.category || genericCategory || null,
           selectedPresentation: Prisma.JsonNull,
@@ -575,7 +571,7 @@ export class ConversationEngineService {
         },
       });
 
-      return notFoundReply;
+      return "Nao localizei esse produto no momento. Pode confirmar o nome ou enviar outra opcao?";
     }
 
     const shouldAskQuantity = summary.options.length === 1;
@@ -633,29 +629,6 @@ export class ConversationEngineService {
     }
 
     return lines.join("\n");
-  }
-
-  private formatRetailNoPricedResults(summary: RetailProductLookupSummary) {
-    if (summary.category && summary.requestedBrand) {
-      const alternatives = this.productSearch
-        .getPopularBrands(summary.category)
-        .filter(
-          (brand) =>
-            this.normalize(brand) !== this.normalize(summary.requestedBrand || ""),
-        )
-        .slice(0, 3);
-      const suffix =
-        alternatives.length > 0 ? `, como ${alternatives.join(", ")}` : "";
-
-      this.logger.log("RETAIL SIMILARS OFFERED");
-
-      return [
-        `Nao localizei ${this.capitalize(summary.category)} ${summary.requestedBrand} com preco disponivel no momento.`,
-        `Posso te mostrar opcoes similares de ${summary.category}${suffix}?`,
-      ].join("\n");
-    }
-
-    return "Nao localizei esse produto com preco disponivel no momento. Posso te mostrar opcoes similares?";
   }
 
   private extractRetailProductQuery(message: string) {
@@ -785,7 +758,7 @@ export class ConversationEngineService {
 
   private formatMissingPrice(option: CommercialMedicineOption) {
     return option.type === "retail_product"
-      ? "Nao encontrei esse produto com preco disponivel no momento."
+      ? `Valor: ${this.formatCurrency(option.pricePf)}.`
       : "Nao encontrei preco regulado para essa apresentacao.";
   }
 

@@ -67,7 +67,7 @@ async function run() {
   const summary = await orchestrator.searchProducts("shampoo pantene");
 
   assert.equal(cosmosCalls, 1);
-  assert.equal(summary.options.length, 1);
+  assert.equal(summary.options.length, 2);
   assert.equal(summary.options[0].label, "Shampoo Pantene 400ml");
   assert.equal(summary.options[0].pricePf, 18.5);
 
@@ -91,8 +91,48 @@ async function run() {
     manual,
   );
   const noPriceSummary = await noPriceOrchestrator.searchProducts("sabonete dove");
-  assert.equal(noPriceSummary.options.length, 0);
-  assert.equal(noPriceSummary.noPricedResults, true);
+  assert.equal(noPriceSummary.options.length, 1);
+  assert.equal(noPriceSummary.options[0].pricePf, 4.99);
+
+  const premiumFallbackSummary = await new ProductSearchOrchestratorService(
+    {
+      async search() {
+        return [];
+      },
+      async findByGtin() {
+        return null;
+      },
+    },
+    manual,
+  ).searchProducts("shampoo kerastase");
+  assert.equal(premiumFallbackSummary.options.length, 1);
+  assert.equal(premiumFallbackSummary.options[0].pricePf, 119.9);
+
+  const deodorantFallbackSummary = await new ProductSearchOrchestratorService(
+    {
+      async search() {
+        return [];
+      },
+      async findByGtin() {
+        return null;
+      },
+    },
+    manual,
+  ).searchProducts("desodorante rexona");
+  assert.equal(deodorantFallbackSummary.options[0].pricePf, 13.9);
+
+  const diaperFallbackSummary = await new ProductSearchOrchestratorService(
+    {
+      async search() {
+        return [];
+      },
+      async findByGtin() {
+        return null;
+      },
+    },
+    manual,
+  ).searchProducts("fralda pampers");
+  assert.equal(diaperFallbackSummary.options[0].pricePf, 39.9);
 
   let fetchCalls = 0;
   const originalFetch = global.fetch;

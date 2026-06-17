@@ -1,4 +1,10 @@
 export type ProductProviderName = "cosmos" | "manual_catalog";
+export type RetailProductPriceSource =
+  | "cosmos_avg_price"
+  | "cosmos_max_price"
+  | "cosmos_price_string"
+  | "default_category_price"
+  | "premium_brand_price";
 
 export interface ProductProvider {
   name: ProductProviderName;
@@ -30,6 +36,7 @@ export interface NormalizedRetailProduct {
   maxPrice?: number;
   referencePrice?: number;
   salePrice?: number;
+  salePriceSource?: RetailProductPriceSource;
 
   grossWeight?: number;
   netWeight?: number;

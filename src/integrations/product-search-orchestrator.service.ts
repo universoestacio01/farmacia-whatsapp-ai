@@ -1,4 +1,5 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
 import { CommercialMedicineOption } from "./bula-api.service";
 import { CosmosService } from "./cosmos.service";
 import { ManualRetailProductService } from "./manual-retail-product.service";
@@ -10,7 +11,6 @@ export interface RetailProductLookupSummary {
   manualFallback: boolean;
   category?: string;
   requestedBrand?: string;
-  noPricedResults?: boolean;
 }
 
 @Injectable()
@@ -71,32 +71,46 @@ export class ProductSearchOrchestratorService {
     this.logger.log(`COSMOS RAW RESULTS COUNT: ${products.length}`);
 
     if (products.length > 0) {
-      const selectedProducts = this.selectCommercialProducts(products, {
+      let selectedProducts = this.selectCommercialProducts(products, {
         query,
         category,
         requestedBrand,
         allowKits,
       });
+      let manualFallback = false;
+
+      if (selectedProducts.length === 0 && category) {
+        this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
+        selectedProducts = this.getManualFallbackProducts(
+          query,
+          category,
+          requestedBrand,
+        );
+        manualFallback = true;
+      }
 
       return {
         query,
         category: category || undefined,
         requestedBrand: requestedBrand || undefined,
         options: this.toCommercialOptions(selectedProducts).slice(0, 3),
-        manualFallback: false,
-        noPricedResults: selectedProducts.length === 0,
+        manualFallback,
       };
     }
 
     this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
+    const manualProducts = this.getManualFallbackProducts(
+      query,
+      category,
+      requestedBrand,
+    );
 
     return {
       query,
       category: category || undefined,
       requestedBrand: requestedBrand || undefined,
-      options: [],
+      options: this.toCommercialOptions(manualProducts).slice(0, 3),
       manualFallback: true,
-      noPricedResults: true,
     };
   }
 
@@ -115,18 +129,12 @@ export class ProductSearchOrchestratorService {
       allowKits: boolean;
     },
   ) {
-    const withPrice = products.filter(
-      (product) => product.salePrice !== undefined && product.salePrice > 0,
-    );
-    this.logger.log(`COSMOS RESULTS WITH PRICE: ${withPrice.length}`);
-
-    const filtered = withPrice.filter((product) =>
+    const filtered = products.filter((product) =>
       this.isQualityRetailProduct(product, context),
     );
     this.logger.log(`COSMOS RESULTS AFTER FILTER: ${filtered.length}`);
 
     if (filtered.length === 0) {
-      this.logger.warn("COSMOS NO PRICED RESULTS");
       return [];
     }
 
@@ -225,26 +233,38 @@ export class ProductSearchOrchestratorService {
   private toCommercialOptions(
     products: NormalizedRetailProduct[],
   ): CommercialMedicineOption[] {
-    return products.map((product, index) => ({
-      optionId: index + 1,
-      productId: this.toNumericId(product.sourceId || product.gtin, index + 1),
-      presentationId: this.toNumericId(
-        product.sourceId || product.gtin,
-        index + 1,
-      ),
-      type: "retail_product",
-      productName: product.productName,
-      medicineName: product.category || product.productName,
-      label: this.formatLabel(product),
-      formGroup: "produto",
-      packageDescription: product.description,
-      pricePf: product.salePrice,
-      selectionReason: `fonte ${product.source}`,
-      brand: product.brand,
-      description: product.description || product.displayName,
-      imageUrl: product.imageUrl || product.thumbnailUrl,
-      source: product.source,
-    }));
+    return products.map((product, index) => {
+      const salePrice =
+        product.salePrice !== undefined && product.salePrice > 0
+          ? {
+              price: product.salePrice,
+              source: product.salePriceSource || "default_category_price",
+            }
+          : calculateRetailSalePrice(product);
+      this.logger.log(`RETAIL PRICE SOURCE: ${salePrice.source}`);
+      this.logger.log(`RETAIL FINAL PRICE: ${salePrice.price}`);
+
+      return {
+        optionId: index + 1,
+        productId: this.toNumericId(product.sourceId || product.gtin, index + 1),
+        presentationId: this.toNumericId(
+          product.sourceId || product.gtin,
+          index + 1,
+        ),
+        type: "retail_product",
+        productName: product.productName,
+        medicineName: product.category || product.productName,
+        label: this.formatLabel(product),
+        formGroup: "produto",
+        packageDescription: product.description,
+        pricePf: salePrice.price,
+        selectionReason: `fonte ${product.source}`,
+        brand: product.brand,
+        description: product.description || product.displayName,
+        imageUrl: product.imageUrl || product.thumbnailUrl,
+        source: product.source,
+      };
+    });
   }
 
   private formatLabel(product: NormalizedRetailProduct) {
@@ -274,8 +294,26 @@ export class ProductSearchOrchestratorService {
 
     return (
       brands.find((brand) => normalizedQuery.includes(this.normalize(brand))) ||
-      null
+      this.manualRetailProductService.extractBrandFromQuery(category, query)
     );
+  }
+
+  private getManualFallbackProducts(
+    query: string,
+    category: string | null,
+    requestedBrand: string | null,
+  ) {
+    if (category) {
+      return [
+        this.manualRetailProductService.createManualProduct(
+          query,
+          category,
+          requestedBrand || undefined,
+        ),
+      ];
+    }
+
+    return [];
   }
 
   private allowsKits(query: string) {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
 import { CosmosTokenPoolService } from "./cosmos-token-pool.service";
 import {
   NormalizedRetailProduct,
@@ -216,21 +217,37 @@ export class CosmosService implements ProductProvider {
     const avgPrice = this.firstNumber(item, ["avg_price", "avgPrice"]);
     const maxPrice = this.firstNumber(item, ["max_price", "maxPrice"]);
     const referencePrice = this.firstNumber(item, ["price", "preco"]);
+    const baseProduct = {
+      productName: description,
+      displayName: description,
+      description,
+      brand,
+      category:
+        this.nestedString(item, "gpc", ["description"]) ||
+        this.nestedString(item, "category", ["description"]) ||
+        this.firstString(item, ["category"]),
+      gpcDescription: this.nestedString(item, "gpc", ["description"]),
+      avgPrice,
+      maxPrice,
+      referencePrice,
+    };
+    const salePrice = calculateRetailSalePrice(
+      baseProduct,
+      this.getPositiveNumber("COSMOS_PRICE_MULTIPLIER", 1),
+    );
 
     return {
       source: "cosmos",
       sourceId: this.firstString(item, ["id", "gtin", "ean"]),
       gtin: this.firstString(item, ["gtin"]),
       ean: this.firstString(item, ["gtin", "ean"]),
-      productName: description,
-      displayName: description,
-      description,
+      productName: baseProduct.productName,
+      displayName: baseProduct.displayName,
+      description: baseProduct.description,
       brand,
       manufacturer: this.firstString(item, ["manufacturer", "fabricante"]),
-      category:
-        this.nestedString(item, "gpc", ["description"]) ||
-        this.firstString(item, ["category"]),
-      gpcDescription: this.nestedString(item, "gpc", ["description"]),
+      category: baseProduct.category,
+      gpcDescription: baseProduct.gpcDescription,
       ncmCode: this.nestedString(item, "ncm", ["code"]),
       ncmDescription: this.nestedString(item, "ncm", [
         "full_description",
@@ -241,7 +258,8 @@ export class CosmosService implements ProductProvider {
       avgPrice,
       maxPrice,
       referencePrice,
-      salePrice: this.calculateSalePrice(avgPrice, maxPrice, referencePrice),
+      salePrice: salePrice.price,
+      salePriceSource: salePrice.source,
       grossWeight: this.firstNumber(item, ["gross_weight"]),
       netWeight: this.firstNumber(item, ["net_weight"]),
       width: this.firstNumber(item, ["width"]),
@@ -249,28 +267,6 @@ export class CosmosService implements ProductProvider {
       length: this.firstNumber(item, ["length"]),
       raw,
     };
-  }
-
-  private calculateSalePrice(
-    avgPrice?: number,
-    maxPrice?: number,
-    referencePrice?: number,
-  ) {
-    const basePrice = [avgPrice, maxPrice, referencePrice].find(
-      (price) => price !== undefined && price > 0,
-    );
-
-    if (basePrice === undefined) {
-      return undefined;
-    }
-
-    const multiplier = Number(
-      this.configService.get<number | string>("COSMOS_PRICE_MULTIPLIER") ?? 1,
-    );
-    const safeMultiplier =
-      Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
-
-    return Number((basePrice * safeMultiplier).toFixed(2));
   }
 
   private getFromCache(cacheKey: string) {
