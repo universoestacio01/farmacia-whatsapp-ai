@@ -170,6 +170,11 @@ export class WhatsappService {
   private async resolveReply(conversation: Conversation, text: string) {
     this.logger.log(`Estado atual da conversa: ${conversation.pendingAction}`);
 
+    if (this.isResetCommand(text)) {
+      await this.resetConversationContext(conversation.id);
+      return "Conversa reiniciada. Como posso ajudar você hoje?";
+    }
+
     const newMedicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
 
     if (
@@ -479,6 +484,11 @@ export class WhatsappService {
         candidateOptions: Prisma.JsonNull,
       },
     });
+  }
+
+  private isResetCommand(text: string) {
+    const normalized = this.normalize(text).trim();
+    return normalized === "reset" || normalized === "/reset";
   }
 
   private hasExplicitMedicineSearchIntent(text: string) {
