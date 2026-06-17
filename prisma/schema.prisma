@@ -100,6 +100,8 @@ model Conversation {
   currentMedicineQuery String?            @map("current_medicine_query")
   selectedPresentation Json?              @map("selected_presentation")
   candidateOptions     Json?              @map("candidate_options")
+  cart                 Json?
+  pendingAddress       Json?              @map("pending_address")
   createdAt            DateTime           @default(now()) @map("created_at")
   updatedAt            DateTime           @updatedAt @map("updated_at")
   customer             Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)

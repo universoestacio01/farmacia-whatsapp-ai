@@ -2,6 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   CommercialMedicineSelector,
+  PackageInfo,
   SelectorPresentation,
   SelectorProduct,
 } from "./commercial-medicine-selector";
@@ -30,6 +31,7 @@ export interface CommercialMedicineOption {
   formGroup: string;
   strength?: string;
   packageDescription?: string;
+  packageInfo?: PackageInfo;
   pricePf?: number;
   selectionReason?: string;
 }
@@ -374,6 +376,9 @@ export class BulaApiService {
         package_description: option.packageDescription,
       },
     );
+    this.logger.log(
+      `Preco calculado dentro do produto selecionado: ${option.label} = ${pricePf ?? "nenhum"}`,
+    );
 
     return { ...option, pricePf };
   }
@@ -397,7 +402,7 @@ export class BulaApiService {
     ];
 
     for (const option of summary.options.slice(0, 3)) {
-      lines.push(`${option.optionId}. ${option.label}`);
+      lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
     const optionNumbers = summary.options
@@ -423,7 +428,7 @@ export class BulaApiService {
     ];
 
     for (const option of summary.options.slice(0, 3)) {
-      lines.push(`${option.optionId}. ${option.label}`);
+      lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
     lines.push("", "Qual voce prefere?");
@@ -563,6 +568,7 @@ export class BulaApiService {
     products: BulaApiProduct[],
   ) {
     const options: CommercialMedicineOption[] = [];
+    const discardedPresentations: string[] = [];
 
     for (const product of products) {
       const productSelection = this.selectCommercialProduct(medicineName, [
@@ -574,9 +580,15 @@ export class BulaApiService {
 
       for (const presentation of response.data || []) {
         if (!this.selector.isRetailPresentation(presentation)) {
+          discardedPresentations.push(
+            `${product.name} ${this.presentationText(presentation)}`.trim(),
+          );
           continue;
         }
 
+        const packageInfo = this.selector.extractPackageInfo(
+          this.presentationText(presentation),
+        );
         options.push({
           optionId: 0,
           productId: product.id,
@@ -590,14 +602,24 @@ export class BulaApiService {
           ),
           formGroup: this.selector.getPresentationGroup(presentation),
           strength: presentation.strength,
-          packageDescription: this.formatPackageDescription(presentation),
+          packageDescription: this.formatPackageDescription(
+            presentation,
+            packageInfo,
+          ),
+          packageInfo,
           selectionReason: productSelection?.reason,
         });
       }
     }
 
-    return this.rankOptions(options, medicineName)
-      .map((option, index) => ({ ...option, optionId: index + 1 }));
+    this.logger.log(
+      `Produtos descartados por embalagem grande/hospitalar: ${discardedPresentations.join(", ") || "nenhum"}`,
+    );
+
+    return this.rankOptions(options, medicineName).map((option, index) => ({
+      ...option,
+      optionId: index + 1,
+    }));
   }
 
   private isRetailPresentation(presentation: BulaApiPresentation) {
@@ -755,10 +777,20 @@ export class BulaApiService {
       .trim();
   }
 
-  private formatPackageDescription(presentation: BulaApiPresentation) {
-    const group = this.selector.getPresentationGroup(presentation);
+  private formatOptionLine(option: CommercialMedicineOption) {
+    return option.packageDescription
+      ? `${option.label} - ${option.packageDescription}`
+      : option.label;
+  }
 
-    if (presentation.package_quantity && group !== "outro") {
+  private formatPackageDescription(
+    presentation: BulaApiPresentation,
+    packageInfo?: PackageInfo,
+  ): string | undefined {
+    const group =
+      packageInfo?.formGroup || this.selector.getPresentationGroup(presentation);
+
+    if (packageInfo?.unitCount && group !== "outro") {
       const unitByGroup: Record<string, string> = {
         comprimido: "comprimidos",
         capsula: "capsulas",
@@ -774,10 +806,24 @@ export class BulaApiService {
       const unit = unitByGroup[group] || "unidades";
 
       if (unit === "frasco" || unit === "unidade") {
-        return `${presentation.package_quantity} ${unit}`;
+        return `${packageInfo.unitCount} ${unit}`;
       }
 
-      return `caixa com ${presentation.package_quantity} ${unit}`;
+      return `caixa com ${packageInfo.unitCount} ${unit}`;
+    }
+
+    if (packageInfo?.volumeMl) {
+      return `frasco com ${packageInfo.volumeMl} ml`;
+    }
+
+    if (presentation.package_quantity && group !== "outro") {
+      return this.formatPackageDescription(presentation, {
+        formGroup: group,
+        unitCount: presentation.package_quantity,
+        isHospitalUse: false,
+        isInjectable: false,
+        isLargePackage: presentation.package_quantity >= 50,
+      });
     }
 
     if (!presentation.package_description) {

@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
 
 export interface SelectorProduct {
   id: number;
@@ -34,6 +35,16 @@ export interface SelectorOption {
   formGroup: string;
   strength?: string;
   presentationId: number;
+  packageInfo?: PackageInfo;
+}
+
+export interface PackageInfo {
+  unitCount?: number;
+  volumeMl?: number;
+  isLargePackage: boolean;
+  isHospitalUse: boolean;
+  isInjectable: boolean;
+  formGroup: string;
 }
 
 @Injectable()
@@ -48,12 +59,23 @@ export class CommercialMedicineSelector {
     alivium: "ibuprofeno",
     tylenol: "paracetamol",
     paracetamol: "paracetamol",
+    loratadina: "loratadina",
+    omeprazol: "omeprazol",
+    nimesulida: "nimesulida",
+    amoxicilina: "amoxicilina",
+    dorflex: "dorflex",
+    buscopan: "buscopan",
+    "butilbrometo de escopolamina": "buscopan",
+    benegrip: "benegrip",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
     dipirona: ["novalgina"],
     ibuprofeno: ["alivium", "advil"],
     paracetamol: ["tylenol"],
+    dorflex: ["dorflex"],
+    buscopan: ["buscopan"],
+    benegrip: ["benegrip"],
   };
 
   normalizeMedicineName(text: string) {
@@ -84,7 +106,8 @@ export class CommercialMedicineSelector {
   }
 
   getCanonicalMedicineName(medicineName: string) {
-    const normalized = this.normalizeMedicineName(medicineName) || this.normalize(medicineName);
+    const normalized =
+      this.normalizeMedicineName(medicineName) || this.normalize(medicineName);
 
     for (const [alias, canonical] of Object.entries(this.knownSynonyms)) {
       if (this.hasWordOrPhrase(normalized, alias)) {
@@ -98,12 +121,32 @@ export class CommercialMedicineSelector {
   isSameMedicine(query: string, product: SelectorProduct) {
     const canonical = this.getCanonicalMedicineName(query);
     const productText = this.getProductSearchText(product);
+    const productName = this.normalize(product.name);
+    const substanceName = this.normalize(product.substance?.name || "");
+    const brands = this.brandByMedicine[canonical] || [];
+
+    if (
+      canonical === "paracetamol" &&
+      (productName.includes("sinus") || productName.includes(" dc"))
+    ) {
+      return false;
+    }
+
+    if (
+      (productName.includes("+") || substanceName.includes(";")) &&
+      !brands.some((brand) => this.hasWordOrPhrase(productName, brand))
+    ) {
+      return false;
+    }
+
+    if (this.hasConflictingKnownMedicine(canonical, productText)) {
+      return false;
+    }
 
     if (this.hasWordOrPhrase(productText, canonical)) {
       return true;
     }
 
-    const brands = this.brandByMedicine[canonical] || [];
     return brands.some((brand) => this.hasWordOrPhrase(productText, brand));
   }
 
@@ -123,24 +166,74 @@ export class CommercialMedicineSelector {
   }
 
   isRetailPresentation(presentation: SelectorPresentation) {
-    const text = this.normalize(this.presentationText(presentation));
+    const packageInfo = this.extractPackageInfo(this.presentationText(presentation));
+
+    if (packageInfo.isInjectable || packageInfo.isHospitalUse) {
+      return false;
+    }
 
     if (
-      /\b(sol inj|inj|injetavel|ampola|amp|iv|im|hospitalar|uso hospitalar)\b/.test(
-        text,
-      ) ||
-      /cx\s*(50|100)\b/.test(text) ||
-      /x\s*(50|100|240)\b/.test(text)
+      packageInfo.unitCount !== undefined &&
+      packageInfo.unitCount >= 50 &&
+      packageInfo.formGroup !== "outro"
     ) {
       return false;
     }
 
-    return this.getPresentationGroup(presentation) !== "outro";
+    return packageInfo.formGroup !== "outro";
+  }
+
+  extractPackageInfo(presentationText: string): PackageInfo {
+    const text = this.normalize(presentationText);
+    const isInjectable =
+      /\b(sol inj|inj|injetavel|ampola|amp|iv|im)\b/.test(text);
+    const isHospitalUse = /\b(hospitalar|uso hospitalar)\b/.test(text);
+    const formGroup = this.getPresentationGroupFromText(text);
+    const volumeMatch = text.match(/\b(\d+)\s*ml\b/);
+    const unitPatterns = [
+      /\b(?:caixa|cx|ct|bl|frasco|fr)?\s*(?:com|x)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
+      /\b(?:caixa|cx|ct)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
+      /\b(?:x|com)\s*(\d+)\b(?!\s*ml)/,
+    ];
+    let unitCount: number | undefined;
+
+    for (const pattern of unitPatterns) {
+      const match = text.match(pattern);
+
+      if (match) {
+        unitCount = Number(match[1]);
+        break;
+      }
+    }
+
+    if (unitCount === undefined && /\b(comprim|comp|caps|dragea|drag)\b/.test(text)) {
+      const numberMatch = text.match(/\b(\d+)\b/);
+      unitCount = numberMatch ? Number(numberMatch[1]) : undefined;
+    }
+
+    const volumeMl = volumeMatch ? Number(volumeMatch[1]) : undefined;
+    const isLargePackage =
+      isHospitalUse ||
+      isInjectable ||
+      (unitCount !== undefined && unitCount >= 50) ||
+      /\bcx\s*(50|60|100)\b/.test(text);
+
+    return {
+      unitCount,
+      volumeMl,
+      isLargePackage,
+      isHospitalUse,
+      isInjectable,
+      formGroup,
+    };
   }
 
   getPresentationGroup(presentation: SelectorPresentation) {
     const text = this.normalize(this.presentationText(presentation));
+    return this.getPresentationGroupFromText(text);
+  }
 
+  private getPresentationGroupFromText(text: string) {
     if (/\bcomprim/.test(text)) return "comprimido";
     if (/\bcaps/.test(text)) return "capsula";
     if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
@@ -169,13 +262,19 @@ export class CommercialMedicineSelector {
       );
       const current = deduped.get(key);
 
-      if (!current || this.optionScore(medicineName, option) > this.optionScore(medicineName, current)) {
+      if (
+        !current ||
+        this.optionScore(medicineName, option) >
+          this.optionScore(medicineName, current)
+      ) {
         deduped.set(key, option);
       }
     }
 
     const ranked = [...deduped.values()].sort(
-      (a, b) => this.optionScore(medicineName, b) - this.optionScore(medicineName, a),
+      (a, b) =>
+        this.optionScore(medicineName, b) -
+        this.optionScore(medicineName, a),
     );
 
     return this.diversifyOptions(medicineName, ranked).slice(0, 3);
@@ -206,7 +305,10 @@ export class CommercialMedicineSelector {
       if (productName.includes("tylenol")) score += 620;
     }
 
-    if (productName.includes("+") || this.normalize(product.substance?.name || "").includes(";")) {
+    if (
+      productName.includes("+") ||
+      this.normalize(product.substance?.name || "").includes(";")
+    ) {
       score -= 120;
     }
 
@@ -264,7 +366,9 @@ export class CommercialMedicineSelector {
       const option = options.find(
         (candidate) =>
           predicate(candidate) &&
-          !picked.some((item) => item.presentationId === candidate.presentationId),
+          !picked.some(
+            (item) => item.presentationId === candidate.presentationId,
+          ),
       );
 
       if (option) {
@@ -273,27 +377,68 @@ export class CommercialMedicineSelector {
     };
 
     if (canonical === "dipirona") {
-      pick((option) => this.optionHasBrand(option, "novalgina") && this.isStrength(option, "500") && option.formGroup === "comprimido");
-      pick((option) => this.isGenericOption(option, canonical) && this.isStrength(option, "500") && option.formGroup === "comprimido");
-      pick((option) => this.optionHasBrand(option, "novalgina") && this.isStrength(option, "1") && option.formGroup === "comprimido");
+      pick(
+        (option) =>
+          this.optionHasBrand(option, "novalgina") &&
+          this.isStrength(option, "500") &&
+          option.formGroup === "comprimido",
+      );
+      pick(
+        (option) =>
+          this.isGenericOption(option, canonical) &&
+          this.isStrength(option, "500") &&
+          option.formGroup === "comprimido",
+      );
+      pick(
+        (option) =>
+          this.optionHasBrand(option, "novalgina") &&
+          this.isStrength(option, "1") &&
+          option.formGroup === "comprimido",
+      );
       pick((option) => ["gotas", "solucao oral"].includes(option.formGroup));
     }
 
     if (canonical === "ibuprofeno") {
-      pick((option) => this.isGenericOption(option, canonical) && ["400", "600"].some((strength) => this.isStrength(option, strength)) && ["comprimido", "capsula"].includes(option.formGroup));
-      pick((option) => this.optionHasBrand(option, "alivium") && ["400", "600"].some((strength) => this.isStrength(option, strength)));
-      pick((option) => this.optionHasBrand(option, "advil") && ["400", "600"].some((strength) => this.isStrength(option, strength)));
-      pick((option) => ["suspensao oral", "gotas", "solucao oral"].includes(option.formGroup));
+      pick(
+        (option) =>
+          this.isGenericOption(option, canonical) &&
+          ["400", "600"].some((strength) => this.isStrength(option, strength)) &&
+          ["comprimido", "capsula"].includes(option.formGroup),
+      );
+      pick(
+        (option) =>
+          this.optionHasBrand(option, "alivium") &&
+          ["400", "600"].some((strength) => this.isStrength(option, strength)),
+      );
+      pick(
+        (option) =>
+          this.optionHasBrand(option, "advil") &&
+          ["400", "600"].some((strength) => this.isStrength(option, strength)),
+      );
+      pick((option) =>
+        ["suspensao oral", "gotas", "solucao oral"].includes(option.formGroup),
+      );
     }
 
     if (canonical === "paracetamol") {
-      pick((option) => this.isGenericOption(option, canonical) && ["500", "750"].some((strength) => this.isStrength(option, strength)) && option.formGroup === "comprimido");
-      pick((option) => this.optionHasBrand(option, "tylenol") && ["500", "750"].some((strength) => this.isStrength(option, strength)));
+      pick(
+        (option) =>
+          this.isGenericOption(option, canonical) &&
+          ["500", "750"].some((strength) => this.isStrength(option, strength)) &&
+          option.formGroup === "comprimido",
+      );
+      pick(
+        (option) =>
+          this.optionHasBrand(option, "tylenol") &&
+          ["500", "750"].some((strength) => this.isStrength(option, strength)),
+      );
       pick((option) => ["gotas", "solucao oral"].includes(option.formGroup));
     }
 
     for (const option of options) {
-      if (!picked.some((item) => item.presentationId === option.presentationId)) {
+      if (
+        !picked.some((item) => item.presentationId === option.presentationId)
+      ) {
         picked.push(option);
       }
     }
@@ -315,16 +460,67 @@ export class CommercialMedicineSelector {
       spray: 76,
     };
     const canonical = this.getCanonicalMedicineName(optionMedicineName);
+    const config = COMMERCIAL_MEDICINES[canonical];
     let score = priority[option.formGroup] || 0;
 
     if (this.isGenericOption(option, canonical)) score += 220;
-    if (canonical === "dipirona" && this.optionHasBrand(option, "novalgina")) score += 900;
-    if (canonical === "ibuprofeno" && this.optionHasBrand(option, "alivium")) score += 620;
-    if (canonical === "ibuprofeno" && this.optionHasBrand(option, "advil")) score += 600;
-    if (canonical === "paracetamol" && this.optionHasBrand(option, "tylenol")) score += 620;
+    if (canonical === "dipirona" && this.optionHasBrand(option, "novalgina")) {
+      score += 900;
+    }
+    if (canonical === "ibuprofeno" && this.optionHasBrand(option, "alivium")) {
+      score += 620;
+    }
+    if (canonical === "ibuprofeno" && this.optionHasBrand(option, "advil")) {
+      score += 600;
+    }
+    if (canonical === "paracetamol" && this.optionHasBrand(option, "tylenol")) {
+      score += 620;
+    }
+
+    const formIndex = config?.defaultFormOrder.indexOf(
+      this.normalizeFormForConfig(option.formGroup),
+    );
+
+    if (formIndex !== undefined && formIndex >= 0) {
+      score += Math.max(0, 80 - formIndex * 10);
+    }
 
     score += this.strengthScore(canonical, option.strength);
+    score += this.packageScore(canonical, option.packageInfo);
     return score;
+  }
+
+  private packageScore(canonical: string, packageInfo?: PackageInfo) {
+    if (!packageInfo) {
+      return 0;
+    }
+
+    const config = COMMERCIAL_MEDICINES[canonical];
+
+    if (packageInfo.isHospitalUse || packageInfo.isInjectable) {
+      return -1000;
+    }
+
+    if (packageInfo.isLargePackage) {
+      return -350;
+    }
+
+    if (packageInfo.unitCount === undefined) {
+      return packageInfo.volumeMl ? 20 : 0;
+    }
+
+    if (config?.preferredSmallPacks.includes(packageInfo.unitCount)) {
+      return 180 - config.preferredSmallPacks.indexOf(packageInfo.unitCount) * 5;
+    }
+
+    if (
+      config?.maxDefaultPackSize &&
+      packageInfo.unitCount <= config.maxDefaultPackSize
+    ) {
+      return 90 - packageInfo.unitCount;
+    }
+
+    return packageInfo.unitCount >= 50 ? -250 : 0;
   }
 
   private strengthScore(canonical: string, strength?: string) {
@@ -391,6 +587,21 @@ export class CommercialMedicineSelector {
   private hasWordOrPhrase(text: string, phrase: string) {
     const escaped = this.normalize(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     return new RegExp(`(^|\\b)${escaped}(\\b|$)`).test(text);
+  }
+
+  private hasConflictingKnownMedicine(canonical: string, productText: string) {
+    return Object.keys(COMMERCIAL_MEDICINES)
+      .filter((medicine) => medicine !== canonical)
+      .some((medicine) => {
+        const config = COMMERCIAL_MEDICINES[medicine];
+        return config.synonyms.some((synonym) =>
+          this.hasWordOrPhrase(productText, synonym),
+        );
+      });
+  }
+
+  private normalizeFormForConfig(formGroup: string) {
+    return this.normalize(formGroup).toUpperCase();
   }
 
   private normalize(value: string) {
