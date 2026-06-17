@@ -1,9 +1,13 @@
 import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { PrismaService } from "../prisma/prisma.service";
 
 @Controller("health")
 export class HealthController {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get()
   check() {
@@ -47,6 +51,18 @@ export class HealthController {
     };
   }
 
+  @Get("bootstrap")
+  async bootstrap() {
+    const cosmosTokenCount = this.getCosmosTokenCount();
+
+    return {
+      cosmosConfigured: cosmosTokenCount > 0,
+      cosmosTokenCount,
+      pharmadbConfigured: this.isPharmaDbConfigured(),
+      databaseConnected: await this.isDatabaseConnected(),
+    };
+  }
+
   private getCosmosTokenCount() {
     const multiTokenValue = this.configService.get<string>("COSMOS_API_TOKENS");
     const multiTokens = this.parseTokenList(multiTokenValue);
@@ -58,6 +74,24 @@ export class HealthController {
     return this.parseTokenList(
       this.configService.get<string>("COSMOS_API_TOKEN"),
     ).length;
+  }
+
+  private isPharmaDbConfigured() {
+    const pharmaDbBaseUrl = this.configService.get<string>(
+      "PHARMADB_API_BASE_URL",
+    );
+    const pharmaDbApiKey = this.configService.get<string>("PHARMADB_API_KEY");
+
+    return Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim());
+  }
+
+  private async isDatabaseConnected() {
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private parseTokenList(value: string | undefined) {

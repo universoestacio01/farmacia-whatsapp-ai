@@ -27,6 +27,13 @@ async function bootstrap() {
 
 void bootstrap().catch((error) => {
   const logger = new Logger("Bootstrap");
-  logger.error("BOOT FAILED", error);
+  const safeError =
+    error instanceof Error
+      ? error
+      : new Error(typeof error === "string" ? error : JSON.stringify(error));
+
+  logger.error(`BOOT FAILED: ${safeError.message}`);
+  logger.error(`BOOT FAILED ERROR NAME: ${safeError.name}`);
+  logger.error(`BOOT FAILED ERROR STACK: ${safeError.stack || "sem stack"}`);
   process.exit(1);
 });
