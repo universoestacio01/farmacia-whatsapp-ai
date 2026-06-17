@@ -1,5 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import {
+  CommercialMedicineSelector,
+  SelectorPresentation,
+  SelectorProduct,
+} from "./commercial-medicine-selector";
 
 export type MedicineIntent =
   | "leaflet"
@@ -51,10 +56,11 @@ interface BulaApiSubstance {
   name: string;
 }
 
-interface BulaApiProduct {
+interface BulaApiProduct extends SelectorProduct {
   id: number;
   name: string;
   regulatory_category?: string;
+  activeIngredient?: string | { name?: string } | null;
   substance?: {
     id: number;
     name: string;
@@ -65,7 +71,7 @@ interface BulaApiProduct {
   };
 }
 
-interface BulaApiPresentation {
+interface BulaApiPresentation extends SelectorPresentation {
   id: number;
   dose_form?: string;
   route?: string;
@@ -92,7 +98,10 @@ interface CommercialProductSelection {
 export class BulaApiService {
   private readonly logger = new Logger(BulaApiService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly selector: CommercialMedicineSelector,
+  ) {}
 
   isPriceQuestionWithoutMedicine(message: string) {
     const normalized = this.normalize(message).trim();
@@ -100,7 +109,7 @@ export class BulaApiService {
       /^(qual\s+)?(preco|valor)(\?)?$/.test(normalized) ||
       /^quanto\s+custa(\?)?$/.test(normalized);
 
-    return hasPriceIntent && !this.extractMedicineName(message);
+    return hasPriceIntent && !this.normalizeMedicineName(message);
   }
 
   detectMedicineQuestion(message: string): MedicineQuestion | null {
@@ -173,7 +182,7 @@ export class BulaApiService {
       for (const pattern of patterns) {
         const match = compact.match(pattern);
         const medicineName =
-          this.extractMedicineName(match?.[1] || "") ||
+          this.normalizeMedicineName(match?.[1] || "") ||
           this.cleanMedicineName(match?.[1]);
 
         if (medicineName) {
@@ -183,7 +192,7 @@ export class BulaApiService {
     }
 
     const commercialIntent = this.detectCommercialIntent(message);
-    const medicineFromIntent = this.extractMedicineName(message);
+    const medicineFromIntent = this.normalizeMedicineName(message);
 
     if (commercialIntent && medicineFromIntent) {
       return { intent: commercialIntent, medicineName: medicineFromIntent };
@@ -196,29 +205,30 @@ export class BulaApiService {
   }
 
   extractMedicineName(message: string) {
-    let cleaned = this.normalize(message)
-      .replace(/[?!.:,;]/g, " ")
-      .replace(/\bvoces?\s+(?:tem|teriam|vendem)\b/g, " ")
-      .replace(/\bgostaria\s+(?:de|da|do)?\b/g, " ")
-      .replace(/\bqual\s+(?:o\s+)?(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
-      .replace(/\b(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
-      .replace(/\bquanto\s+custa\s+(?:a|o|um|uma)?\b/g, " ")
-      .replace(
-        /\b(?:tem|teria|vende|vendem|quero|queria|preciso)\s+(?:de|da|do)?\b/g,
-        " ",
-      )
-      .replace(/\bquanto\s+custa\b/g, " ")
-      .replace(/\b(?:qual|preco|valor)\b/g, " ")
-      .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
-      .replace(/\b(?:remedio|medicamento|produto)\b/g, " ")
-      .replace(/\b(?:da|do|de)\b/g, " ")
-      .replace(/\b(?:tem|teria|vende|vendem)$/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    return this.normalizeMedicineName(message);
+  }
 
-    cleaned = cleaned.replace(/^(?:a|o|um|uma)\s+/g, "").trim();
+  normalizeMedicineName(message: string) {
+    return this.selector.normalizeMedicineName(message);
+  }
 
-    return cleaned.length >= 3 ? cleaned : null;
+  isSameMedicine(query: string, product: BulaApiProduct) {
+    return this.selector.isSameMedicine(query, product);
+  }
+
+  optionBelongsToMedicine(
+    query: string | null | undefined,
+    option: CommercialMedicineOption,
+  ) {
+    if (!query) {
+      return true;
+    }
+
+    return this.selector.isSameMedicine(query, {
+      id: option.productId,
+      name: option.productName,
+      substance: { name: option.medicineName },
+    });
   }
 
   async lookupMedicine(
@@ -232,11 +242,21 @@ export class BulaApiService {
         baseUrl,
         medicineName,
       );
+      this.logger.log(`Produtos brutos BulAPI: ${products.rawCount}`);
       this.logger.log(
-        `Produtos retornados pela busca: ${products.map((product) => product.name).join(", ") || "nenhum"}`,
+        `Produtos do mesmo medicamento: ${products.sameMedicineCount}`,
+      );
+      this.logger.log(
+        `Produtos descartados por nao pertencerem ao medicamento: ${products.discardedNames.join(", ") || "nenhum"}`,
+      );
+      this.logger.log(
+        `Produtos retornados pela busca: ${products.items.map((product) => product.name).join(", ") || "nenhum"}`,
       );
 
-      const selection = this.selectCommercialProduct(medicineName, products);
+      const selection = this.selectCommercialProduct(
+        medicineName,
+        products.items,
+      );
 
       if (selection) {
         this.logger.log(
@@ -247,13 +267,16 @@ export class BulaApiService {
       const options = await this.getCommercialOptions(
         baseUrl,
         medicineName,
-        products,
+        products.items,
       );
       this.logger.log(`Opcoes filtradas: ${options.length}`);
+      this.logger.log(
+        `Opcoes comerciais selecionadas: ${options.map((option) => option.label).join(", ") || "nenhuma"}`,
+      );
 
       return {
         medicineName,
-        products,
+        products: products.items,
         options,
       };
     } catch (error) {
@@ -297,7 +320,7 @@ export class BulaApiService {
     return {
       product,
       reason: this.getProductSelectionReason(product, medicineName),
-      score: this.getProductScore(product, this.normalize(medicineName)),
+      score: this.getProductScore(product, medicineName),
     };
   }
 
@@ -333,6 +356,26 @@ export class BulaApiService {
     );
 
     return highestPf;
+  }
+
+  async priceSelectedOption(option: CommercialMedicineOption) {
+    const baseUrl = this.getBaseUrl();
+    const pricePf = await this.getHighestPfForSelectedProduct(
+      baseUrl,
+      {
+        id: option.productId,
+        name: option.productName,
+        substance: { id: 0, name: option.medicineName },
+      },
+      {
+        id: option.presentationId,
+        dose_form: option.formGroup,
+        strength: option.strength,
+        package_description: option.packageDescription,
+      },
+    );
+
+    return { ...option, pricePf };
   }
 
   formatNotFound(medicineName: string) {
@@ -431,7 +474,14 @@ export class BulaApiService {
 
     if (requestedGeneric) {
       candidates = candidates.filter((option) =>
-        this.isGenericProductName(option.productName),
+        this.selector.isGenericProduct(
+          {
+            id: option.productId,
+            name: option.productName,
+            substance: { name: option.medicineName },
+          },
+          option.medicineName,
+        ),
       );
     }
 
@@ -473,13 +523,13 @@ export class BulaApiService {
       );
 
       for (const product of search.data?.products || []) {
-        if (this.productMatchesMedicine(product, medicineName)) {
-          productMap.set(product.id, product);
-        }
+        productMap.set(product.id, product);
       }
 
       const substance = search.data?.substances?.find((item) =>
-        this.normalize(item.name).includes(this.normalize(medicineName)),
+        this.selector
+          .getCanonicalMedicineName(item.name)
+          .includes(this.selector.getCanonicalMedicineName(medicineName)),
       );
 
       if (substance) {
@@ -488,17 +538,23 @@ export class BulaApiService {
         >(`${baseUrl}/substances/${substance.id}/products?per_page=20`);
 
         for (const product of substanceProducts.data || []) {
-          if (this.productMatchesMedicine(product, medicineName)) {
-            productMap.set(product.id, product);
-          }
+          productMap.set(product.id, product);
         }
       }
     }
 
-    return this.rankProducts([...productMap.values()], medicineName).slice(
-      0,
-      16,
+    const rawProducts = [...productMap.values()];
+    const { sameMedicine, discarded } = this.selector.filterSameMedicine(
+      medicineName,
+      rawProducts,
     );
+
+    return {
+      rawCount: rawProducts.length,
+      sameMedicineCount: sameMedicine.length,
+      discardedNames: discarded.map((product) => product.name),
+      items: this.rankProducts(sameMedicine, medicineName).slice(0, 16),
+    };
   }
 
   private async getCommercialOptions(
@@ -517,78 +573,42 @@ export class BulaApiService {
       >(`${baseUrl}/products/${product.id}/presentations?per_page=30`);
 
       for (const presentation of response.data || []) {
-        if (!this.isRetailPresentation(presentation)) {
+        if (!this.selector.isRetailPresentation(presentation)) {
           continue;
         }
 
-        const pricePf = await this.getHighestPfForSelectedProduct(
-          baseUrl,
-          product,
-          presentation,
-        );
         options.push({
           optionId: 0,
           productId: product.id,
           presentationId: presentation.id,
           productName: product.name,
           medicineName: product.substance?.name || product.name,
-          label: this.formatCommercialOptionLabel(product, presentation),
-          formGroup: this.getPresentationGroup(presentation),
+          label: this.formatCommercialOptionLabel(
+            product,
+            presentation,
+            medicineName,
+          ),
+          formGroup: this.selector.getPresentationGroup(presentation),
           strength: presentation.strength,
           packageDescription: this.formatPackageDescription(presentation),
-          pricePf,
           selectionReason: productSelection?.reason,
         });
       }
     }
 
     return this.rankOptions(options, medicineName)
-      .slice(0, 6)
       .map((option, index) => ({ ...option, optionId: index + 1 }));
   }
 
   private isRetailPresentation(presentation: BulaApiPresentation) {
-    const text = this.normalize(this.presentationText(presentation));
-
-    if (
-      /\b(sol inj|inj|injetavel|ampola|amp|iv|im|hospitalar|uso hospitalar)\b/.test(
-        text,
-      ) ||
-      /cx\s*(50|100)\b/.test(text) ||
-      /x\s*(50|100|240)\b/.test(text)
-    ) {
-      return false;
-    }
-
-    return this.getPresentationGroup(presentation) !== "outro";
+    return this.selector.isRetailPresentation(presentation);
   }
 
   private rankOptions(
     options: CommercialMedicineOption[],
     medicineName: string,
   ) {
-    const deduped = new Map<string, CommercialMedicineOption>();
-
-    for (const option of options) {
-      const key = this.normalize(
-        `${option.productName}-${option.formGroup}-${option.strength}`,
-      );
-      const current = deduped.get(key);
-
-      if (!current || this.optionScore(option) > this.optionScore(current)) {
-        deduped.set(key, option);
-      }
-    }
-
-    const ranked = [...deduped.values()].sort(
-      (a, b) => this.optionScore(b) - this.optionScore(a),
-    );
-
-    if (this.normalize(medicineName).includes("dipirona")) {
-      return this.diversifyDipironaOptions(ranked);
-    }
-
-    return ranked;
+    return this.selector.selectCommercialOptions(medicineName, options);
   }
 
   private diversifyDipironaOptions(options: CommercialMedicineOption[]) {
@@ -665,7 +685,7 @@ export class BulaApiService {
   }
 
   private formatOptionLabel(presentation: BulaApiPresentation) {
-    const group = this.getPresentationGroup(presentation);
+    const group = this.selector.getPresentationGroup(presentation);
     const details = [this.title(group), presentation.strength]
       .filter((item) => item && item !== "unknown")
       .join(" ");
@@ -676,9 +696,10 @@ export class BulaApiService {
   private formatCommercialOptionLabel(
     product: BulaApiProduct,
     presentation: BulaApiPresentation,
+    medicineName: string,
   ) {
-    const productName = this.formatProductDisplayName(product);
-    const group = this.getPresentationGroup(presentation);
+    const productName = this.formatProductDisplayName(product, medicineName);
+    const group = this.selector.getPresentationGroup(presentation);
     const strength = this.formatStrength(presentation.strength);
     let presentationName = this.title(group);
 
@@ -691,15 +712,31 @@ export class BulaApiService {
     return `${productName} ${presentationName}`.replace(/\s+/g, " ").trim();
   }
 
-  private formatProductDisplayName(product: BulaApiProduct) {
+  private formatProductDisplayName(
+    product: BulaApiProduct,
+    medicineName: string,
+  ) {
     const productName = this.normalize(product.name);
+    const canonical = this.selector.getCanonicalMedicineName(medicineName);
 
     if (productName.includes("novalgina")) {
       return "Novalgina";
     }
 
-    if (this.isGenericProduct(product)) {
-      return "Dipirona generica";
+    if (productName.includes("alivium")) {
+      return "Alivium";
+    }
+
+    if (productName.includes("advil")) {
+      return "Advil";
+    }
+
+    if (productName.includes("tylenol")) {
+      return "Tylenol";
+    }
+
+    if (this.selector.isGenericProduct(product, medicineName)) {
+      return `${this.title(canonical)} generico`;
     }
 
     return this.title(product.name);
@@ -719,7 +756,7 @@ export class BulaApiService {
   }
 
   private formatPackageDescription(presentation: BulaApiPresentation) {
-    const group = this.getPresentationGroup(presentation);
+    const group = this.selector.getPresentationGroup(presentation);
 
     if (presentation.package_quantity && group !== "outro") {
       const unitByGroup: Record<string, string> = {
@@ -762,24 +799,6 @@ export class BulaApiService {
       .trim();
   }
 
-  private getPresentationGroup(presentation: BulaApiPresentation) {
-    const text = this.normalize(this.presentationText(presentation));
-
-    if (/\bcomprim/.test(text)) return "comprimido";
-    if (/\bcaps/.test(text)) return "capsula";
-    if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
-    if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text))
-      return "solucao oral";
-    if (/\bsuspensao oral\b|\bsusp oral\b/.test(text)) return "suspensao oral";
-    if (/\bxarope\b/.test(text)) return "xarope";
-    if (/\bpomada\b/.test(text)) return "pomada";
-    if (/\bcreme\b/.test(text)) return "creme";
-    if (/\bgel\b/.test(text)) return "gel";
-    if (/\bspray\b/.test(text)) return "spray";
-
-    return "outro";
-  }
-
   private presentationText(presentation: BulaApiPresentation) {
     return [
       presentation.dose_form,
@@ -813,11 +832,19 @@ export class BulaApiService {
   }
 
   private getCommercialQueryTerms(medicineName: string) {
-    const normalized = this.normalize(medicineName);
-    const terms = [medicineName];
+    const normalized = this.selector.getCanonicalMedicineName(medicineName);
+    const terms = [medicineName, normalized];
 
-    if (normalized.includes("dipirona")) {
+    if (normalized === "dipirona") {
       terms.push("novalgina", "dipirona generico", "dipirona monoidratada");
+    }
+
+    if (normalized === "ibuprofeno") {
+      terms.push("ibuprofeno generico", "alivium", "advil");
+    }
+
+    if (normalized === "paracetamol") {
+      terms.push("paracetamol generico", "tylenol");
     }
 
     return [...new Set(terms)];
@@ -827,17 +854,7 @@ export class BulaApiService {
     product: BulaApiProduct,
     medicineName: string,
   ) {
-    const target = this.normalize(medicineName);
-    const productName = this.normalize(product.name);
-    const substanceName = this.normalize(product.substance?.name || "");
-
-    if (target.includes("dipirona")) {
-      return (
-        substanceName.includes("dipirona") || productName.includes("novalgina")
-      );
-    }
-
-    return productName.includes(target) || substanceName.includes(target);
+    return this.selector.isSameMedicine(medicineName, product);
   }
 
   private cleanMedicineName(value?: string) {
@@ -845,7 +862,7 @@ export class BulaApiService {
       return null;
     }
 
-    const extracted = this.extractMedicineName(value);
+    const extracted = this.normalizeMedicineName(value);
 
     if (extracted) {
       return extracted;
@@ -870,7 +887,7 @@ export class BulaApiService {
     }
 
     if (
-      /\b(tem|teria|vende|vendem|quero|queria|preciso|gostaria de)\b/.test(
+      /\b(tem|teria|vende|vendem|quero|queria|preciso|gostaria de|adicionar|mais)\b/.test(
         normalized,
       )
     ) {
@@ -917,58 +934,22 @@ export class BulaApiService {
   }
 
   private rankProducts(products: BulaApiProduct[], medicineName: string) {
-    const target = this.normalize(medicineName);
-
     return [...products].sort((a, b) => {
-      const scoreA = this.getProductScore(a, target);
-      const scoreB = this.getProductScore(b, target);
+      const scoreA = this.getProductScore(a, medicineName);
+      const scoreB = this.getProductScore(b, medicineName);
       return scoreB - scoreA;
     });
   }
 
   private getProductScore(product: BulaApiProduct, target: string) {
-    const productName = this.normalize(product.name);
-    const substanceName = this.normalize(product.substance?.name || "");
-    let score = 0;
-
-    if (target.includes("dipirona")) {
-      if (productName.includes("novalgina")) score += 900;
-      if (this.isGenericProduct(product)) score += 220;
-      if (productName === "dipirona" || productName.includes("dipirona")) {
-        score += 160;
-      }
-      if (productName.includes("lqfex")) score -= 120;
-    }
-
-    if (productName === target) score += 100;
-    if (substanceName === target) score += 80;
-    if (productName.includes(target)) score += 30;
-    if (substanceName.includes(target)) score += 20;
-    if (productName.includes("+") || substanceName.includes(";")) score -= 80;
-
-    return score;
+    return this.selector.getProductScore(product, target);
   }
 
   private getProductSelectionReason(
     product: BulaApiProduct,
     medicineName: string,
   ) {
-    const productName = this.normalize(product.name);
-    const target = this.normalize(medicineName);
-
-    if (target.includes("dipirona") && productName.includes("novalgina")) {
-      return "preferencia comercial para Dipirona: marca Novalgina";
-    }
-
-    if (this.isGenericProduct(product)) {
-      return "produto generico de varejo comum";
-    }
-
-    if (productName.includes(target)) {
-      return "nome do produto corresponde ao medicamento buscado";
-    }
-
-    return "melhor pontuacao comercial disponivel";
+    return this.selector.getProductSelectionReason(product, medicineName);
   }
 
   private productNameScore(productName: string) {
@@ -995,6 +976,9 @@ export class BulaApiService {
     const normalized = this.normalize(message);
 
     if (normalized.includes("novalgina")) return "novalgina";
+    if (normalized.includes("alivium")) return "alivium";
+    if (normalized.includes("advil")) return "advil";
+    if (normalized.includes("tylenol")) return "tylenol";
 
     return null;
   }
@@ -1004,15 +988,19 @@ export class BulaApiService {
   }
 
   private isGenericProduct(product: BulaApiProduct) {
-    return (
-      product.regulatory_category === "generic" ||
-      this.isGenericProductName(product.name)
-    );
+    return this.selector.isGenericProduct(product, product.substance?.name || product.name);
   }
 
   private isGenericProductName(productName: string) {
     const normalized = this.normalize(productName);
-    return normalized === "dipirona" || normalized.includes("dipirona sodica");
+    return (
+      normalized === "dipirona" ||
+      normalized.includes("dipirona sodica") ||
+      normalized === "ibuprofeno" ||
+      normalized.includes("ibuprofeno ") ||
+      normalized === "paracetamol" ||
+      normalized.includes("paracetamol ")
+    );
   }
 
   private title(value: string) {

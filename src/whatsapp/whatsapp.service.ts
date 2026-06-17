@@ -170,18 +170,37 @@ export class WhatsappService {
   private async resolveReply(conversation: Conversation, text: string) {
     this.logger.log(`Estado atual da conversa: ${conversation.pendingAction}`);
 
+    const newMedicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
+
     if (
       conversation.pendingAction === ConversationState.WAITING_PRESENTATION &&
       conversation.candidateOptions
     ) {
-      const options = this.getCandidateOptions(conversation.candidateOptions);
-      const selectedOption = this.bulaApiService.findOptionByReply(
+      if (newMedicineQuestion && this.hasExplicitMedicineSearchIntent(text)) {
+        return this.handleMedicineQuestion(conversation.id, newMedicineQuestion);
+      }
+
+      const currentMedicineQuery =
+        conversation.currentMedicineQuery || conversation.lastMedicine;
+      const options = this.getCandidateOptions(
+        conversation.candidateOptions,
+      ).filter((option) =>
+        this.bulaApiService.optionBelongsToMedicine(
+          currentMedicineQuery,
+          option,
+        ),
+      );
+      const selectedOptionWithoutPrice = this.bulaApiService.findOptionByReply(
         text,
         options,
       );
 
-      if (selectedOption) {
+      if (selectedOptionWithoutPrice) {
+        const selectedOption = await this.bulaApiService.priceSelectedOption(
+          selectedOptionWithoutPrice,
+        );
         this.logger.log(`Opcao selecionada: ${selectedOption.label}`);
+        this.logger.log(`Produto adicionado ao carrinho: ${selectedOption.label}`);
         await this.prisma.conversation.update({
           where: { id: conversation.id },
           data: {
@@ -245,7 +264,20 @@ export class WhatsappService {
     }
 
     if (conversation.pendingAction === ConversationState.WAITING_CONFIRMATION) {
-      if (this.normalize(text).startsWith("sim")) {
+      if (this.isAddMoreRequest(text)) {
+        this.logger.log("Carrinho mantido para adicionar mais itens");
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastIntent: "ADD_ITEM",
+            pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          },
+        });
+
+        return "Claro. Qual outro medicamento voce deseja adicionar?";
+      }
+
+      if (this.isPositiveConfirmation(text)) {
         await this.prisma.conversation.update({
           where: { id: conversation.id },
           data: { pendingAction: ConversationState.WAITING_PIX },
@@ -254,11 +286,15 @@ export class WhatsappService {
         return "Pedido confirmado. Vou preparar o Pix para pagamento e te aviso por aqui.";
       }
 
-      await this.resetConversationContext(conversation.id);
-      return "Sem problema. Pedido nao confirmado. Se quiser, me diga o produto para recomecar.";
+      if (this.isClearCancelRequest(text)) {
+        await this.resetConversationContext(conversation.id);
+        return "Sem problema. Pedido nao confirmado. Se quiser, me diga o produto para recomecar.";
+      }
+
+      return "Voce quer confirmar o pedido? Responda sim, cancelar ou diga que deseja adicionar outro produto.";
     }
 
-    let medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
+    let medicineQuestion = newMedicineQuestion;
 
     if (
       conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME &&
@@ -280,6 +316,9 @@ export class WhatsappService {
         data: {
           lastIntent: "PRICE_REQUEST",
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentMedicineQuery: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
         },
       });
 
@@ -297,13 +336,25 @@ export class WhatsappService {
     conversationId: string,
     question: MedicineQuestion,
   ) {
+    const medicineName =
+      this.bulaApiService.normalizeMedicineName(question.medicineName) ||
+      question.medicineName;
     this.logger.log(`Intent detectada: ${question.intent.toUpperCase()}`);
-    const summary = await this.bulaApiService.lookupMedicine(
-      question.medicineName,
-    );
+    this.logger.log(`Nova busca de medicamento: ${medicineName}`);
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        currentMedicineQuery: medicineName,
+        selectedPresentation: Prisma.JsonNull,
+        candidateOptions: Prisma.JsonNull,
+      },
+    });
+    this.logger.log("Contexto anterior limpo");
+
+    const summary = await this.bulaApiService.lookupMedicine(medicineName);
 
     if (!summary) {
-      return this.aiService.generatePharmacyReply(question.medicineName);
+      return this.aiService.generatePharmacyReply(medicineName);
     }
 
     if (summary.products.length === 0) {
@@ -312,18 +363,21 @@ export class WhatsappService {
         data: {
           lastIntent: question.intent.toUpperCase(),
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
-          lastMedicine: question.medicineName,
+          lastMedicine: medicineName,
+          currentMedicineQuery: medicineName,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
         },
       });
-      return this.bulaApiService.formatNotFound(question.medicineName);
+      return this.bulaApiService.formatNotFound(medicineName);
     }
 
-    const pricedOptions = summary.options.filter(
-      (option) => option.pricePf !== undefined,
-    );
     const shouldAskQuantity =
-      (question.intent === "price" && pricedOptions.length === 1) ||
+      (question.intent === "price" && summary.options.length === 1) ||
       (question.intent !== "price" && summary.options.length === 1);
+    const selectedOption = shouldAskQuantity
+      ? await this.bulaApiService.priceSelectedOption(summary.options[0])
+      : null;
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -332,13 +386,19 @@ export class WhatsappService {
         pendingAction: shouldAskQuantity
           ? ConversationState.WAITING_QUANTITY
           : ConversationState.WAITING_PRESENTATION,
-        lastMedicine: question.medicineName,
+        lastMedicine: medicineName,
+        currentMedicineQuery: medicineName,
         candidateOptions: this.toJson(summary.options),
         selectedPresentation: shouldAskQuantity
-          ? this.toJson(pricedOptions[0] || summary.options[0])
+          ? this.toJson(selectedOption)
           : Prisma.JsonNull,
       },
     });
+
+    if (selectedOption) {
+      this.logger.log(`Produto adicionado ao carrinho: ${selectedOption.label}`);
+      return this.bulaApiService.formatSelectedOptionReply(selectedOption);
+    }
 
     if (question.intent === "price") {
       return this.bulaApiService.formatPriceReply(summary);
@@ -414,10 +474,37 @@ export class WhatsappService {
         lastIntent: null,
         pendingAction: ConversationState.IDLE,
         lastMedicine: null,
+        currentMedicineQuery: null,
         selectedPresentation: Prisma.JsonNull,
         candidateOptions: Prisma.JsonNull,
       },
     });
+  }
+
+  private hasExplicitMedicineSearchIntent(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(tem|teria|vende|vendem|quero|queria|preciso|gostaria|adicionar|preco|valor|quanto custa)\b/.test(
+      normalized,
+    );
+  }
+
+  private isAddMoreRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(mais remedio|mais remedios|adicionar|quero mais|gostaria de mais|outro produto|mais um)\b/.test(
+      normalized,
+    );
+  }
+
+  private isPositiveConfirmation(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(sim|confirmo|pode confirmar|confirmar|ok|fechado)\b/.test(
+      normalized,
+    );
+  }
+
+  private isClearCancelRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(nao|cancelar|desistir|nao quero|cancela)\b/.test(normalized);
   }
 
   private toJson(value: unknown): Prisma.InputJsonValue {

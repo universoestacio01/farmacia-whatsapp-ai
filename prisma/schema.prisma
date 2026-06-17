@@ -97,6 +97,7 @@ model Conversation {
   lastIntent           String?            @map("last_intent")
   pendingAction        ConversationState  @default(IDLE) @map("pending_action")
   lastMedicine         String?            @map("last_medicine")
+  currentMedicineQuery String?            @map("current_medicine_query")
   selectedPresentation Json?              @map("selected_presentation")
   candidateOptions     Json?              @map("candidate_options")
   createdAt            DateTime           @default(now()) @map("created_at")
