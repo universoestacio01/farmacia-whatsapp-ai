@@ -24,6 +24,7 @@ export interface CommercialMedicineOption {
   label: string;
   formGroup: string;
   strength?: string;
+  packageDescription?: string;
   pricePf?: number;
   selectionReason?: string;
 }
@@ -95,10 +96,11 @@ export class BulaApiService {
 
   isPriceQuestionWithoutMedicine(message: string) {
     const normalized = this.normalize(message).trim();
-    return (
+    const hasPriceIntent =
       /^(qual\s+)?(preco|valor)(\?)?$/.test(normalized) ||
-      /^quanto\s+custa(\?)?$/.test(normalized)
-    );
+      /^quanto\s+custa(\?)?$/.test(normalized);
+
+    return hasPriceIntent && !this.extractMedicineName(message);
   }
 
   detectMedicineQuestion(message: string): MedicineQuestion | null {
@@ -132,6 +134,7 @@ export class BulaApiService {
       {
         intent: "price",
         patterns: [
+          /\bqual\s+(?:o\s+)?(?:preco|valor)\s+(?:da|do|de)?\s*(.+)$/i,
           /\bpreco\s+(?:da|do|de)?\s*(.+)$/i,
           /\bvalor\s+(?:da|do|de)?\s*(.+)$/i,
           /\bquanto custa\s+(.+)$/i,
@@ -155,9 +158,13 @@ export class BulaApiService {
         intent: "purchase",
         patterns: [
           /\bquero\s+(.+)$/i,
+          /\bqueria\s+(?:de|da|do)?\s*(.+)$/i,
           /\bpreciso\s+(?:de|da|do)?\s*(.+)$/i,
           /\bvoces tem\s+(.+)$/i,
+          /\bvende(?:m)?\s+(.+)$/i,
+          /\bteria\s+(.+)$/i,
           /\btem\s+(.+)$/i,
+          /^(.+)\s+tem$/i,
         ],
       },
     ];
@@ -165,7 +172,9 @@ export class BulaApiService {
     for (const { intent, patterns } of intentPatterns) {
       for (const pattern of patterns) {
         const match = compact.match(pattern);
-        const medicineName = this.cleanMedicineName(match?.[1]);
+        const medicineName =
+          this.extractMedicineName(match?.[1] || "") ||
+          this.cleanMedicineName(match?.[1]);
 
         if (medicineName) {
           return { intent, medicineName };
@@ -173,10 +182,43 @@ export class BulaApiService {
       }
     }
 
+    const commercialIntent = this.detectCommercialIntent(message);
+    const medicineFromIntent = this.extractMedicineName(message);
+
+    if (commercialIntent && medicineFromIntent) {
+      return { intent: commercialIntent, medicineName: medicineFromIntent };
+    }
+
     const bareMedicine = this.detectBareMedicineName(compact);
     return bareMedicine
       ? { intent: "purchase", medicineName: bareMedicine }
       : null;
+  }
+
+  extractMedicineName(message: string) {
+    let cleaned = this.normalize(message)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\bvoces?\s+(?:tem|teriam|vendem)\b/g, " ")
+      .replace(/\bgostaria\s+(?:de|da|do)?\b/g, " ")
+      .replace(/\bqual\s+(?:o\s+)?(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
+      .replace(/\b(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
+      .replace(/\bquanto\s+custa\s+(?:a|o|um|uma)?\b/g, " ")
+      .replace(
+        /\b(?:tem|teria|vende|vendem|quero|queria|preciso)\s+(?:de|da|do)?\b/g,
+        " ",
+      )
+      .replace(/\bquanto\s+custa\b/g, " ")
+      .replace(/\b(?:qual|preco|valor)\b/g, " ")
+      .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
+      .replace(/\b(?:remedio|medicamento|produto)\b/g, " ")
+      .replace(/\b(?:da|do|de)\b/g, " ")
+      .replace(/\b(?:tem|teria|vende|vendem)$/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    cleaned = cleaned.replace(/^(?:a|o|um|uma)\s+/g, "").trim();
+
+    return cleaned.length >= 3 ? cleaned : null;
   }
 
   async lookupMedicine(
@@ -303,15 +345,7 @@ export class BulaApiService {
     }
 
     if (summary.options.length === 1) {
-      const option = summary.options[0];
-      return [
-        `Encontrei ${this.title(option.productName)} ${option.label}.`,
-        option.pricePf
-          ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-          : "Nao encontrei preco regulado para essa apresentacao.",
-        "",
-        "Quantas unidades voce deseja?",
-      ].join("\n");
+      return this.formatSelectedOptionReply(summary.options[0]);
     }
 
     const lines = [
@@ -320,9 +354,7 @@ export class BulaApiService {
     ];
 
     for (const option of summary.options.slice(0, 3)) {
-      lines.push(
-        `${option.optionId}. ${this.title(option.productName)} ${option.label}`,
-      );
+      lines.push(`${option.optionId}. ${option.label}`);
     }
 
     const optionNumbers = summary.options
@@ -339,15 +371,7 @@ export class BulaApiService {
     }
 
     if (summary.options.length === 1) {
-      const option = summary.options[0];
-      return [
-        `Encontrei ${this.title(option.productName)} ${option.label}.`,
-        option.pricePf
-          ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-          : "Nao encontrei preco regulado para essa apresentacao.",
-        "",
-        "Quantas unidades voce deseja?",
-      ].join("\n");
+      return this.formatSelectedOptionReply(summary.options[0]);
     }
 
     const lines = [
@@ -356,12 +380,28 @@ export class BulaApiService {
     ];
 
     for (const option of summary.options.slice(0, 3)) {
-      lines.push(
-        `${option.optionId}. ${this.title(option.productName)} ${option.label}`,
-      );
+      lines.push(`${option.optionId}. ${option.label}`);
     }
 
     lines.push("", "Qual voce prefere?");
+    return lines.join("\n");
+  }
+
+  formatSelectedOptionReply(option: CommercialMedicineOption) {
+    const lines = [`Perfeito, separei ${option.label}.`];
+
+    if (option.packageDescription) {
+      lines.push(`Embalagem: ${option.packageDescription}.`);
+    }
+
+    lines.push(
+      option.pricePf
+        ? `Valor: ${this.formatCurrency(option.pricePf)}.`
+        : "Nao encontrei preco regulado para essa apresentacao.",
+      "",
+      "Quantas unidades voce deseja?",
+    );
+
     return lines.join("\n");
   }
 
@@ -492,9 +532,10 @@ export class BulaApiService {
           presentationId: presentation.id,
           productName: product.name,
           medicineName: product.substance?.name || product.name,
-          label: this.formatOptionLabel(presentation),
+          label: this.formatCommercialOptionLabel(product, presentation),
           formGroup: this.getPresentationGroup(presentation),
           strength: presentation.strength,
+          packageDescription: this.formatPackageDescription(presentation),
           pricePf,
           selectionReason: productSelection?.reason,
         });
@@ -632,6 +673,95 @@ export class BulaApiService {
     return details || this.title(group);
   }
 
+  private formatCommercialOptionLabel(
+    product: BulaApiProduct,
+    presentation: BulaApiPresentation,
+  ) {
+    const productName = this.formatProductDisplayName(product);
+    const group = this.getPresentationGroup(presentation);
+    const strength = this.formatStrength(presentation.strength);
+    let presentationName = this.title(group);
+
+    if (group === "gotas" || group === "solucao oral") {
+      presentationName = "Gotas / solucao oral";
+    } else if (strength) {
+      presentationName = `${presentationName} ${strength}`;
+    }
+
+    return `${productName} ${presentationName}`.replace(/\s+/g, " ").trim();
+  }
+
+  private formatProductDisplayName(product: BulaApiProduct) {
+    const productName = this.normalize(product.name);
+
+    if (productName.includes("novalgina")) {
+      return "Novalgina";
+    }
+
+    if (this.isGenericProduct(product)) {
+      return "Dipirona generica";
+    }
+
+    return this.title(product.name);
+  }
+
+  private formatStrength(strength?: string) {
+    if (!strength) {
+      return "";
+    }
+
+    return strength
+      .toUpperCase()
+      .replace(/\s*MG\b/g, "mg")
+      .replace(/\s*G\b/g, "g")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private formatPackageDescription(presentation: BulaApiPresentation) {
+    const group = this.getPresentationGroup(presentation);
+
+    if (presentation.package_quantity && group !== "outro") {
+      const unitByGroup: Record<string, string> = {
+        comprimido: "comprimidos",
+        capsula: "capsulas",
+        gotas: "frasco",
+        "solucao oral": "frasco",
+        "suspensao oral": "frasco",
+        xarope: "frasco",
+        pomada: "unidade",
+        creme: "unidade",
+        gel: "unidade",
+        spray: "unidade",
+      };
+      const unit = unitByGroup[group] || "unidades";
+
+      if (unit === "frasco" || unit === "unidade") {
+        return `${presentation.package_quantity} ${unit}`;
+      }
+
+      return `caixa com ${presentation.package_quantity} ${unit}`;
+    }
+
+    if (!presentation.package_description) {
+      return undefined;
+    }
+
+    return this.humanizePackageDescription(presentation.package_description);
+  }
+
+  private humanizePackageDescription(value: string) {
+    return value
+      .toLowerCase()
+      .replace(/\bcx\b/g, "caixa")
+      .replace(/\bcom\b/g, "com")
+      .replace(/\bcomp\b/g, "comprimidos")
+      .replace(/\bcaps\b/g, "capsulas")
+      .replace(/\bfr\b/g, "frasco")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   private getPresentationGroup(presentation: BulaApiPresentation) {
     const text = this.normalize(this.presentationText(presentation));
 
@@ -715,7 +845,13 @@ export class BulaApiService {
       return null;
     }
 
-    const cleaned = value
+    const extracted = this.extractMedicineName(value);
+
+    if (extracted) {
+      return extracted;
+    }
+
+    const cleaned = this.normalize(value)
       .replace(
         /\b(por favor|pfv|pra mim|para mim|remedio|medicamento)\b/gi,
         " ",
@@ -724,6 +860,24 @@ export class BulaApiService {
       .trim();
 
     return cleaned.length >= 3 ? cleaned : null;
+  }
+
+  private detectCommercialIntent(message: string): MedicineIntent | null {
+    const normalized = this.normalize(message);
+
+    if (/\b(preco|valor|quanto custa)\b/.test(normalized)) {
+      return "price";
+    }
+
+    if (
+      /\b(tem|teria|vende|vendem|quero|queria|preciso|gostaria de)\b/.test(
+        normalized,
+      )
+    ) {
+      return "purchase";
+    }
+
+    return null;
   }
 
   private detectBareMedicineName(value: string) {

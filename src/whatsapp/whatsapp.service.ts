@@ -190,14 +190,7 @@ export class WhatsappService {
           },
         });
 
-        return [
-          `Perfeito, separei ${selectedOption.label}.`,
-          selectedOption.pricePf
-            ? `Valor: ${this.formatCurrency(selectedOption.pricePf)}.`
-            : "Nao encontrei preco regulado para essa apresentacao.",
-          "",
-          "Quantas unidades voce deseja?",
-        ].join("\n");
+        return this.bulaApiService.formatSelectedOptionReply(selectedOption);
       }
 
       this.logger.log("Intent detectada: PRESENTATION_SELECTION_INVALID");
