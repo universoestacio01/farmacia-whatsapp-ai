@@ -13,6 +13,7 @@ import {
 } from "../integrations/product-search-orchestrator.service";
 import { ViaCepAddress, ViaCepService } from "../integrations/via-cep.service";
 import { PrismaService } from "../prisma/prisma.service";
+import { formatProductDisplayName, WhatsappCopy } from "./whatsapp-copy";
 
 interface CartItem {
   type: "medicine" | "retail_product";
@@ -35,6 +36,13 @@ interface PendingAddress extends ViaCepAddress {
   number?: string;
 }
 
+type CommercialSelectionMode =
+  | "recommended"
+  | "cheapest"
+  | "generic"
+  | "larger"
+  | "smaller";
+
 @Injectable()
 export class ConversationEngineService {
   private readonly logger = new Logger(ConversationEngineService.name);
@@ -54,12 +62,12 @@ export class ConversationEngineService {
 
     if (this.isResetCommand(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Conversa reiniciada. Como posso ajudar você hoje?";
+      return WhatsappCopy.resetConversation();
     }
 
     if (this.isGlobalCancelRequest(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Atendimento cancelado. Se precisar, e so me chamar por aqui.";
+      return "Atendimento cancelado. Se precisar, é só me chamar por aqui.";
     }
 
     const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
@@ -69,6 +77,30 @@ export class ConversationEngineService {
       `Intencao detectada: ${medicineQuestion?.intent || "UNKNOWN"}`,
     );
     this.logger.log(`Medicamento extraido: ${extractedMedicine || "nenhum"}`);
+
+    if (conversation.lastIntent === "WAITING_REMOVE_ITEM") {
+      return this.handlePendingRemoveItem(conversation, text);
+    }
+
+    if (this.isBackRequest(text)) {
+      return this.handleBackRequest(conversation);
+    }
+
+    if (this.isRemoveItemRequest(text)) {
+      return this.handleRemoveItemRequest(conversation, text);
+    }
+
+    if (this.isSwapCartItemRequest(text)) {
+      return this.handleSwapCartItemRequest(conversation, text);
+    }
+
+    if (this.isViewCartRequest(text)) {
+      return this.formatCartStatus(conversation);
+    }
+
+    if (this.isFinalizeRequest(text)) {
+      return this.handleFinalizeRequest(conversation);
+    }
 
     if (this.isAddMoreRequest(text)) {
       this.logger.log("Carrinho mantido para adicionar mais itens");
@@ -85,6 +117,27 @@ export class ConversationEngineService {
       });
 
       return "Claro. Qual outro produto você deseja adicionar?";
+    }
+
+    if (
+      this.isCheapestRequest(text) ||
+      this.isRecommendationRequest(text) ||
+      this.isGenericRequest(text) ||
+      this.isLargerRequest(text) ||
+      this.isSmallerRequest(text)
+    ) {
+      const selected = await this.selectRecommendedCandidate(
+        conversation,
+        this.getCommercialSelectionMode(text),
+      );
+
+      if (!selected.startsWith("No momento não encontrei")) {
+        return selected;
+      }
+    }
+
+    if (this.isMoreOptionsRequest(text)) {
+      return this.handleMoreOptionsRequest(conversation);
     }
 
     const selectedOption = this.getSelectedOption(conversation);
@@ -148,7 +201,7 @@ export class ConversationEngineService {
       case ConversationState.WAITING_CONFIRMATION:
         return this.handleWaitingConfirmation(conversation, text);
       case ConversationState.WAITING_PIX:
-        return "O Pix esta sendo preparado. Se quiser reiniciar o atendimento, envie reset.";
+        return "O Pix está sendo preparado. Se quiser reiniciar o atendimento, envie reset.";
       case ConversationState.IDLE:
       default:
         return this.handleIdle(conversation, text, medicineQuestion);
@@ -242,9 +295,25 @@ export class ConversationEngineService {
       return "Tudo bem. Qual outro produto você deseja consultar?";
     }
 
+    if (conversation.lastIntent === "WAITING_DIAPER_SIZE") {
+      return this.handleRetailAttributeSelection(conversation, text, "tamanho");
+    }
+
+    if (conversation.lastIntent === "WAITING_SUNSCREEN_FPS") {
+      return this.handleRetailAttributeSelection(conversation, text, "FPS");
+    }
+
+    if (this.isRecommendationRequest(text) || this.isCheapestRequest(text)) {
+      return this.handleRetailProductQuestion(conversation.id, category, {
+        category,
+        selectedBrand: "qualquer marca",
+        preferCheapest: this.isCheapestRequest(text),
+      });
+    }
+
     const selectedBrand =
       conversation.lastIntent === "RETAIL_SIMILARS" &&
-      this.isPositiveConfirmation(text)
+      (this.isPositiveConfirmation(text) || this.isConfirmChoice(text))
         ? "qualquer marca"
         : this.productSearch.resolveBrandSelection(category, text);
 
@@ -264,11 +333,80 @@ export class ConversationEngineService {
     });
   }
 
+  private async handleMoreOptionsRequest(conversation: Conversation) {
+    const options = this.getCandidateOptions(conversation.candidateOptions);
+    const hasMedicineOptions = options.some(
+      (option) => option.type !== "retail_product",
+    );
+
+    if (hasMedicineOptions) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          pendingAction: ConversationState.WAITING_PRESENTATION,
+          selectedPresentation: Prisma.JsonNull,
+        },
+      });
+
+      return [
+        "Tenho estas opções disponíveis:",
+        "",
+        this.formatCandidateOptions(options),
+        "",
+        "Responda com o número da opção que você prefere.",
+      ].join("\n");
+    }
+
+    const selectedOption = this.getSelectedOption(conversation);
+    const category =
+      conversation.currentRetailCategory ||
+      (selectedOption?.type === "retail_product"
+        ? selectedOption.medicineName
+        : null);
+
+    if (!category) {
+      return "Claro. Qual produto você deseja ver?";
+    }
+
+    const brand = selectedOption?.brand || undefined;
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: "RETAIL_SIMILARS",
+        pendingAction: ConversationState.WAITING_RETAIL_BRAND,
+        currentRetailCategory: category,
+      },
+    });
+
+    return [
+      `Claro, vou procurar mais opções de ${formatProductDisplayName(category)}${brand ? ` ${formatProductDisplayName(brand)}` : ""} para você.`,
+      "",
+      WhatsappCopy.showSimilarOffer(category, brand),
+    ].join("\n");
+  }
+
   private async handleWaitingPresentation(
     conversation: Conversation,
     text: string,
     medicineQuestion: MedicineQuestion | null,
   ) {
+    if (this.isRejectionRequest(text) || this.isOpenChangeRequest(text)) {
+      return this.reopenCandidateOptions(conversation);
+    }
+
+    if (
+      this.isRecommendationRequest(text) ||
+      this.isCheapestRequest(text) ||
+      this.isGenericRequest(text) ||
+      this.isLargerRequest(text) ||
+      this.isSmallerRequest(text)
+    ) {
+      return this.selectRecommendedCandidate(
+        conversation,
+        this.getCommercialSelectionMode(text),
+      );
+    }
+
     if (this.productSearch.isRetailProductQuery(text)) {
       return this.handleRetailProductQuestion(conversation.id, text);
     }
@@ -280,7 +418,7 @@ export class ConversationEngineService {
     const selectedOption = await this.selectCandidateOption(conversation, text);
 
     if (!selectedOption) {
-      return "Nao consegui identificar a opcao. Responda com o numero da opcao ou diga comprimido, gotas, capsula ou xarope.";
+      return "Não consegui identificar a opção. Responda com o número da opção ou me diga qual apresentação você prefere.";
     }
 
     await this.saveSelectedOption(conversation.id, selectedOption);
@@ -288,10 +426,14 @@ export class ConversationEngineService {
   }
 
   private async handleWaitingQuantity(conversation: Conversation, text: string) {
+    if (this.isRejectionRequest(text) || this.isOpenChangeRequest(text)) {
+      return this.reopenCandidateOptions(conversation);
+    }
+
     const quantity = this.extractQuantity(text);
 
     if (!quantity) {
-      return "Quantas unidades você deseja? Pode responder apenas com o numero.";
+      return WhatsappCopy.askQuantity();
     }
 
     const selectedOption = this.getSelectedOption(conversation);
@@ -301,7 +443,7 @@ export class ConversationEngineService {
         where: { id: conversation.id },
         data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
       });
-      return "Perdi a opcao selecionada. Qual medicamento você deseja adicionar?";
+      return "Não encontrei a opção selecionada. Qual produto você deseja adicionar?";
     }
 
     const cart = this.getCart(conversation.cart);
@@ -321,21 +463,40 @@ export class ConversationEngineService {
       },
     });
 
-    return [
-      "Adicionei ao carrinho:",
-      item.name,
-      `Quantidade: ${quantity}`,
-      item.total !== undefined
-        ? `Subtotal: ${this.formatCurrency(item.total)}`
-        : "Subtotal: preco nao encontrado",
-      "",
-      "Deseja adicionar mais algum produto ou calcular a entrega?",
-    ].join("\n");
+    return WhatsappCopy.addedToCart(
+      item,
+      this.cartSubtotal(cart),
+      this.formatCurrency.bind(this),
+    );
   }
 
   private async handleWaitingCep(conversation: Conversation, text: string) {
+    if (this.isRejectionRequest(text) || this.isOpenChangeRequest(text)) {
+      return this.removeLastCartItemAndReopenOptions(conversation);
+    }
+
+    if (this.isAddMoreChoice(text)) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: "ADD_ITEM",
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return "Claro 😊 Qual produto você deseja adicionar?";
+    }
+
+    if (this.isDeliveryPriceQuestion(text)) {
+      return "Para calcular a entrega, me envie seu CEP. Pode mandar apenas os 8 dígitos.";
+    }
+
     if (this.isDeliveryRequest(text)) {
-      return "Perfeito. Qual o CEP para entrega?";
+      return WhatsappCopy.askCep();
     }
 
     const cep = this.extractCep(text);
@@ -349,16 +510,16 @@ export class ConversationEngineService {
               text,
               ConversationState.WAITING_CEP,
             )
-          : "Agora me envie o CEP para entrega.";
+          : WhatsappCopy.askCep();
       }
 
-      return "Agora me envie o CEP para entrega. Pode mandar apenas os 8 digitos.";
+      return "Agora me envie o CEP para entrega. Pode mandar apenas os 8 dígitos.";
     }
 
     const address = await this.viaCepService.findAddressByCep(cep);
 
     if (!address) {
-      return "Nao consegui localizar esse CEP. Pode conferir e enviar novamente?";
+      return "Não consegui localizar esse CEP. Pode conferir e enviar novamente?";
     }
 
     await this.prisma.conversation.update({
@@ -369,7 +530,9 @@ export class ConversationEngineService {
       },
     });
 
-    return `Encontrei: ${address.logradouro}, ${address.bairro}, ${address.localidade}-${address.uf}.\nQual o numero do endereco?`;
+    return WhatsappCopy.askAddressNumber(
+      `${address.logradouro}, ${address.bairro}, ${address.localidade}-${address.uf}`,
+    );
   }
 
   private async handleWaitingAddressNumber(
@@ -378,8 +541,8 @@ export class ConversationEngineService {
   ) {
     const number = text.trim();
 
-    if (!/\d+[a-zA-Z]?/.test(number)) {
-      return "Qual o numero do endereco?";
+    if (!this.isAddressNumber(number)) {
+      return "Qual o número do endereço?";
     }
 
     const pendingAddress = this.getPendingAddress(conversation.pendingAddress);
@@ -389,7 +552,7 @@ export class ConversationEngineService {
         where: { id: conversation.id },
         data: { pendingAction: ConversationState.WAITING_CEP },
       });
-      return "Nao encontrei o endereco anterior. Pode enviar o CEP novamente?";
+      return "Não encontrei o endereço anterior. Pode enviar o CEP novamente?";
     }
 
     const address = { ...pendingAddress, number };
@@ -408,7 +571,16 @@ export class ConversationEngineService {
     conversation: Conversation,
     text: string,
   ) {
-    if (this.isAddMoreRequest(text)) {
+    if (this.isPositiveConfirmation(text) || this.isConfirmChoice(text)) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.WAITING_PIX },
+      });
+
+      return "Pedido confirmado. Vou preparar o Pix para pagamento e te aviso por aqui.";
+    }
+
+    if (this.isAddMoreRequest(text) || this.isAddMoreConfirmationChoice(text)) {
       this.logger.log("Carrinho mantido para adicionar mais itens");
       await this.prisma.conversation.update({
         where: { id: conversation.id },
@@ -425,21 +597,12 @@ export class ConversationEngineService {
       return "Claro. Qual outro produto você deseja adicionar?";
     }
 
-    if (this.isPositiveConfirmation(text)) {
-      await this.prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { pendingAction: ConversationState.WAITING_PIX },
-      });
-
-      return "Pedido confirmado. Vou preparar o Pix para pagamento e te aviso por aqui.";
-    }
-
-    if (this.isGlobalCancelRequest(text)) {
+    if (this.isGlobalCancelRequest(text) || this.isCancelChoice(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Pedido cancelado. Se quiser recomecar, me diga o medicamento.";
+      return "Pedido cancelado. Se quiser recomeçar, é só me chamar por aqui.";
     }
 
-    return "Confirma o pedido? Responda SIM para gerar o Pix ou ADICIONAR para incluir mais produtos.";
+    return "Confirma o pedido?\n\n1. Confirmar\n2. Adicionar mais produtos\n3. Cancelar";
   }
 
   private async handleMedicineQuestion(
@@ -468,6 +631,10 @@ export class ConversationEngineService {
       return this.aiService.generatePharmacyReply(medicineName);
     }
 
+    if (this.isInformationalMedicineIntent(question.intent)) {
+      return this.formatMedicineInformationReply(question, summary);
+    }
+
     if (summary.products.length === 0 || summary.options.length === 0) {
       await this.prisma.conversation.update({
         where: { id: conversationId },
@@ -481,7 +648,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      return this.bulaApiService.formatNotFound(medicineName);
+      return WhatsappCopy.medicineNotFound();
     }
 
     const shouldAskQuantity = summary.options.length === 1;
@@ -518,14 +685,66 @@ export class ConversationEngineService {
   private async handleRetailProductQuestion(
     conversationId: string,
     message: string,
-    context?: { category?: string; selectedBrand?: string },
+    context?: {
+      category?: string;
+      selectedBrand?: string;
+      preferCheapest?: boolean;
+    },
   ) {
     const productQuery = this.extractRetailProductQuery(message);
     this.logger.log(`RETAIL PRODUCT QUERY: ${productQuery}`);
     const genericCategory =
       context?.category || this.productSearch.findGenericCategory(productQuery);
+    const effectiveCategory =
+      genericCategory || this.detectRetailCategoryFromQuery(productQuery);
 
-    if (genericCategory && !context?.selectedBrand) {
+    if (
+      effectiveCategory === "fralda" &&
+      !this.extractDiaperSize(productQuery) &&
+      !context?.selectedBrand
+    ) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          lastIntent: "WAITING_DIAPER_SIZE",
+          pendingAction: ConversationState.WAITING_RETAIL_BRAND,
+          currentMedicineQuery: productQuery,
+          currentRetailCategory: effectiveCategory,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return "Claro. Qual tamanho de fralda você precisa? Pode responder P, M, G, XG ou XXG.";
+    }
+
+    if (
+      effectiveCategory === "protetor solar" &&
+      !this.extractSunscreenFps(productQuery) &&
+      !context?.selectedBrand &&
+      !this.isOnlyGenericRetailCategoryQuery(productQuery, effectiveCategory)
+    ) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          lastIntent: "WAITING_SUNSCREEN_FPS",
+          pendingAction: ConversationState.WAITING_RETAIL_BRAND,
+          currentMedicineQuery: productQuery,
+          currentRetailCategory: effectiveCategory,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return "Claro. Qual FPS você prefere? Pode responder 30, 50, 60 ou 70.";
+    }
+
+    if (
+      effectiveCategory &&
+      effectiveCategory !== "gillette" &&
+      !context?.selectedBrand &&
+      this.isOnlyGenericRetailCategoryQuery(productQuery, effectiveCategory)
+    ) {
       this.logger.log("RETAIL GENERIC CATEGORY DETECTED");
       this.logger.log("WAITING RETAIL BRAND");
 
@@ -535,13 +754,13 @@ export class ConversationEngineService {
           lastIntent: "RETAIL_PRODUCT",
           pendingAction: ConversationState.WAITING_RETAIL_BRAND,
           currentMedicineQuery: null,
-          currentRetailCategory: genericCategory,
+          currentRetailCategory: effectiveCategory,
           selectedPresentation: Prisma.JsonNull,
           candidateOptions: Prisma.JsonNull,
         },
       });
 
-      return this.formatRetailBrandPrompt(genericCategory);
+      return this.formatRetailBrandPrompt(effectiveCategory);
     }
 
     await this.prisma.conversation.update({
@@ -549,7 +768,7 @@ export class ConversationEngineService {
       data: {
         lastIntent: "RETAIL_PRODUCT",
         currentMedicineQuery: productQuery,
-        currentRetailCategory: genericCategory || null,
+        currentRetailCategory: effectiveCategory || null,
         selectedPresentation: Prisma.JsonNull,
         candidateOptions: Prisma.JsonNull,
       },
@@ -557,25 +776,28 @@ export class ConversationEngineService {
     this.logger.log("Contexto anterior limpo");
 
     const summary = await this.productSearch.searchProducts(productQuery);
+    const orderedSummary = context?.preferCheapest
+      ? this.sortSummaryByCheapest(summary)
+      : summary;
 
-    if (summary.options.length === 0) {
+    if (orderedSummary.options.length === 0) {
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
           lastIntent: "RETAIL_PRODUCT",
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
           currentMedicineQuery: productQuery,
-          currentRetailCategory: summary.category || genericCategory || null,
+          currentRetailCategory: orderedSummary.category || effectiveCategory || null,
           selectedPresentation: Prisma.JsonNull,
           candidateOptions: Prisma.JsonNull,
         },
       });
 
-      return "Nao localizei esse produto no momento. Pode confirmar o nome ou enviar outra opcao?";
+      return WhatsappCopy.productNotFound(productQuery);
     }
 
-    const shouldAskQuantity = summary.options.length === 1;
-    const selectedOption = shouldAskQuantity ? summary.options[0] : null;
+    const shouldAskQuantity = orderedSummary.options.length === 1;
+    const selectedOption = shouldAskQuantity ? orderedSummary.options[0] : null;
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -586,8 +808,8 @@ export class ConversationEngineService {
           : ConversationState.WAITING_PRESENTATION,
         lastMedicine: productQuery,
         currentMedicineQuery: productQuery,
-        currentRetailCategory: summary.category || genericCategory || null,
-        candidateOptions: this.toJson(summary.options),
+        currentRetailCategory: orderedSummary.category || effectiveCategory || null,
+        candidateOptions: this.toJson(orderedSummary.options),
         selectedPresentation: selectedOption
           ? this.toJson(selectedOption)
           : Prisma.JsonNull,
@@ -599,36 +821,455 @@ export class ConversationEngineService {
       return this.formatSelectedOptionReply(selectedOption);
     }
 
-    return this.formatRetailProductChoiceReply(summary);
+    return this.formatRetailProductChoiceReply(orderedSummary);
+  }
+
+  private async handleRetailAttributeSelection(
+    conversation: Conversation,
+    text: string,
+    attributeName: "tamanho" | "FPS",
+  ) {
+    const baseQuery =
+      conversation.currentMedicineQuery || conversation.currentRetailCategory || "";
+    const attributeValue =
+      attributeName === "tamanho"
+        ? this.extractDiaperSize(text)
+        : this.extractSunscreenFps(text);
+
+    if (!attributeValue) {
+      return attributeName === "tamanho"
+        ? "Qual tamanho de fralda você precisa? Pode responder P, M, G, XG ou XXG."
+        : "Qual FPS você prefere? Pode responder 30, 50, 60 ou 70.";
+    }
+
+    const query = `${baseQuery} ${attributeName} ${attributeValue}`;
+    return this.handleRetailProductQuestion(conversation.id, query, {
+      category: conversation.currentRetailCategory || undefined,
+      selectedBrand: "atributo confirmado",
+    });
+  }
+
+  private async handleFinalizeRequest(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length === 0) {
+      return "Seu carrinho ainda está vazio. Qual produto você deseja pedir?";
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { pendingAction: ConversationState.WAITING_CEP },
+    });
+
+    return [
+      this.formatCartStatus(conversation),
+      "",
+      "Para calcular a entrega e finalizar, me envie seu CEP. Pode mandar apenas os 8 dígitos.",
+    ].join("\n");
+  }
+
+  private formatCartStatus(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length === 0) {
+      return "Seu carrinho ainda está vazio. Qual produto você deseja pedir?";
+    }
+
+    return [
+      "Seu carrinho:",
+      "",
+      this.formatCartLines(cart),
+      "",
+      `Subtotal: ${this.formatCurrency(this.cartSubtotal(cart))}`,
+      "",
+      "Para finalizar, responda finalizar.",
+    ].join("\n");
+  }
+
+  private async handleRemoveItemRequest(conversation: Conversation, text: string) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length === 0) {
+      return "Seu carrinho ainda está vazio. Qual produto você deseja pedir?";
+    }
+
+    const itemNumber = this.extractCartItemNumber(text);
+
+    if (!itemNumber) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastIntent: "WAITING_REMOVE_ITEM" },
+      });
+
+      return [
+        "Qual item você deseja remover?",
+        "",
+        this.formatCartLines(cart),
+        "",
+        "Responda com o número do item.",
+      ].join("\n");
+    }
+
+    return this.removeCartItemByNumber(conversation, itemNumber);
+  }
+
+  private async handlePendingRemoveItem(conversation: Conversation, text: string) {
+    const itemNumber = this.extractCartItemNumber(text);
+
+    if (!itemNumber) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastIntent: null },
+      });
+
+      return "Não consegui identificar o item. Para remover, envie remover item 1, por exemplo.";
+    }
+
+    return this.removeCartItemByNumber(conversation, itemNumber);
+  }
+
+  private async removeCartItemByNumber(
+    conversation: Conversation,
+    itemNumber: number,
+  ) {
+    const cart = this.getCart(conversation.cart);
+    const index = itemNumber - 1;
+
+    if (!cart[index]) {
+      return [
+        "Não encontrei esse item no carrinho.",
+        "",
+        this.formatCartStatus(conversation),
+      ].join("\n");
+    }
+
+    const [removed] = cart.splice(index, 1);
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        cart: cart.length > 0 ? this.toJson(cart) : Prisma.JsonNull,
+        lastIntent: null,
+        pendingAction:
+          cart.length > 0
+            ? conversation.pendingAction
+            : ConversationState.WAITING_MEDICINE_NAME,
+      },
+    });
+
+    if (cart.length === 0) {
+      return `Removi ${formatProductDisplayName(removed.name)} do carrinho. Seu carrinho ficou vazio. Qual produto você deseja pedir?`;
+    }
+
+    return [
+      `Removi ${formatProductDisplayName(removed.name)} do carrinho.`,
+      "",
+      "Carrinho atualizado:",
+      "",
+      this.formatCartLines(cart),
+      "",
+      `Subtotal: ${this.formatCurrency(this.cartSubtotal(cart))}`,
+    ].join("\n");
+  }
+
+  private async handleSwapCartItemRequest(
+    conversation: Conversation,
+    text: string,
+  ) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length === 0) {
+      return "Seu carrinho ainda está vazio. Qual produto você deseja pedir?";
+    }
+
+    const itemNumber = this.extractCartItemNumber(text);
+
+    if (itemNumber) {
+      await this.removeCartItemByNumber(conversation, itemNumber);
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: "SWAP_ITEM",
+        pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        currentMedicineQuery: null,
+        currentRetailCategory: null,
+        selectedPresentation: Prisma.JsonNull,
+        candidateOptions: Prisma.JsonNull,
+      },
+    });
+
+    return itemNumber
+      ? "Certo, removi esse item. Qual produto você quer colocar no lugar?"
+      : "Claro. Qual produto você quer trocar ou adicionar no lugar?";
+  }
+
+  private async handleBackRequest(conversation: Conversation) {
+    if (
+      conversation.pendingAction === ConversationState.WAITING_QUANTITY ||
+      conversation.pendingAction === ConversationState.WAITING_PRESENTATION
+    ) {
+      return this.reopenCandidateOptions(conversation);
+    }
+
+    if (
+      conversation.pendingAction === ConversationState.WAITING_ADDRESS_NUMBER ||
+      conversation.pendingAction === ConversationState.WAITING_CONFIRMATION
+    ) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.WAITING_CEP },
+      });
+
+      return "Tudo bem. Envie o CEP novamente ou responda ver carrinho.";
+    }
+
+    if (conversation.pendingAction === ConversationState.WAITING_CEP) {
+      return this.formatCartStatus(conversation);
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        selectedPresentation: Prisma.JsonNull,
+      },
+    });
+
+    return "Tudo bem. Qual produto você deseja consultar?";
+  }
+
+  private async reopenCandidateOptions(conversation: Conversation) {
+    const options = this.getCandidateOptions(conversation.candidateOptions);
+
+    if (options.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
+      });
+
+      return "Tudo bem. Qual outro produto você deseja consultar?";
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        pendingAction: ConversationState.WAITING_PRESENTATION,
+        selectedPresentation: Prisma.JsonNull,
+      },
+    });
+
+    return [
+      "Sem problema. Estas são as opções disponíveis:",
+      "",
+      this.formatCandidateOptions(options),
+      "",
+      "Responda com o número da opção que você prefere.",
+    ].join("\n");
+  }
+
+  private async removeLastCartItemAndReopenOptions(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length > 0) {
+      cart.pop();
+    }
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { cart: this.toJson(cart) },
+    });
+
+    const reopened = await this.reopenCandidateOptions(conversation);
+    return [
+      "Sem problema, removi o último item do carrinho para você trocar.",
+      "",
+      reopened,
+    ].join("\n");
+  }
+
+  private async selectRecommendedCandidate(
+    conversation: Conversation,
+    mode: CommercialSelectionMode,
+  ) {
+    const options = this.getCandidateOptions(conversation.candidateOptions);
+    const option = this.pickRecommendedOption(options, mode);
+
+    if (!option) {
+      return "No momento não encontrei outra opção para recomendar. Pode me dizer qual produto você prefere?";
+    }
+
+    const pricedOption = await this.ensureSelectedOptionPrice(option);
+    await this.saveSelectedOption(conversation.id, pricedOption);
+
+    const reasonByMode: Record<CommercialSelectionMode, string> = {
+      recommended: "A opção mais indicada para seguir agora é:",
+      cheapest: "A opção com menor valor que encontrei é:",
+      generic: "A opção genérica que encontrei é:",
+      larger: "A opção maior que encontrei é:",
+      smaller: "A opção menor que encontrei é:",
+    };
+
+    return [
+      reasonByMode[mode],
+      "",
+      `${formatProductDisplayName(pricedOption.label)}${pricedOption.pricePf ? ` - ${this.formatCurrency(pricedOption.pricePf)}` : ""}`,
+      "",
+      this.formatSelectedOptionReply(pricedOption),
+    ].join("\n");
+  }
+
+  private pickRecommendedOption(
+    options: CommercialMedicineOption[],
+    mode: CommercialSelectionMode,
+  ) {
+    if (options.length === 0) {
+      return null;
+    }
+
+    if (mode === "generic") {
+      const genericOption = options.find((option) =>
+        /\bgen[eé]ric[ao]\b/.test(this.normalize(option.label)),
+      );
+
+      if (genericOption) {
+        return genericOption;
+      }
+    }
+
+    if (mode === "larger" || mode === "smaller") {
+      const sorted = [...options].sort((a, b) => {
+        const diff = this.getOptionSizeScore(a) - this.getOptionSizeScore(b);
+        return mode === "larger" ? -diff : diff;
+      });
+
+      return sorted[0];
+    }
+
+    if (mode === "cheapest") {
+      return [...options].sort(
+        (a, b) => (a.pricePf ?? Number.MAX_SAFE_INTEGER) - (b.pricePf ?? Number.MAX_SAFE_INTEGER),
+      )[0];
+    }
+
+    return options[0];
+  }
+
+  private sortSummaryByCheapest(summary: RetailProductLookupSummary) {
+    return {
+      ...summary,
+      options: [...summary.options].sort(
+        (a, b) => (a.pricePf ?? Number.MAX_SAFE_INTEGER) - (b.pricePf ?? Number.MAX_SAFE_INTEGER),
+      ),
+    };
+  }
+
+  private getOptionSizeScore(option: CommercialMedicineOption) {
+    const text = this.normalize(
+      [
+        option.label,
+        option.packageDescription,
+        option.description,
+        option.strength,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const matches = [...text.matchAll(/\b(\d+(?:[,.]\d+)?)\s*(ml|g|mg|un|und|comprimidos?|capsulas?|cápsulas?|fraldas?)\b/g)];
+
+    if (matches.length === 0) {
+      return option.optionId;
+    }
+
+    return matches.reduce((score, match) => {
+      const value = Number(String(match[1]).replace(",", "."));
+      const unit = match[2];
+      const multiplier =
+        unit === "mg" ? 0.001 : unit === "un" || unit === "und" ? 10 : 1;
+      return score + value * multiplier;
+    }, 0);
+  }
+
+  private formatCandidateOptions(options: CommercialMedicineOption[]) {
+    return options
+      .slice(0, 3)
+      .map((option) => {
+        const price = option.pricePf
+          ? ` - ${this.formatCurrency(option.pricePf)}`
+          : "";
+        return `${option.optionId}. ${formatProductDisplayName(option.label)}${price}`;
+      })
+      .join("\n");
+  }
+
+  private formatMedicineInformationReply(
+    question: MedicineQuestion,
+    summary: { medicineName: string; options: CommercialMedicineOption[] },
+  ) {
+    const option = summary.options[0];
+    const medicineName = formatProductDisplayName(
+      option?.medicineName || question.medicineName,
+    );
+    const presentation = option
+      ? formatProductDisplayName(option.label)
+      : medicineName;
+    const safetyNote =
+      "Essa informação é resumida e não substitui a orientação do farmacêutico ou do médico.";
+
+    if (question.intent === "contraindication") {
+      return [
+        `Sobre ${medicineName}: confirme contraindicações diretamente na bula e com o farmacêutico, principalmente em caso de alergia, gestação, crianças, idosos ou uso de outros medicamentos.`,
+        "",
+        safetyNote,
+        "",
+        `Também posso consultar opções de ${medicineName} para compra, se desejar.`,
+      ].join("\n");
+    }
+
+    if (question.intent === "dosage") {
+      return [
+        `Sobre posologia de ${medicineName}: a forma de uso depende da apresentação, idade e orientação profissional.`,
+        option?.packageDescription ? `Apresentação localizada: ${presentation}.` : "",
+        "",
+        safetyNote,
+        "",
+        `Se quiser comprar, posso seguir com ${presentation}.`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    if (question.intent === "composition") {
+      return [
+        `Sobre composição de ${medicineName}: encontrei ${presentation}.`,
+        "Para composição completa, confirme na bula da embalagem ou com o farmacêutico.",
+        "",
+        safetyNote,
+      ].join("\n");
+    }
+
+    return [
+      `Encontrei ${presentation}.`,
+      "Posso te ajudar com um resumo objetivo, mas não envio a bula completa por aqui.",
+      "",
+      safetyNote,
+      "",
+      `Se quiser comprar, responda comprar ${medicineName}.`,
+    ].join("\n");
   }
 
   private formatRetailProductChoiceReply(summary: RetailProductLookupSummary) {
-    const lines = [`Encontrei opcoes de ${summary.query}:`, ""];
-
-    for (const option of summary.options.slice(0, 3)) {
-      lines.push(
-        `${option.optionId}. ${option.label} - ${this.formatCurrency(option.pricePf)}`,
-      );
-    }
-
-    lines.push("", "Responda o numero da opcao.");
-
-    return lines.join("\n");
+    return WhatsappCopy.showRetailOptions(
+      summary.category,
+      summary.requestedBrand,
+      summary.options,
+      this.formatCurrency.bind(this),
+    );
   }
 
   private formatRetailBrandPrompt(category: string) {
     const brands = this.productSearch.getPopularBrands(category).slice(0, 5);
-    const lines = ["Tem alguma marca de preferencia?", ""];
-
-    if (brands.length > 0) {
-      lines.push("Opcoes comuns:");
-      brands.forEach((brand, index) => lines.push(`${index + 1}. ${brand}`));
-      lines.push(`${brands.length + 1}. Qualquer marca`);
-    } else {
-      lines.push("Pode me dizer a marca ou responder qualquer marca.");
-    }
-
-    return lines.join("\n");
+    return WhatsappCopy.askRetailBrand(category, brands);
   }
 
   private extractRetailProductQuery(message: string) {
@@ -645,6 +1286,46 @@ export class ConversationEngineService {
     return normalized.length >= 2 ? normalized : message.trim();
   }
 
+  private isOnlyGenericRetailCategoryQuery(query: string, category: string) {
+    const normalizedQuery = this.normalize(query)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalizedCategory = this.normalize(category);
+    const genericTerms: Record<string, string[]> = {
+      shampoo: ["shampoo", "xampu"],
+      condicionador: ["condicionador"],
+      sabonete: ["sabonete"],
+      desodorante: ["desodorante"],
+      fralda: ["fralda", "fraldas"],
+      gillette: ["gillette", "gilete"],
+      "creme dental": ["creme dental", "pasta de dente"],
+      "protetor solar": ["protetor solar"],
+    };
+
+    return (genericTerms[normalizedCategory] || [normalizedCategory]).includes(
+      normalizedQuery,
+    );
+  }
+
+  private detectRetailCategoryFromQuery(query: string) {
+    const normalized = this.normalize(query);
+
+    if (/\b(fralda|fraldas|pampers|huggies|mamy poko|mamypoko)\b/.test(normalized)) {
+      return "fralda";
+    }
+
+    if (/\b(protetor solar|fps|sundown|la roche|neutrogena|nivea)\b/.test(normalized)) {
+      return "protetor solar";
+    }
+
+    if (/\b(gillette|gilete|prestobarba|mach3|aparelho de barbear|lamina de barbear)\b/.test(normalized)) {
+      return "gillette";
+    }
+
+    return null;
+  }
+
   private async changeSelectedOption(conversation: Conversation, text: string) {
     const selectedOption = await this.selectCandidateOption(conversation, text);
 
@@ -654,19 +1335,7 @@ export class ConversationEngineService {
 
     await this.saveSelectedOption(conversation.id, selectedOption);
 
-    return [
-      `Sem problema, alterei para ${selectedOption.label}.`,
-      selectedOption.packageDescription
-        ? `Embalagem: ${selectedOption.packageDescription}.`
-        : null,
-      selectedOption.pricePf
-        ? `Valor: ${this.formatCurrency(selectedOption.pricePf)}.`
-        : this.formatMissingPrice(selectedOption),
-      "",
-      "Quantas unidades você deseja?",
-    ]
-      .filter((line) => line !== null)
-      .join("\n");
+    return this.formatSelectedOptionReply(selectedOption);
   }
 
   private async selectCandidateOption(conversation: Conversation, text: string) {
@@ -691,7 +1360,7 @@ export class ConversationEngineService {
     }
 
     const pricedOption = await this.ensureSelectedOptionPrice(option);
-    this.logger.log(`Opcao escolhida: ${pricedOption.label}`);
+    this.logger.log(`Opção escolhida: ${pricedOption.label}`);
     if (pricedOption.type === "retail_product") {
       this.logger.log(`RETAIL PRODUCT SELECTED: ${pricedOption.label}`);
     }
@@ -713,24 +1382,16 @@ export class ConversationEngineService {
 
   private formatSelectedOptionReply(option: CommercialMedicineOption) {
     if (option.type !== "retail_product") {
-      return this.bulaApiService.formatSelectedOptionReply(option);
+      return WhatsappCopy.confirmMedicineSelection(
+        option,
+        this.formatCurrency.bind(this),
+      );
     }
 
-    const lines = [`Perfeito, separei ${option.label}.`];
-
-    if (option.packageDescription) {
-      lines.push(`Detalhe: ${option.packageDescription}.`);
-    }
-
-    lines.push(
-      option.pricePf
-        ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-        : this.formatMissingPrice(option),
-      "",
-      "Quantas unidades voce deseja?",
+    return WhatsappCopy.confirmRetailSelection(
+      option,
+      this.formatCurrency.bind(this),
     );
-
-    return lines.join("\n");
   }
 
   private findRetailOptionByReply(
@@ -759,7 +1420,7 @@ export class ConversationEngineService {
   private formatMissingPrice(option: CommercialMedicineOption) {
     return option.type === "retail_product"
       ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-      : "Nao encontrei preco regulado para essa apresentacao.";
+      : "Não encontrei preço regulado para essa apresentação.";
   }
 
   private async saveSelectedOption(
@@ -792,15 +1453,15 @@ export class ConversationEngineService {
     ) {
       answer = option.packageDescription
         ? `A embalagem selecionada vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
-        : "Nao encontrei a embalagem detalhada dessa apresentacao.";
+        : "Não encontrei a embalagem detalhada dessa apresentação.";
     } else if (
       /\b(comprimido|comprimidos|capsula|capsulas|gotas)\b/.test(normalized)
     ) {
-      answer = `A apresentacao selecionada é ${option.formGroup}.`;
+      answer = `A apresentação selecionada é ${this.formatPresentationText(option.formGroup)}.`;
     } else {
       answer = option.packageDescription
         ? `A embalagem selecionada vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
-        : "Nao encontrei a embalagem detalhada dessa apresentacao.";
+        : "Não encontrei a embalagem detalhada dessa apresentação.";
     }
 
     return [answer, "", this.repeatStatePrompt(state)].join("\n");
@@ -823,22 +1484,16 @@ export class ConversationEngineService {
   ) {
     const cart = this.getCart(conversation.cart);
     const subtotal = this.cartSubtotal(cart);
-    const deadline = this.isCapital(address.localidade)
-      ? "até 30 minutos"
-      : "até 1 hora";
+    const deliveryFee = 0;
+    const addressText = `${address.logradouro}, número ${address.number}, ${address.bairro}, ${address.localidade}/${address.uf}`;
 
-    return [
-      "Resumo do pedido:",
+    return WhatsappCopy.orderConfirmation(
       this.formatCartLines(cart),
-      "",
-      "Entrega:",
-      `${address.logradouro}, numero ${address.number}, ${address.bairro}, ${address.localidade}/${address.uf}`,
-      `Prazo estimado: ${deadline}`,
-      "",
-      `Total: ${this.formatCurrency(subtotal)}`,
-      "",
-      "Confirma o pedido? Responda SIM para gerar o Pix ou ADICIONAR para incluir mais produtos.",
-    ].join("\n");
+      subtotal,
+      deliveryFee,
+      addressText,
+      this.formatCurrency.bind(this),
+    );
   }
 
   private buildCartItem(
@@ -851,7 +1506,7 @@ export class ConversationEngineService {
     return {
       type: option.type || "medicine",
       medicineName: option.medicineName,
-      name: option.label,
+      name: formatProductDisplayName(option.label),
       brand: option.brand,
       form: option.formGroup,
       presentation: option.packageDescription,
@@ -873,12 +1528,11 @@ export class ConversationEngineService {
 
     return cart
       .map((item, index) => {
-        const packageText = item.packageInfo ? ` - ${item.packageInfo}` : "";
         const total =
           item.total !== undefined
             ? this.formatCurrency(item.total)
-            : "preco nao encontrado";
-        return `${index + 1}. ${item.name}${packageText}\nQuantidade: ${item.quantity} un\nValor: ${total}`;
+            : this.formatCurrency(0);
+        return `${index + 1}. ${formatProductDisplayName(item.name)} - ${item.quantity} un - ${total}`;
       })
       .join("\n\n");
   }
@@ -975,15 +1629,15 @@ export class ConversationEngineService {
 
   private repeatStatePrompt(state: ConversationState) {
     if (state === ConversationState.WAITING_QUANTITY) {
-      return "Quantas unidades você deseja?";
+      return WhatsappCopy.askQuantity();
     }
 
     if (state === ConversationState.WAITING_CEP) {
-      return "Agora me envie o CEP para entrega.";
+      return WhatsappCopy.askCep();
     }
 
     if (state === ConversationState.WAITING_CONFIRMATION) {
-      return "Confirma o pedido? Responda SIM para gerar o Pix ou ADICIONAR para incluir mais produtos.";
+      return "Confirma o pedido?\n\n1. Confirmar\n2. Adicionar mais produtos\n3. Cancelar";
     }
 
     return "Como posso ajudar?";
@@ -1032,6 +1686,110 @@ export class ConversationEngineService {
     );
   }
 
+  private isViewCartRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(ver carrinho|carrinho|meu carrinho|mostrar carrinho|resumo do pedido)$/.test(
+      normalized,
+    );
+  }
+
+  private isRemoveItemRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(remover|remove|tirar|excluir|apagar)\b.*\b(item|produto|carrinho)?\b/.test(
+      normalized,
+    );
+  }
+
+  private isSwapCartItemRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(trocar item|trocar produto|substituir item|substituir produto)\b/.test(
+      normalized,
+    );
+  }
+
+  private isBackRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(voltar|volta|anterior|menu anterior)$/.test(normalized);
+  }
+
+  private isFinalizeRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(finalizar|fechar pedido|concluir pedido|calcular entrega e finalizar|quero finalizar)$/.test(
+      normalized,
+    );
+  }
+
+  private isRecommendationRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(recomenda|indicad[ao]|melhor opcao|melhor opção|mais vendid[ao])\b/.test(
+      normalized,
+    );
+  }
+
+  private isCheapestRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(mais barato|menor preco|menor valor|preco menor|valor menor|mais em conta|mais economico)\b/.test(
+      normalized,
+    );
+  }
+
+  private isGenericRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(generico|gen[eé]rico|tem generico|tem gen[eé]rico)\b/.test(
+      normalized,
+    );
+  }
+
+  private isLargerRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(tem maior|maior embalagem|embalagem maior|maior quantidade|frasco maior|pacote maior)\b/.test(
+      normalized,
+    );
+  }
+
+  private isSmallerRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(tem menor|menor embalagem|embalagem menor|menor quantidade|frasco menor|pacote menor)\b/.test(
+      normalized,
+    );
+  }
+
+  private getCommercialSelectionMode(text: string): CommercialSelectionMode {
+    if (this.isCheapestRequest(text)) return "cheapest";
+    if (this.isGenericRequest(text)) return "generic";
+    if (this.isLargerRequest(text)) return "larger";
+    if (this.isSmallerRequest(text)) return "smaller";
+    return "recommended";
+  }
+
+  private isRejectionRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(nao gostei|não gostei|nao quero esse|não quero esse|tem outro|tem outra|outra opcao|outra opção)$/.test(
+      normalized,
+    );
+  }
+
+  private isOpenChangeRequest(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(quero trocar|trocar|troca|mudar|quero mudar|ver opcoes|ver opções)$/.test(
+      normalized,
+    );
+  }
+
+  private isMoreOptionsRequest(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(tem outros|tem outro modelo|tem outros modelos|outro modelo|outros modelos|mais opcoes|ver mais|quero ver outros|mostra mais|outras opcoes|outra marca|outras marcas|tem similar|similares)\b/.test(
+      normalized,
+    );
+  }
+
+  private isDeliveryPriceQuestion(text: string) {
+    const normalized = this.normalize(text);
+    return /\b(quanto fica a entrega|valor da entrega|preco da entrega|taxa de entrega|frete)\b/.test(
+      normalized,
+    );
+  }
+
   private isPriceQuestion(text: string) {
     const normalized = this.normalize(text);
     return /\b(qual valor|quanto custa|preco|valor)\b/.test(normalized);
@@ -1065,9 +1823,37 @@ export class ConversationEngineService {
     );
   }
 
+  private isAddMoreChoice(text: string) {
+    const normalized = this.normalize(text).trim();
+    return (
+      normalized === "1" ||
+      /^(adicionar|adicionar mais|mais produtos)$/.test(normalized)
+    );
+  }
+
+  private isAddMoreConfirmationChoice(text: string) {
+    const normalized = this.normalize(text).trim();
+    return (
+      normalized === "2" ||
+      /^(adicionar|adicionar mais|mais produtos|adicionar mais produtos)$/.test(
+        normalized,
+      )
+    );
+  }
+
   private isDeliveryRequest(text: string) {
     const normalized = this.normalize(text).trim();
-    return /^(calcular entrega|entrega|finalizar|nao|não)$/.test(normalized);
+    return /^(2|calcular entrega|entrega|finalizar|calcular entrega e finalizar pedido|nao|não)$/.test(
+      normalized,
+    );
+  }
+
+  private isConfirmChoice(text: string) {
+    return this.normalize(text).trim() === "1";
+  }
+
+  private isCancelChoice(text: string) {
+    return this.normalize(text).trim() === "3";
   }
 
   private isPositiveConfirmation(text: string) {
@@ -1080,6 +1866,38 @@ export class ConversationEngineService {
   private isNegativeReply(text: string) {
     const normalized = this.normalize(text).trim();
     return /^(nao|não|n)$/.test(normalized);
+  }
+
+  private isInformationalMedicineIntent(intent: string) {
+    return ["leaflet", "contraindication", "composition", "dosage"].includes(
+      intent,
+    );
+  }
+
+  private isAddressNumber(value: string) {
+    const normalized = this.normalize(value).trim();
+    return /\d+[a-zA-Z]?/.test(value) || /^(s\/n|sn|sem numero|sem número)$/.test(normalized);
+  }
+
+  private extractDiaperSize(text: string) {
+    const normalized = this.normalize(text).toUpperCase();
+    const match = normalized.match(/\b(RN|XXG|XG|GG|G|M|P)\b/);
+    return match?.[1] || null;
+  }
+
+  private extractSunscreenFps(text: string) {
+    const normalized = this.normalize(text);
+    const match = normalized.match(/\b(?:fps\s*)?(30|50|60|70|80|90|99|100)\b/);
+    return match?.[1] || null;
+  }
+
+  private extractCartItemNumber(text: string) {
+    const normalized = this.normalize(text);
+    const match = normalized.match(
+      /\b(?:item|produto)?\s*(\d+)\b|\b(?:remover|tirar|excluir|trocar)\s+(\d+)\b/,
+    );
+    const value = match ? Number(match[1] || match[2]) : null;
+    return value && value > 0 ? value : null;
   }
 
   private isCapital(city?: string) {
@@ -1117,6 +1935,20 @@ export class ConversationEngineService {
 
   private capitalize(value: string) {
     return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  private formatPresentationText(value: string) {
+    const normalized = this.normalize(value);
+    const labels: Record<string, string> = {
+      capsula: "cápsula",
+      capsulas: "cápsulas",
+      "solucao oral": "solução oral",
+      "suspensao oral": "suspensão oral",
+      "solucao nasal": "solução nasal",
+      dragea: "drágea",
+    };
+
+    return labels[normalized] || value;
   }
 
   private normalize(value: string) {

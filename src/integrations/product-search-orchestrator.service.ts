@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
+import { formatProductDisplayName } from "../whatsapp/whatsapp-copy";
 import { CommercialMedicineOption } from "./bula-api.service";
 import { CosmosService } from "./cosmos.service";
 import { ManualRetailProductService } from "./manual-retail-product.service";
@@ -52,6 +53,22 @@ export class ProductSearchOrchestratorService {
     const allowKits = this.allowsKits(query);
     let products: NormalizedRetailProduct[] = [];
 
+    if (category && this.isGenericCategoryQuery(query, category) && !requestedBrand) {
+      const manualProducts = await this.getManualFallbackProducts(
+        query,
+        category,
+        requestedBrand,
+      );
+
+      return {
+        query,
+        category,
+        requestedBrand: undefined,
+        options: this.toCommercialOptions(manualProducts).slice(0, 3),
+        manualFallback: true,
+      };
+    }
+
     try {
       if (gtin) {
         const product = await this.cosmosService.findByGtin(gtin);
@@ -81,7 +98,7 @@ export class ProductSearchOrchestratorService {
 
       if (selectedProducts.length === 0 && category) {
         this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
-        selectedProducts = this.getManualFallbackProducts(
+        selectedProducts = await this.getManualFallbackProducts(
           query,
           category,
           requestedBrand,
@@ -99,7 +116,7 @@ export class ProductSearchOrchestratorService {
     }
 
     this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
-    const manualProducts = this.getManualFallbackProducts(
+    const manualProducts = await this.getManualFallbackProducts(
       query,
       category,
       requestedBrand,
@@ -269,7 +286,7 @@ export class ProductSearchOrchestratorService {
 
   private formatLabel(product: NormalizedRetailProduct) {
     const label = product.displayName || product.productName;
-    return label.replace(/\s+/g, " ").trim();
+    return formatProductDisplayName(label.replace(/\s+/g, " ").trim());
   }
 
   private findCategoryForQuery(query: string) {
@@ -282,6 +299,16 @@ export class ProductSearchOrchestratorService {
 
     const key = this.manualRetailProductService.findCatalogKey(query);
     return key || null;
+  }
+
+  private isGenericCategoryQuery(query: string, category: string) {
+    const normalizedQuery = this.normalize(query)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const normalizedCategory = this.normalize(category);
+
+    return normalizedQuery === normalizedCategory;
   }
 
   private findRequestedBrand(query: string, category: string | null) {
@@ -298,12 +325,16 @@ export class ProductSearchOrchestratorService {
     );
   }
 
-  private getManualFallbackProducts(
+  private async getManualFallbackProducts(
     query: string,
     category: string | null,
     requestedBrand: string | null,
   ) {
     if (category) {
+      if (!requestedBrand || this.manualRetailProductService.isAnyBrandReply(requestedBrand)) {
+        return this.manualRetailProductService.search(category);
+      }
+
       return [
         this.manualRetailProductService.createManualProduct(
           query,

@@ -30,64 +30,64 @@ export class PopularManualMedicineService implements MedicineProvider {
 
     if (/\bdor de cabeca\b|\bcefaleia\b/.test(normalized)) {
       return [
-        "Para dor de cabeca, opcoes comuns sao:",
+        "Para dor de cabeça, opções comuns são:",
         "",
         "1. Dipirona",
         "2. Paracetamol",
         "3. Ibuprofeno",
-        "4. Dorflex, se for dor por tensao/muscular",
+        "4. Dorflex, se for dor por tensão muscular",
         "",
-        "Qual opcao voce deseja?",
+        "Qual opção você deseja?",
       ].join("\n");
     }
 
     if (/\bnariz entupido\b|\bcongestao nasal\b/.test(normalized)) {
       return [
-        "Para nariz entupido, opcoes comuns sao:",
+        "Para nariz entupido, opções comuns são:",
         "",
         "1. Neosoro adulto",
         "2. Neosoro infantil",
-        "3. Soro fisiologico nasal",
+        "3. Soro fisiológico nasal",
         "",
-        "Qual opcao voce deseja?",
+        "Qual opção você deseja?",
       ].join("\n");
     }
 
     if (/\bgripe\b|\bresfriado\b/.test(normalized)) {
       return [
-        "Para gripe ou resfriado, opcoes comuns sao:",
+        "Para gripe ou resfriado, opções comuns são:",
         "",
         "1. Benegrip",
         "2. Cimegripe",
         "3. Paracetamol",
         "4. Dipirona",
         "",
-        "Qual opcao voce deseja?",
+        "Qual opção você deseja?",
       ].join("\n");
     }
 
     if (/\balergia\b/.test(normalized)) {
-      return "Para alergia, uma opcao comum e Loratadina. Deseja consultar?";
+      return "Para alergia, uma opção comum é Loratadina. Deseja consultar?";
     }
 
     if (/\bazia\b/.test(normalized)) {
-      return "Para azia, uma opcao comum e Omeprazol. Deseja consultar?";
+      return "Para azia, uma opção comum é Omeprazol. Deseja consultar?";
     }
 
     if (/\bgases\b/.test(normalized)) {
-      return "Para gases, uma opcao comum e Luftal. Deseja consultar?";
+      return "Para gases, uma opção comum é Luftal. Deseja consultar?";
     }
 
     if (/\bdor muscular\b/.test(normalized)) {
-      return "Para dor muscular, opcoes comuns sao Dorflex e Torsilax. Qual deseja consultar?";
+      return "Para dor muscular, opções comuns são Dorflex e Torsilax. Qual deseja consultar?";
     }
 
     if (/\btosse\b/.test(normalized)) {
-      return "Para tosse, preciso saber se e seca ou com catarro para consultar uma opcao comum.";
+      return "Para tosse, preciso saber se é seca ou com catarro para consultar uma opção comum.";
     }
 
     if (/\bdor de garganta\b/.test(normalized)) {
-      return "Para dor de garganta, posso consultar opcoes comuns de pastilhas ou analgesicos. Qual produto voce prefere?";
+      return "Para dor de garganta, posso consultar opções comuns de pastilhas ou analgésicos. Qual produto você prefere?";
     }
 
     return null;
@@ -99,17 +99,17 @@ export class PopularManualMedicineService implements MedicineProvider {
       this.option("Dorflex gotas", "Dorflex Gotas", "gotas", "dorflex"),
     ],
     neosoro: [
-      this.option("Neosoro adulto", "Neosoro adulto", "solucao nasal", "neosoro"),
+      this.option("Neosoro adulto", "Neosoro adulto", "solução nasal", "neosoro"),
       this.option(
         "Neosoro infantil",
         "Neosoro infantil",
-        "solucao nasal",
+        "solução nasal",
         "neosoro",
       ),
       this.option(
-        "Neosoro soro fisiologico nasal",
-        "Soro fisiologico nasal",
-        "solucao nasal",
+        "Neosoro soro fisiológico nasal",
+        "Soro fisiológico nasal",
+        "solução nasal",
         "neosoro",
       ),
     ],
@@ -122,7 +122,7 @@ export class PopularManualMedicineService implements MedicineProvider {
       ),
     ],
     cimegripe: [
-      this.option("Cimegripe capsula", "Cimegripe Capsula", "capsula", "cimegripe"),
+      this.option("Cimegripe cápsula", "Cimegripe Cápsula", "cápsula", "cimegripe"),
       this.option("Cimegripe gotas", "Cimegripe Gotas", "gotas", "cimegripe"),
     ],
     benegrip: [
@@ -146,9 +146,9 @@ export class PopularManualMedicineService implements MedicineProvider {
     ],
     neosaldina: [
       this.option(
-        "Neosaldina dragea",
-        "Neosaldina Dragea",
-        "dragea",
+        "Neosaldina drágea",
+        "Neosaldina Drágea",
+        "drágea",
         "neosaldina",
       ),
     ],

@@ -108,7 +108,7 @@ export class PharmaDbService implements MedicineProvider {
     const token = await this.authService.getAccessToken(retried);
 
     if (!token) {
-      throw new Error("PharmaDB token indisponivel");
+      throw new Error("PharmaDB token indisponível");
     }
 
     const controller = new AbortController();

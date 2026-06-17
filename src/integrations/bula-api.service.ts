@@ -254,7 +254,7 @@ export class BulaApiService {
         `Produtos do mesmo medicamento: ${products.sameMedicineCount}`,
       );
       this.logger.log(
-        `Produtos descartados por nao pertencerem ao medicamento: ${products.discardedNames.join(", ") || "nenhum"}`,
+        `Produtos descartados por não pertencerem ao medicamento: ${products.discardedNames.join(", ") || "nenhum"}`,
       );
       this.logger.log(
         `Produtos retornados pela busca: ${products.items.map((product) => product.name).join(", ") || "nenhum"}`,
@@ -276,9 +276,9 @@ export class BulaApiService {
         medicineName,
         products.items,
       );
-      this.logger.log(`Opcoes filtradas: ${options.length}`);
+      this.logger.log(`Opções filtradas: ${options.length}`);
       this.logger.log(
-        `Opcoes comerciais selecionadas: ${options.map((option) => option.label).join(", ") || "nenhuma"}`,
+        `Opções comerciais selecionadas: ${options.map((option) => option.label).join(", ") || "nenhuma"}`,
       );
 
       return {
@@ -389,12 +389,12 @@ export class BulaApiService {
   }
 
   formatNotFound(medicineName: string) {
-    return `Nao encontrei "${medicineName}" na base de medicamentos. Pode confirmar o nome do remedio ou enviar uma foto da embalagem?`;
+    return `No momento não localizei "${medicineName}". Pode conferir o nome do medicamento ou me enviar uma foto da embalagem?`;
   }
 
   formatPresentationChoiceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas nao achei apresentacoes comuns de varejo. Pode me dizer se voce quer comprimido, gotas, capsula ou xarope?`;
+      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -402,7 +402,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Encontrei ${this.title(summary.medicineName)}. Qual apresentacao voce deseja?`,
+      `Encontrei ${this.title(summary.medicineName)}. Qual apresentação você deseja?`,
       "",
     ];
 
@@ -420,7 +420,7 @@ export class BulaApiService {
 
   formatPriceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas nao achei preco regulado para apresentacao comum de varejo. Pode me dizer se voce quer comprimido, gotas, capsula ou xarope?`;
+      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -428,7 +428,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Encontrei algumas opcoes de ${this.title(summary.medicineName)}:`,
+      `Encontrei algumas opções de ${this.title(summary.medicineName)}:`,
       "",
     ];
 
@@ -436,7 +436,7 @@ export class BulaApiService {
       lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
-    lines.push("", "Qual voce prefere?");
+    lines.push("", "Qual opção você prefere?");
     return lines.join("\n");
   }
 
@@ -450,9 +450,9 @@ export class BulaApiService {
     lines.push(
       option.pricePf
         ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-        : "Nao encontrei preco regulado para essa apresentacao.",
+        : "Não encontrei preço regulado para essa apresentação.",
       "",
-      "Quantas unidades voce deseja?",
+      "Quantas unidades deseja?",
     );
 
     return lines.join("\n");
@@ -731,7 +731,7 @@ export class BulaApiService {
     let presentationName = this.title(group);
 
     if (group === "gotas" || group === "solucao oral") {
-      presentationName = "Gotas / solucao oral";
+      presentationName = "Gotas / solução oral";
     } else if (strength) {
       presentationName = `${presentationName} ${strength}`;
     }
@@ -767,7 +767,7 @@ export class BulaApiService {
     }
 
     if (product.regulatory_category === "generic") {
-      return `${this.title(canonical)} generico`;
+      return `${this.title(canonical)} genérico`;
     }
 
     return this.title(product.name);
@@ -802,7 +802,7 @@ export class BulaApiService {
     if (packageInfo?.unitCount && group !== "outro") {
       const unitByGroup: Record<string, string> = {
         comprimido: "comprimidos",
-        capsula: "capsulas",
+        capsula: "cápsulas",
         gotas: "frasco",
         "solucao oral": "frasco",
         "suspensao oral": "frasco",

@@ -95,7 +95,7 @@ export class MedicineSearchOrchestratorService {
       return await this.bulaApiService.lookupMedicine(query);
     } catch (error) {
       this.logger.warn(
-        `BulAPI falhou, usando catalogo manual: ${
+        `BulAPI falhou, usando catálogo manual: ${
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
@@ -151,7 +151,7 @@ export class MedicineSearchOrchestratorService {
 
     if (discardedCount > 0) {
       this.logger.log(
-        `Produtos descartados por nao pertencerem ao medicamento: ${discardedCount}`,
+        `Produtos descartados por não pertencerem ao medicamento: ${discardedCount}`,
       );
     }
 
@@ -280,9 +280,9 @@ export class MedicineSearchOrchestratorService {
     if (info.unitCount) {
       const form = this.normalizeForm(option.form || option.presentation || "");
       const unitByForm: Record<string, string> = {
-        capsula: "capsulas",
+        capsula: "cápsulas",
         comprimido: "comprimidos",
-        dragea: "drageas",
+        dragea: "drágeas",
         "solucao nasal": "unidade",
         spray: "unidade",
         gotas: "frasco",

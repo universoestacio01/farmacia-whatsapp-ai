@@ -358,19 +358,19 @@ export class CommercialMedicineSelector {
     const productName = this.normalize(product.name);
 
     if (canonical === "dipirona" && productName.includes("novalgina")) {
-      return "preferencia comercial para Dipirona: marca Novalgina";
+      return "preferência comercial para Dipirona: marca Novalgina";
     }
 
     if (canonical === "ibuprofeno" && productName.includes("alivium")) {
-      return "preferencia comercial para Ibuprofeno: marca Alivium";
+      return "preferência comercial para Ibuprofeno: marca Alivium";
     }
 
     if (canonical === "ibuprofeno" && productName.includes("advil")) {
-      return "preferencia comercial para Ibuprofeno: marca Advil";
+      return "preferência comercial para Ibuprofeno: marca Advil";
     }
 
     if (canonical === "paracetamol" && productName.includes("tylenol")) {
-      return "preferencia comercial para Paracetamol: marca Tylenol";
+      return "preferência comercial para Paracetamol: marca Tylenol";
     }
 
     if (this.hasCommercialBrand(product, medicineName)) {
@@ -378,7 +378,7 @@ export class CommercialMedicineSelector {
     }
 
     if (this.isGenericProduct(product, medicineName)) {
-      return "produto generico de varejo comum";
+      return "produto genérico de varejo comum";
     }
 
     return "produto pertence ao medicamento pesquisado";

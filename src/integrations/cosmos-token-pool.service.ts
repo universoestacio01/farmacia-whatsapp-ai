@@ -32,7 +32,7 @@ export class CosmosTokenPoolService {
 
   selectToken(): CosmosTokenSelection | null {
     if (this.tokens.length === 0) {
-      this.logger.warn("COSMOS nao configurado, usando catalogo manual");
+      this.logger.warn("COSMOS não configurado, usando catálogo manual");
       return null;
     }
 

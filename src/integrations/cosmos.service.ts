@@ -38,7 +38,7 @@ export class CosmosService implements ProductProvider {
     }
 
     if (!this.isConfigured()) {
-      this.logger.warn("COSMOS nao configurado, usando catalogo manual");
+      this.logger.warn("COSMOS não configurado, usando catálogo manual");
       return [];
     }
 
@@ -70,7 +70,7 @@ export class CosmosService implements ProductProvider {
 
   async findByGtin(gtin: string): Promise<NormalizedRetailProduct | null> {
     if (!this.isConfigured()) {
-      this.logger.warn("COSMOS nao configurado, usando catalogo manual");
+      this.logger.warn("COSMOS não configurado, usando catálogo manual");
       return null;
     }
 
@@ -151,7 +151,7 @@ export class CosmosService implements ProductProvider {
     const tokenSelection = this.tokenPool.selectToken();
 
     if (!tokenSelection) {
-      throw new Error("Cosmos sem token disponivel");
+      throw new Error("Cosmos sem token disponível");
     }
 
     const controller = new AbortController();

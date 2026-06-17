@@ -68,7 +68,7 @@ export class PharmaDbAuthService {
       const data = (await response.json()) as PharmaDbTokenResponse;
 
       if (!data.access_token) {
-        this.logger.warn("PharmaDB auth nao retornou access_token");
+        this.logger.warn("PharmaDB auth não retornou access_token");
         return null;
       }
 

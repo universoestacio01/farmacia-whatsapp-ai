@@ -9,6 +9,10 @@ const {
 const {
   ProductSearchOrchestratorService,
 } = require("../dist/integrations/product-search-orchestrator.service");
+const {
+  formatProductDisplayName,
+  WhatsappCopy,
+} = require("../dist/whatsapp/whatsapp-copy");
 
 function config(values) {
   return {
@@ -26,6 +30,20 @@ async function run() {
   assert.equal(manual.isRetailProductQuery("tem dipirona?"), false);
   assert.equal(manual.resolveBrandSelection("shampoo", "1"), "Seda");
   assert.equal(manual.resolveBrandSelection("shampoo", "6"), "qualquer marca");
+  assert.equal(
+    formatProductDisplayName("SHAMPOO SEDA KERAFORCE"),
+    "Seda Keraforce Shampoo",
+  );
+  assert.equal(
+    formatProductDisplayName(
+      "KÉRASTASE RESISTANCE CIMENT ANTI-USURE CONDICIONADOR 200ML",
+    ),
+    "Kérastase Resistance Ciment Anti-Usure Condicionador 200ml",
+  );
+  assert.match(
+    WhatsappCopy.askRetailBrand("shampoo", manual.getPopularBrands("shampoo")),
+    /Você tem alguma marca de preferência/,
+  );
 
   let cosmosCalls = 0;
   const fakeCosmos = {
@@ -93,6 +111,15 @@ async function run() {
   const noPriceSummary = await noPriceOrchestrator.searchProducts("sabonete dove");
   assert.equal(noPriceSummary.options.length, 1);
   assert.equal(noPriceSummary.options[0].pricePf, 4.99);
+  assert.doesNotMatch(
+    WhatsappCopy.showRetailOptions(
+      noPriceSummary.category,
+      noPriceSummary.requestedBrand,
+      noPriceSummary.options,
+      (value) => `R$ ${Number(value).toFixed(2)}`,
+    ),
+    /orcamento|orçamento|sem preco|sem preço/i,
+  );
 
   const premiumFallbackSummary = await new ProductSearchOrchestratorService(
     {
@@ -107,6 +134,23 @@ async function run() {
   ).searchProducts("shampoo kerastase");
   assert.equal(premiumFallbackSummary.options.length, 1);
   assert.equal(premiumFallbackSummary.options[0].pricePf, 119.9);
+
+  let genericCategoryCosmosCalls = 0;
+  const genericCategorySummary = await new ProductSearchOrchestratorService(
+    {
+      async search() {
+        genericCategoryCosmosCalls += 1;
+        return [];
+      },
+      async findByGtin() {
+        return null;
+      },
+    },
+    manual,
+  ).searchProducts("shampoo");
+  assert.equal(genericCategoryCosmosCalls, 0);
+  assert.equal(genericCategorySummary.options.length, 3);
+  assert.match(genericCategorySummary.options[0].label, /Shampoo/);
 
   const deodorantFallbackSummary = await new ProductSearchOrchestratorService(
     {

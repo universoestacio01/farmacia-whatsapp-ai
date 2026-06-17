@@ -128,7 +128,7 @@ export class WhatsappService {
       await this.replyAndRecord(
         activeConversation.id,
         message.from,
-        "No momento consigo responder apenas mensagens de texto. Pode me enviar sua duvida por escrito?",
+        "No momento consigo responder apenas mensagens de texto. Pode me enviar sua dúvida por escrito?",
       );
       return;
     }
@@ -204,7 +204,7 @@ export class WhatsappService {
 
     if (!accessToken || !phoneNumberId) {
       throw new WhatsappSendError(
-        "WhatsApp Cloud API nao configurada. Defina WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID.",
+        "WhatsApp Cloud API não configurada. Defina WHATSAPP_ACCESS_TOKEN e WHATSAPP_PHONE_NUMBER_ID.",
         "CONFIG_MISSING",
       );
     }

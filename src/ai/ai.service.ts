@@ -31,7 +31,7 @@ export class AiService {
           {
             role: "system",
             content:
-              "Voce e um assistente de atendimento de farmacia no WhatsApp. Responda em portugues do Brasil, seja breve, acolhedor e nao substitua orientacao medica. Quando houver risco, alergia, gestacao, criancas, interacoes medicamentosas ou sintomas graves, oriente procurar farmaceutico ou medico.",
+              "Você é um assistente de atendimento de farmácia no WhatsApp. Responda em português do Brasil, seja breve, acolhedor e não substitua orientação médica. Quando houver risco, alergia, gestação, crianças, interações medicamentosas ou sintomas graves, oriente procurar farmacêutico ou médico.",
           },
           {
             role: "user",
@@ -50,6 +50,6 @@ export class AiService {
   }
 
   private defaultReply() {
-    return "Oi! Recebi sua mensagem. Um atendente da farmacia vai te ajudar por aqui em instantes. Se for urgente ou envolver reacao alergica, procure atendimento medico imediatamente.";
+    return "Oi! Recebi sua mensagem. Um atendente da farmácia vai te ajudar por aqui em instantes. Se for urgente ou envolver reação alérgica, procure atendimento médico imediatamente.";
   }
 }

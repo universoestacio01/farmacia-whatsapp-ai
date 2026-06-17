@@ -13,6 +13,7 @@
     "start:prod": "node dist/main.js",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test:retail-flow": "node scripts/validate-retail-flow.js",
+    "test:conversation-flow": "node scripts/validate-conversation-flow.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
