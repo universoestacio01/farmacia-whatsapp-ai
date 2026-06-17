@@ -101,7 +101,9 @@ export class HealthController {
   private async isDatabaseConnected() {
     try {
       const prisma = this.moduleRef.get(PrismaService, { strict: false });
-      await prisma.$queryRaw`SELECT 1`;
+      await prisma.safePrismaCall("health.database.SELECT_1", (client) =>
+        client.$queryRaw`SELECT 1`,
+      );
       return true;
     } catch {
       return false;
