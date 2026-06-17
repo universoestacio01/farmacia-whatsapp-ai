@@ -1,5 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { RETAIL_PRODUCTS } from "../config/retail-products.config";
+import {
+  RETAIL_PRODUCTS,
+  RetailProductConfig,
+} from "../config/retail-products.config";
 import {
   NormalizedRetailProduct,
   ProductProvider,
@@ -46,6 +49,72 @@ export class ManualRetailProductService implements ProductProvider {
     }
 
     return null;
+  }
+
+  findGenericCategory(query: string) {
+    const normalized = this.normalize(query)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    for (const [key, config] of Object.entries(RETAIL_PRODUCTS)) {
+      const aliases = [key, ...config.aliases].map((alias) =>
+        this.normalize(alias),
+      );
+
+      if (aliases.includes(normalized)) {
+        return key;
+      }
+    }
+
+    return null;
+  }
+
+  getCategoryConfig(category: string): RetailProductConfig | null {
+    return RETAIL_PRODUCTS[category] || null;
+  }
+
+  getPopularBrands(category: string) {
+    return RETAIL_PRODUCTS[category]?.popularBrands || [];
+  }
+
+  resolveBrandSelection(category: string, reply: string) {
+    const config = RETAIL_PRODUCTS[category];
+
+    if (!config) {
+      return null;
+    }
+
+    const normalized = this.normalize(reply).trim();
+    const numberMatch = normalized.match(/^\d+$/);
+
+    if (numberMatch) {
+      const index = Number(numberMatch[0]) - 1;
+      const visibleBrandCount = Math.min(config.popularBrands.length, 5);
+
+      if (index === visibleBrandCount) {
+        return "qualquer marca";
+      }
+
+      return config.popularBrands.slice(0, visibleBrandCount)[index] || null;
+    }
+
+    if (this.isAnyBrandReply(reply)) {
+      return "qualquer marca";
+    }
+
+    const brand = config.popularBrands.find(
+      (candidate) => this.normalize(candidate) === normalized,
+    );
+
+    return brand || reply.trim();
+  }
+
+  isAnyBrandReply(reply: string) {
+    const normalized = this.normalize(reply).trim();
+    return /^(qualquer|qualquer marca|tanto faz|sem preferencia|sem preferencia de marca)$/.test(
+      normalized,
+    );
   }
 
   isRetailProductQuery(query: string) {

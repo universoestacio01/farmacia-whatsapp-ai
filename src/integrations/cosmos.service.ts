@@ -1,16 +1,32 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { CosmosTokenPoolService } from "./cosmos-token-pool.service";
 import {
   NormalizedRetailProduct,
   ProductProvider,
 } from "./product-provider.interface";
 
+class CosmosHttpError extends Error {
+  constructor(readonly status: number) {
+    super(`Cosmos respondeu ${status}`);
+  }
+}
+
+interface CosmosCacheEntry {
+  expiresAt: number;
+  items: NormalizedRetailProduct[];
+}
+
 @Injectable()
 export class CosmosService implements ProductProvider {
   readonly name = "cosmos" as const;
   private readonly logger = new Logger(CosmosService.name);
+  private readonly cache = new Map<string, CosmosCacheEntry>();
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly tokenPool: CosmosTokenPoolService,
+  ) {}
 
   async search(query: string): Promise<NormalizedRetailProduct[]> {
     const gtin = this.extractGtin(query);
@@ -21,15 +37,24 @@ export class CosmosService implements ProductProvider {
     }
 
     if (!this.isConfigured()) {
-      this.logger.warn("COSMOS_API_TOKEN ausente, usando catalogo manual");
+      this.logger.warn("COSMOS nao configurado, usando catalogo manual");
       return [];
     }
 
+    const cacheKey = `name:${this.normalizeCacheKey(query)}`;
+    const cached = this.getFromCache(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
     this.logger.log(`COSMOS SEARCH BY NAME: ${query}`);
+    this.logger.log(`COSMOS QUERY: ${query}`);
 
     try {
       const items = await this.searchByName(query);
       this.logger.log(`COSMOS RESULTS FOUND: ${items.length}`);
+      this.cacheSearchResult(cacheKey, items);
       return items;
     } catch (error) {
       this.logger.warn(
@@ -37,14 +62,22 @@ export class CosmosService implements ProductProvider {
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      this.cacheFailure(cacheKey, error);
       return [];
     }
   }
 
   async findByGtin(gtin: string): Promise<NormalizedRetailProduct | null> {
     if (!this.isConfigured()) {
-      this.logger.warn("COSMOS_API_TOKEN ausente, usando catalogo manual");
+      this.logger.warn("COSMOS nao configurado, usando catalogo manual");
       return null;
+    }
+
+    const cacheKey = `gtin:${gtin}`;
+    const cached = this.getFromCache(cacheKey);
+
+    if (cached) {
+      return cached[0] || null;
     }
 
     this.logger.log(`COSMOS SEARCH BY GTIN: ${gtin}`);
@@ -53,6 +86,7 @@ export class CosmosService implements ProductProvider {
       const data = await this.fetchJson(`/gtins/${encodeURIComponent(gtin)}.json`);
       const product = this.normalizeItem(data);
       this.logger.log(`COSMOS RESULTS FOUND: ${product ? 1 : 0}`);
+      this.cacheSearchResult(cacheKey, product ? [product] : []);
       return product;
     } catch (error) {
       this.logger.warn(
@@ -60,12 +94,17 @@ export class CosmosService implements ProductProvider {
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      this.cacheFailure(cacheKey, error);
       return null;
     }
   }
 
   isConfigured() {
-    return Boolean(this.configService.get<string>("COSMOS_API_TOKEN")?.trim());
+    return this.tokenPool.isConfigured();
+  }
+
+  tokenCount() {
+    return this.tokenPool.tokenCount();
   }
 
   private async searchByName(query: string) {
@@ -75,6 +114,7 @@ export class CosmosService implements ProductProvider {
       `/gtins/search.json?query=${encodeURIComponent(query)}`,
       `/gtins.json?query=${encodeURIComponent(query)}`,
     ];
+    let rateLimitError: CosmosHttpError | null = null;
 
     for (const endpoint of endpoints) {
       try {
@@ -87,6 +127,10 @@ export class CosmosService implements ProductProvider {
           return items;
         }
       } catch (error) {
+        if (error instanceof CosmosHttpError && error.status === 429) {
+          rateLimitError = error;
+        }
+
         this.logger.warn(
           `Cosmos busca por nome falhou em ${endpoint}: ${
             error instanceof Error ? error.message : "erro desconhecido"
@@ -95,17 +139,27 @@ export class CosmosService implements ProductProvider {
       }
     }
 
+    if (rateLimitError) {
+      throw rateLimitError;
+    }
+
     return [];
   }
 
   private async fetchJson(endpoint: string) {
+    const tokenSelection = this.tokenPool.selectToken();
+
+    if (!tokenSelection) {
+      throw new Error("Cosmos sem token disponivel");
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
     try {
       const response = await fetch(`${this.getBaseUrl()}${endpoint}`, {
         headers: {
-          "X-Cosmos-Token": this.configService.get<string>("COSMOS_API_TOKEN") || "",
+          "X-Cosmos-Token": tokenSelection.token,
           "User-Agent":
             this.configService.get<string>("COSMOS_USER_AGENT") ||
             "farmacia-whatsapp-ai",
@@ -115,12 +169,22 @@ export class CosmosService implements ProductProvider {
         signal: controller.signal,
       });
 
-      if ([401, 403, 429, 500, 503].includes(response.status)) {
-        throw new Error(`Cosmos respondeu ${response.status}`);
+      if (response.status === 429) {
+        this.tokenPool.markRateLimited(tokenSelection.index);
+        throw new CosmosHttpError(response.status);
+      }
+
+      if ([401, 403].includes(response.status)) {
+        this.tokenPool.markInvalid(tokenSelection.index);
+        throw new CosmosHttpError(response.status);
+      }
+
+      if ([500, 503].includes(response.status)) {
+        throw new CosmosHttpError(response.status);
       }
 
       if (!response.ok) {
-        throw new Error(`Cosmos respondeu ${response.status}`);
+        throw new CosmosHttpError(response.status);
       }
 
       return response.json();
@@ -209,6 +273,51 @@ export class CosmosService implements ProductProvider {
     return Number((basePrice * safeMultiplier).toFixed(2));
   }
 
+  private getFromCache(cacheKey: string) {
+    const entry = this.cache.get(cacheKey);
+
+    if (!entry) {
+      this.logger.log("COSMOS CACHE MISS");
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      this.cache.delete(cacheKey);
+      this.logger.log("COSMOS CACHE MISS");
+      return null;
+    }
+
+    this.logger.log("COSMOS CACHE HIT");
+    return entry.items.map((item) => ({ ...item }));
+  }
+
+  private cacheSearchResult(cacheKey: string, items: NormalizedRetailProduct[]) {
+    const hasPricedResult = items.some(
+      (item) => item.salePrice !== undefined && item.salePrice > 0,
+    );
+    const ttlHours = hasPricedResult
+      ? this.getPositiveNumber("COSMOS_CACHE_TTL_HOURS", 24)
+      : 1;
+
+    this.cache.set(cacheKey, {
+      expiresAt: Date.now() + ttlHours * 60 * 60 * 1000,
+      items: items.map((item) => ({ ...item })),
+    });
+  }
+
+  private cacheFailure(cacheKey: string, error: unknown) {
+    const isRateLimit =
+      error instanceof CosmosHttpError && error.status === 429;
+    const ttlMinutes = isRateLimit
+      ? this.getPositiveNumber("COSMOS_TOKEN_429_COOLDOWN_MINUTES", 30)
+      : 5;
+
+    this.cache.set(cacheKey, {
+      expiresAt: Date.now() + ttlMinutes * 60 * 1000,
+      items: [],
+    });
+  }
+
   private extractItems(data: unknown): unknown[] {
     if (Array.isArray(data)) {
       return data;
@@ -286,6 +395,21 @@ export class CosmosService implements ProductProvider {
   private extractGtin(query: string) {
     const digits = query.replace(/\D/g, "");
     return [8, 12, 13, 14].includes(digits.length) ? digits : null;
+  }
+
+  private normalizeCacheKey(value: string) {
+    return value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^\w]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  private getPositiveNumber(key: string, fallback: number) {
+    const value = Number(this.configService.get<number | string>(key) ?? fallback);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
   }
 
   private getBaseUrl() {

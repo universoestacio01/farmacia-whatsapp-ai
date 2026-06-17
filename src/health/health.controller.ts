@@ -24,7 +24,7 @@ export class HealthController {
     const cosmosApiBaseUrl =
       this.configService.get<string>("COSMOS_API_BASE_URL") ||
       "https://api.cosmos.bluesoft.com.br";
-    const cosmosApiToken = this.configService.get<string>("COSMOS_API_TOKEN");
+    const cosmosTokenCount = this.getCosmosTokenCount();
 
     return {
       status: "ok",
@@ -38,10 +38,32 @@ export class HealthController {
           configured: Boolean(bulaApiBaseUrl),
         },
         cosmos: {
-          configured: Boolean(cosmosApiBaseUrl && cosmosApiToken?.trim()),
+          configured: Boolean(cosmosApiBaseUrl && cosmosTokenCount > 0),
+          tokenCount: cosmosTokenCount,
+          cacheEnabled: true,
           lazy: true,
         },
       },
     };
+  }
+
+  private getCosmosTokenCount() {
+    const multiTokenValue = this.configService.get<string>("COSMOS_API_TOKENS");
+    const multiTokens = this.parseTokenList(multiTokenValue);
+
+    if (multiTokens.length > 0) {
+      return Math.min(multiTokens.length, 4);
+    }
+
+    return this.parseTokenList(
+      this.configService.get<string>("COSMOS_API_TOKEN"),
+    ).length;
+  }
+
+  private parseTokenList(value: string | undefined) {
+    return (value || "")
+      .split(",")
+      .map((token) => token.trim())
+      .filter(Boolean);
   }
 }

@@ -15,6 +15,7 @@ enum ConversationStatus {
 enum ConversationState {
   IDLE
   WAITING_MEDICINE_NAME
+  WAITING_RETAIL_BRAND
   WAITING_PRESENTATION
   WAITING_QUANTITY
   WAITING_CEP
@@ -98,6 +99,7 @@ model Conversation {
   pendingAction        ConversationState  @default(IDLE) @map("pending_action")
   lastMedicine         String?            @map("last_medicine")
   currentMedicineQuery String?            @map("current_medicine_query")
+  currentRetailCategory String?           @map("current_retail_category")
   selectedPresentation Json?              @map("selected_presentation")
   candidateOptions     Json?              @map("candidate_options")
   cart                 Json?

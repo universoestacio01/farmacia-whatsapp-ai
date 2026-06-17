@@ -78,12 +78,13 @@ export class ConversationEngineService {
           lastIntent: "ADD_ITEM",
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
           currentMedicineQuery: null,
+          currentRetailCategory: null,
           candidateOptions: Prisma.JsonNull,
           selectedPresentation: Prisma.JsonNull,
         },
       });
 
-      return "Claro. Qual outro medicamento você deseja adicionar?";
+      return "Claro. Qual outro produto você deseja adicionar?";
     }
 
     const selectedOption = this.getSelectedOption(conversation);
@@ -134,6 +135,8 @@ export class ConversationEngineService {
     switch (conversation.pendingAction) {
       case ConversationState.WAITING_MEDICINE_NAME:
         return this.handleWaitingMedicineName(conversation, text, medicineQuestion);
+      case ConversationState.WAITING_RETAIL_BRAND:
+        return this.handleWaitingRetailBrand(conversation, text);
       case ConversationState.WAITING_PRESENTATION:
         return this.handleWaitingPresentation(conversation, text, medicineQuestion);
       case ConversationState.WAITING_QUANTITY:
@@ -164,6 +167,7 @@ export class ConversationEngineService {
           lastIntent: "PRICE_REQUEST",
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
           currentMedicineQuery: null,
+          currentRetailCategory: null,
           selectedPresentation: Prisma.JsonNull,
           candidateOptions: Prisma.JsonNull,
         },
@@ -209,6 +213,55 @@ export class ConversationEngineService {
     }
 
     return "Qual medicamento você deseja consultar?";
+  }
+
+  private async handleWaitingRetailBrand(conversation: Conversation, text: string) {
+    const category = conversation.currentRetailCategory;
+
+    if (!category) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.IDLE },
+      });
+
+      return "Qual produto você deseja consultar?";
+    }
+
+    if (
+      conversation.lastIntent === "RETAIL_SIMILARS" &&
+      this.isNegativeReply(text)
+    ) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentRetailCategory: null,
+        },
+      });
+
+      return "Tudo bem. Qual outro produto você deseja consultar?";
+    }
+
+    const selectedBrand =
+      conversation.lastIntent === "RETAIL_SIMILARS" &&
+      this.isPositiveConfirmation(text)
+        ? "qualquer marca"
+        : this.productSearch.resolveBrandSelection(category, text);
+
+    if (!selectedBrand) {
+      return this.formatRetailBrandPrompt(category);
+    }
+
+    this.logger.log(`RETAIL BRAND SELECTED: ${selectedBrand}`);
+    const query = this.productSearch.buildQueryFromBrandSelection(
+      category,
+      selectedBrand,
+    );
+
+    return this.handleRetailProductQuestion(conversation.id, query, {
+      category,
+      selectedBrand,
+    });
   }
 
   private async handleWaitingPresentation(
@@ -362,10 +415,14 @@ export class ConversationEngineService {
         data: {
           lastIntent: "ADD_ITEM",
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
         },
       });
 
-      return "Claro. Qual outro medicamento você deseja adicionar?";
+      return "Claro. Qual outro produto você deseja adicionar?";
     }
 
     if (this.isPositiveConfirmation(text)) {
@@ -398,6 +455,7 @@ export class ConversationEngineService {
       where: { id: conversationId },
       data: {
         currentMedicineQuery: medicineName,
+        currentRetailCategory: null,
         selectedPresentation: Prisma.JsonNull,
         candidateOptions: Prisma.JsonNull,
       },
@@ -418,6 +476,7 @@ export class ConversationEngineService {
           pendingAction: ConversationState.WAITING_MEDICINE_NAME,
           lastMedicine: medicineName,
           currentMedicineQuery: medicineName,
+          currentRetailCategory: null,
           selectedPresentation: Prisma.JsonNull,
           candidateOptions: Prisma.JsonNull,
         },
@@ -439,6 +498,7 @@ export class ConversationEngineService {
           : ConversationState.WAITING_PRESENTATION,
         lastMedicine: medicineName,
         currentMedicineQuery: medicineName,
+        currentRetailCategory: null,
         candidateOptions: this.toJson(summary.options),
         selectedPresentation: selectedOption
           ? this.toJson(selectedOption)
@@ -458,15 +518,38 @@ export class ConversationEngineService {
   private async handleRetailProductQuestion(
     conversationId: string,
     message: string,
+    context?: { category?: string; selectedBrand?: string },
   ) {
     const productQuery = this.extractRetailProductQuery(message);
     this.logger.log(`RETAIL PRODUCT QUERY: ${productQuery}`);
+    const genericCategory =
+      context?.category || this.productSearch.findGenericCategory(productQuery);
+
+    if (genericCategory && !context?.selectedBrand) {
+      this.logger.log("RETAIL GENERIC CATEGORY DETECTED");
+      this.logger.log("WAITING RETAIL BRAND");
+
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          lastIntent: "RETAIL_PRODUCT",
+          pendingAction: ConversationState.WAITING_RETAIL_BRAND,
+          currentMedicineQuery: null,
+          currentRetailCategory: genericCategory,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return this.formatRetailBrandPrompt(genericCategory);
+    }
 
     await this.prisma.conversation.update({
       where: { id: conversationId },
       data: {
         lastIntent: "RETAIL_PRODUCT",
         currentMedicineQuery: productQuery,
+        currentRetailCategory: genericCategory || null,
         selectedPresentation: Prisma.JsonNull,
         candidateOptions: Prisma.JsonNull,
       },
@@ -476,17 +559,23 @@ export class ConversationEngineService {
     const summary = await this.productSearch.searchProducts(productQuery);
 
     if (summary.options.length === 0) {
+      const notFoundReply = this.formatRetailNoPricedResults(summary);
+
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
-          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          lastIntent: summary.category ? "RETAIL_SIMILARS" : "RETAIL_PRODUCT",
+          pendingAction: summary.category
+            ? ConversationState.WAITING_RETAIL_BRAND
+            : ConversationState.WAITING_MEDICINE_NAME,
           currentMedicineQuery: productQuery,
+          currentRetailCategory: summary.category || genericCategory || null,
           selectedPresentation: Prisma.JsonNull,
           candidateOptions: Prisma.JsonNull,
         },
       });
 
-      return "Pode confirmar o nome do produto ou enviar uma foto da embalagem?";
+      return notFoundReply;
     }
 
     const shouldAskQuantity = summary.options.length === 1;
@@ -501,6 +590,7 @@ export class ConversationEngineService {
           : ConversationState.WAITING_PRESENTATION,
         lastMedicine: productQuery,
         currentMedicineQuery: productQuery,
+        currentRetailCategory: summary.category || genericCategory || null,
         candidateOptions: this.toJson(summary.options),
         selectedPresentation: selectedOption
           ? this.toJson(selectedOption)
@@ -520,22 +610,52 @@ export class ConversationEngineService {
     const lines = [`Encontrei opcoes de ${summary.query}:`, ""];
 
     for (const option of summary.options.slice(0, 3)) {
-      const price = option.pricePf
-        ? ` - ${this.formatCurrency(option.pricePf)}`
-        : "";
-      lines.push(`${option.optionId}. ${option.label}${price}`);
+      lines.push(
+        `${option.optionId}. ${option.label} - ${this.formatCurrency(option.pricePf)}`,
+      );
     }
 
     lines.push("", "Responda o numero da opcao.");
 
-    if (summary.manualFallback && summary.options.every((option) => !option.pricePf)) {
-      lines.push(
-        "",
-        "Tenho essa categoria como produto de farmacia, mas nao encontrei preco na base. Posso seguir com orcamento manual?",
-      );
+    return lines.join("\n");
+  }
+
+  private formatRetailBrandPrompt(category: string) {
+    const brands = this.productSearch.getPopularBrands(category).slice(0, 5);
+    const lines = ["Tem alguma marca de preferencia?", ""];
+
+    if (brands.length > 0) {
+      lines.push("Opcoes comuns:");
+      brands.forEach((brand, index) => lines.push(`${index + 1}. ${brand}`));
+      lines.push(`${brands.length + 1}. Qualquer marca`);
+    } else {
+      lines.push("Pode me dizer a marca ou responder qualquer marca.");
     }
 
     return lines.join("\n");
+  }
+
+  private formatRetailNoPricedResults(summary: RetailProductLookupSummary) {
+    if (summary.category && summary.requestedBrand) {
+      const alternatives = this.productSearch
+        .getPopularBrands(summary.category)
+        .filter(
+          (brand) =>
+            this.normalize(brand) !== this.normalize(summary.requestedBrand || ""),
+        )
+        .slice(0, 3);
+      const suffix =
+        alternatives.length > 0 ? `, como ${alternatives.join(", ")}` : "";
+
+      this.logger.log("RETAIL SIMILARS OFFERED");
+
+      return [
+        `Nao localizei ${this.capitalize(summary.category)} ${summary.requestedBrand} com preco disponivel no momento.`,
+        `Posso te mostrar opcoes similares de ${summary.category}${suffix}?`,
+      ].join("\n");
+    }
+
+    return "Nao localizei esse produto com preco disponivel no momento. Posso te mostrar opcoes similares?";
   }
 
   private extractRetailProductQuery(message: string) {
@@ -665,7 +785,7 @@ export class ConversationEngineService {
 
   private formatMissingPrice(option: CommercialMedicineOption) {
     return option.type === "retail_product"
-      ? "Nao encontrei preco na base para esse produto. Posso seguir com orcamento manual?"
+      ? "Nao encontrei esse produto com preco disponivel no momento."
       : "Nao encontrei preco regulado para essa apresentacao.";
   }
 
@@ -904,6 +1024,7 @@ export class ConversationEngineService {
         pendingAction: ConversationState.IDLE,
         lastMedicine: null,
         currentMedicineQuery: null,
+        currentRetailCategory: null,
         selectedPresentation: Prisma.JsonNull,
         candidateOptions: Prisma.JsonNull,
         cart: Prisma.JsonNull,
@@ -983,6 +1104,11 @@ export class ConversationEngineService {
     );
   }
 
+  private isNegativeReply(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(nao|não|n)$/.test(normalized);
+  }
+
   private isCapital(city?: string) {
     const normalized = this.normalize(city || "");
     return [
@@ -1014,6 +1140,10 @@ export class ConversationEngineService {
       style: "currency",
       currency: "BRL",
     }).format(value);
+  }
+
+  private capitalize(value: string) {
+    return value.charAt(0).toUpperCase() + value.slice(1);
   }
 
   private normalize(value: string) {

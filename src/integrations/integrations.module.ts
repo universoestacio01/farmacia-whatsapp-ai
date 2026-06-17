@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { BulaApiService } from "./bula-api.service";
 import { CommercialMedicineSelector } from "./commercial-medicine-selector";
 import { CosmosService } from "./cosmos.service";
+import { CosmosTokenPoolService } from "./cosmos-token-pool.service";
 import { ManualRetailProductService } from "./manual-retail-product.service";
 import { MedicineSearchOrchestratorService } from "./medicine-search-orchestrator.service";
 import { PharmaDbAuthService } from "./pharmadb-auth.service";
@@ -14,6 +15,7 @@ import { ViaCepService } from "./via-cep.service";
   providers: [
     BulaApiService,
     CommercialMedicineSelector,
+    CosmosTokenPoolService,
     CosmosService,
     ManualRetailProductService,
     MedicineSearchOrchestratorService,
@@ -26,6 +28,7 @@ import { ViaCepService } from "./via-cep.service";
   exports: [
     BulaApiService,
     CommercialMedicineSelector,
+    CosmosTokenPoolService,
     CosmosService,
     ManualRetailProductService,
     MedicineSearchOrchestratorService,
