@@ -62,6 +62,7 @@ export class CommercialMedicineSelector {
     loratadina: "loratadina",
     omeprazol: "omeprazol",
     nimesulida: "nimesulida",
+    neosulida: "neosulida",
     amoxicilina: "amoxicilina",
     dorflex: "dorflex",
     torsilax: "torsilax",
@@ -75,12 +76,14 @@ export class CommercialMedicineSelector {
     luftal: "luftal",
     simeticona: "luftal",
     neosaldina: "neosaldina",
+    venvanse: "venvanse",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
     dipirona: ["novalgina"],
     ibuprofeno: ["alivium", "advil"],
     paracetamol: ["tylenol"],
+    neosulida: ["neosulida"],
     dorflex: ["dorflex"],
     torsilax: ["torsilax"],
     neosoro: ["neosoro", "soro fisiologico nasal"],
@@ -90,6 +93,7 @@ export class CommercialMedicineSelector {
     engov: ["engov"],
     luftal: ["luftal", "simeticona"],
     neosaldina: ["neosaldina"],
+    venvanse: ["venvanse"],
   };
 
   normalizeMedicineName(text: string) {
@@ -285,7 +289,13 @@ export class CommercialMedicineSelector {
 
     for (const option of options) {
       const key = this.normalize(
-        `${option.productName}-${option.formGroup}-${option.strength}`,
+        [
+          option.productName,
+          option.formGroup,
+          option.strength,
+          option.packageInfo?.unitCount,
+          option.packageInfo?.volumeMl,
+        ].join("-"),
       );
       const current = deduped.get(key);
 
@@ -314,6 +324,7 @@ export class CommercialMedicineSelector {
     let score = 0;
 
     if (this.hasWordOrPhrase(text, canonical)) score += 160;
+    if (this.hasCommercialBrand(product, medicineName)) score += 950;
     if (this.isGenericProduct(product, medicineName)) score += 220;
 
     if (canonical === "dipirona") {
@@ -362,6 +373,10 @@ export class CommercialMedicineSelector {
       return "preferencia comercial para Paracetamol: marca Tylenol";
     }
 
+    if (this.hasCommercialBrand(product, medicineName)) {
+      return "marca comercial retornada pela PharmaDB";
+    }
+
     if (this.isGenericProduct(product, medicineName)) {
       return "produto generico de varejo comum";
     }
@@ -372,15 +387,35 @@ export class CommercialMedicineSelector {
   isGenericProduct(product: SelectorProduct, medicineName: string) {
     const canonical = this.getCanonicalMedicineName(medicineName);
     const productName = this.normalize(product.name);
+    const substanceName = this.normalize(product.substance?.name || "");
+    const activeIngredient =
+      typeof product.activeIngredient === "string"
+        ? this.normalize(product.activeIngredient)
+        : this.normalize(product.activeIngredient?.name || "");
+
+    if (this.hasCommercialBrand(product, medicineName)) {
+      return false;
+    }
+
+    if (product.regulatory_category === "generic") {
+      return true;
+    }
 
     return (
-      product.regulatory_category === "generic" ||
-      productName === canonical ||
-      productName.includes(`${canonical} `) ||
-      productName.includes(`${canonical}-`) ||
-      productName.includes(`${canonical} sodic`) ||
-      productName.includes(`${canonical} monoidratad`)
+      productName === canonical &&
+      (substanceName === canonical ||
+        activeIngredient === canonical ||
+        substanceName.includes(canonical) ||
+        activeIngredient.includes(canonical))
     );
+  }
+
+  hasCommercialBrand(product: SelectorProduct, medicineName: string) {
+    const canonical = this.getCanonicalMedicineName(medicineName);
+    const productText = this.getProductSearchText(product);
+    const brands = this.brandByMedicine[canonical] || [];
+
+    return brands.some((brand) => this.hasWordOrPhrase(productText, brand));
   }
 
   private diversifyOptions<T extends SelectorOption>(
@@ -492,6 +527,7 @@ export class CommercialMedicineSelector {
     const config = COMMERCIAL_MEDICINES[canonical];
     let score = priority[option.formGroup] || 0;
 
+    if (this.optionHasCommercialBrand(option, canonical)) score += 950;
     if (this.isGenericOption(option, canonical)) score += 220;
     if (canonical === "dipirona" && this.optionHasBrand(option, "novalgina")) {
       score += 900;
@@ -573,6 +609,11 @@ export class CommercialMedicineSelector {
 
   private isGenericOption(option: SelectorOption, canonical: string) {
     const productName = this.normalize(option.productName);
+
+    if (this.optionHasCommercialBrand(option, canonical)) {
+      return false;
+    }
+
     return (
       productName === canonical ||
       productName.includes(`${canonical} `) ||
@@ -584,6 +625,11 @@ export class CommercialMedicineSelector {
 
   private optionHasBrand(option: SelectorOption, brand: string) {
     return this.normalize(option.productName).includes(brand);
+  }
+
+  private optionHasCommercialBrand(option: SelectorOption, canonical: string) {
+    const brands = this.brandByMedicine[canonical] || [];
+    return brands.some((brand) => this.optionHasBrand(option, brand));
   }
 
   private getProductSearchText(product: SelectorProduct) {

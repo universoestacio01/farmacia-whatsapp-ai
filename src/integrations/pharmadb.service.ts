@@ -41,12 +41,15 @@ export class PharmaDbService implements MedicineProvider {
     }
 
     this.logger.log(`Chamando PharmaDB para: ${normalizedQuery}`);
+    this.logger.log(`SEARCH TERM: ${normalizedQuery}`);
 
     try {
       const rawItems = await this.fetchSearchResults(normalizedQuery);
+      this.logger.log(`RESULTS FOUND: ${rawItems.length}`);
       this.logger.log(`PharmaDB retornou ${rawItems.length} resultados`);
 
       const normalized = rawItems.flatMap((item) => this.normalizeItem(item));
+      this.logger.log(`RESULTS AFTER FILTER: ${normalized.length}`);
       this.logger.log(`PharmaDB resultados normalizados: ${normalized.length}`);
       this.logger.log(
         `PharmaDB encontrou PF para ${

@@ -757,7 +757,11 @@ export class BulaApiService {
       return "Tylenol";
     }
 
-    if (this.selector.isGenericProduct(product, medicineName)) {
+    if (this.selector.hasCommercialBrand(product, medicineName)) {
+      return this.title(product.name);
+    }
+
+    if (product.regulatory_category === "generic") {
       return `${this.title(canonical)} generico`;
     }
 

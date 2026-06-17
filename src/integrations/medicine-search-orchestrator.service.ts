@@ -134,6 +134,8 @@ export class MedicineSearchOrchestratorService {
     query: string,
     options: NormalizedMedicineOption[],
   ): CommercialMedicineOption[] {
+    this.logger.log(`SEARCH TERM: ${query}`);
+    this.logger.log(`RESULTS FOUND: ${options.length}`);
     const validOptions = options.filter((option) =>
       this.selector.isSameMedicine(query, {
         id: this.toNumericId(option.sourceId, 0),
@@ -144,6 +146,7 @@ export class MedicineSearchOrchestratorService {
         manufacturer: { name: option.manufacturer || option.laboratory },
       }),
     );
+    this.logger.log(`RESULTS AFTER FILTER: ${validOptions.length}`);
     const discardedCount = options.length - validOptions.length;
 
     if (discardedCount > 0) {
@@ -231,7 +234,9 @@ export class MedicineSearchOrchestratorService {
   }
 
   private formatLabel(option: NormalizedMedicineOption, formGroup: string) {
-    const displayName = option.displayName || option.productName;
+    const displayName = this.formatCommercialDisplayName(
+      option.displayName || option.productName,
+    );
     const normalizedDisplay = this.normalize(displayName);
     const formLabel = this.title(formGroup);
     const shouldAddForm =
@@ -245,6 +250,24 @@ export class MedicineSearchOrchestratorService {
     ].filter(Boolean);
 
     return [...new Set(parts)].join(" ");
+  }
+
+  private formatCommercialDisplayName(value: string) {
+    return value
+      .toLowerCase()
+      .split(/\s+/)
+      .map((word) => {
+        if (/^\d+(?:,\d+)?$/.test(word)) {
+          return word;
+        }
+
+        if (/^(mg|ml|g)$/.test(word)) {
+          return word;
+        }
+
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(" ");
   }
 
   private formatPackageDescription(option: NormalizedMedicineOption) {
