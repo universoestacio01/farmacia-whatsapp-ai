@@ -46,7 +46,7 @@ export class MedicineSearchOrchestratorService {
       }
 
       if (providerName === "pharmadb") {
-        const summary = await this.searchPharmaDb(normalizedQuery);
+        const summary = await this.safeSearchPharmaDb(normalizedQuery);
 
         if (summary && summary.options.length > 0) {
           this.setCache(`pharmadb:${normalizedQuery}`, summary, 300);
@@ -55,7 +55,7 @@ export class MedicineSearchOrchestratorService {
       }
 
       if (providerName === "bulapi") {
-        const summary = await this.bulaApiService.lookupMedicine(normalizedQuery);
+        const summary = await this.safeSearchBulaApi(normalizedQuery);
 
         if (summary && summary.options.length > 0) {
           this.setCache(`bulapi:${normalizedQuery}`, summary, 300);
@@ -75,6 +75,32 @@ export class MedicineSearchOrchestratorService {
 
   findSymptomOptions(message: string) {
     return this.popularManualService.findSymptomOptions(message);
+  }
+
+  private async safeSearchPharmaDb(query: string) {
+    try {
+      return await this.searchPharmaDb(query);
+    } catch (error) {
+      this.logger.warn(
+        `PHARMADB SEARCH FAILED, FALLING BACK TO BULAPI: ${
+          error instanceof Error ? error.message : "erro desconhecido"
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private async safeSearchBulaApi(query: string) {
+    try {
+      return await this.bulaApiService.lookupMedicine(query);
+    } catch (error) {
+      this.logger.warn(
+        `BulAPI falhou, usando catalogo manual: ${
+          error instanceof Error ? error.message : "erro desconhecido"
+        }`,
+      );
+      return null;
+    }
   }
 
   private async searchPharmaDb(query: string) {

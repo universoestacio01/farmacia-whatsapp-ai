@@ -26,7 +26,7 @@ export class PharmaDbService implements MedicineProvider {
 
   async search(query: string): Promise<NormalizedMedicineOption[]> {
     if (!this.authService.hasApiKey()) {
-      this.logger.warn("PHARMADB_API_KEY ausente. Pulando PharmaDB.");
+      this.logger.warn("PHARMADB_API_KEY ausente, pulando PharmaDB");
       return [];
     }
 
@@ -58,7 +58,7 @@ export class PharmaDbService implements MedicineProvider {
       return normalized;
     } catch (error) {
       this.logger.warn(
-        `PharmaDB falhou, usando fallback: ${
+        `PHARMADB SEARCH FAILED, FALLING BACK TO BULAPI: ${
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
@@ -105,7 +105,7 @@ export class PharmaDbService implements MedicineProvider {
     const token = await this.authService.getAccessToken(retried);
 
     if (!token) {
-      return [];
+      throw new Error("PharmaDB token indisponivel");
     }
 
     const controller = new AbortController();
