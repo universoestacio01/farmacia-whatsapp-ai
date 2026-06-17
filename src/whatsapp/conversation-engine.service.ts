@@ -7,18 +7,28 @@ import {
   MedicineQuestion,
 } from "../integrations/bula-api.service";
 import { MedicineSearchOrchestratorService } from "../integrations/medicine-search-orchestrator.service";
+import {
+  ProductSearchOrchestratorService,
+  RetailProductLookupSummary,
+} from "../integrations/product-search-orchestrator.service";
 import { ViaCepAddress, ViaCepService } from "../integrations/via-cep.service";
 import { PrismaService } from "../prisma/prisma.service";
 
 interface CartItem {
+  type: "medicine" | "retail_product";
   medicineName: string;
   name: string;
+  brand?: string;
   form: string;
+  presentation?: string;
+  description?: string;
   dosage?: string;
   packageInfo?: string;
   unitPrice?: number;
   quantity: number;
   total?: number;
+  imageUrl?: string;
+  source?: string;
 }
 
 interface PendingAddress extends ViaCepAddress {
@@ -34,6 +44,7 @@ export class ConversationEngineService {
     private readonly aiService: AiService,
     private readonly bulaApiService: BulaApiService,
     private readonly medicineSearch: MedicineSearchOrchestratorService,
+    private readonly productSearch: ProductSearchOrchestratorService,
     private readonly viaCepService: ViaCepService,
   ) {}
 
@@ -53,6 +64,7 @@ export class ConversationEngineService {
 
     const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
     const extractedMedicine = this.bulaApiService.extractMedicineName(text);
+    const retailProductQuery = this.productSearch.isRetailProductQuery(text);
     this.logger.log(
       `Intencao detectada: ${medicineQuestion?.intent || "UNKNOWN"}`,
     );
@@ -101,6 +113,14 @@ export class ConversationEngineService {
       if (changed) {
         return changed;
       }
+    }
+
+    if (
+      retailProductQuery &&
+      this.hasExplicitMedicineSearchIntent(text) &&
+      conversation.pendingAction !== ConversationState.WAITING_MEDICINE_NAME
+    ) {
+      return this.handleRetailProductQuestion(conversation.id, text);
     }
 
     if (
@@ -158,6 +178,10 @@ export class ConversationEngineService {
       return symptomReply;
     }
 
+    if (this.productSearch.isRetailProductQuery(text)) {
+      return this.handleRetailProductQuestion(conversation.id, text);
+    }
+
     if (medicineQuestion) {
       return this.handleMedicineQuestion(conversation.id, medicineQuestion);
     }
@@ -170,6 +194,10 @@ export class ConversationEngineService {
     text: string,
     medicineQuestion: MedicineQuestion | null,
   ) {
+    if (this.productSearch.isRetailProductQuery(text)) {
+      return this.handleRetailProductQuestion(conversation.id, text);
+    }
+
     if (medicineQuestion) {
       return this.handleMedicineQuestion(conversation.id, {
         ...medicineQuestion,
@@ -188,6 +216,10 @@ export class ConversationEngineService {
     text: string,
     medicineQuestion: MedicineQuestion | null,
   ) {
+    if (this.productSearch.isRetailProductQuery(text)) {
+      return this.handleRetailProductQuestion(conversation.id, text);
+    }
+
     if (medicineQuestion && this.hasExplicitMedicineSearchIntent(text)) {
       return this.handleMedicineQuestion(conversation.id, medicineQuestion);
     }
@@ -199,7 +231,7 @@ export class ConversationEngineService {
     }
 
     await this.saveSelectedOption(conversation.id, selectedOption);
-    return this.bulaApiService.formatSelectedOptionReply(selectedOption);
+    return this.formatSelectedOptionReply(selectedOption);
   }
 
   private async handleWaitingQuantity(conversation: Conversation, text: string) {
@@ -223,6 +255,9 @@ export class ConversationEngineService {
     const item = this.buildCartItem(selectedOption, quantity);
     cart.push(item);
     this.logger.log(`Item adicionado ao carrinho: ${item.name}`);
+    if (item.type === "retail_product") {
+      this.logger.log(`RETAIL PRODUCT ADDED TO CART: ${item.name}`);
+    }
     this.logger.log(`Carrinho atual: ${JSON.stringify(cart)}`);
 
     await this.prisma.conversation.update({
@@ -241,7 +276,7 @@ export class ConversationEngineService {
         ? `Subtotal: ${this.formatCurrency(item.total)}`
         : "Subtotal: preco nao encontrado",
       "",
-      "Deseja adicionar mais algum medicamento ou calcular a entrega?",
+      "Deseja adicionar mais algum produto ou calcular a entrega?",
     ].join("\n");
   }
 
@@ -412,12 +447,109 @@ export class ConversationEngineService {
     });
 
     if (selectedOption) {
-      return this.bulaApiService.formatSelectedOptionReply(selectedOption);
+      return this.formatSelectedOptionReply(selectedOption);
     }
 
     return question.intent === "price"
       ? this.bulaApiService.formatPriceReply(summary)
       : this.bulaApiService.formatPresentationChoiceReply(summary);
+  }
+
+  private async handleRetailProductQuestion(
+    conversationId: string,
+    message: string,
+  ) {
+    const productQuery = this.extractRetailProductQuery(message);
+    this.logger.log(`RETAIL PRODUCT QUERY: ${productQuery}`);
+
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastIntent: "RETAIL_PRODUCT",
+        currentMedicineQuery: productQuery,
+        selectedPresentation: Prisma.JsonNull,
+        candidateOptions: Prisma.JsonNull,
+      },
+    });
+    this.logger.log("Contexto anterior limpo");
+
+    const summary = await this.productSearch.searchProducts(productQuery);
+
+    if (summary.options.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentMedicineQuery: productQuery,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return "Pode confirmar o nome do produto ou enviar uma foto da embalagem?";
+    }
+
+    const shouldAskQuantity = summary.options.length === 1;
+    const selectedOption = shouldAskQuantity ? summary.options[0] : null;
+
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        lastIntent: "RETAIL_PRODUCT",
+        pendingAction: shouldAskQuantity
+          ? ConversationState.WAITING_QUANTITY
+          : ConversationState.WAITING_PRESENTATION,
+        lastMedicine: productQuery,
+        currentMedicineQuery: productQuery,
+        candidateOptions: this.toJson(summary.options),
+        selectedPresentation: selectedOption
+          ? this.toJson(selectedOption)
+          : Prisma.JsonNull,
+      },
+    });
+
+    if (selectedOption) {
+      this.logger.log(`RETAIL PRODUCT SELECTED: ${selectedOption.label}`);
+      return this.formatSelectedOptionReply(selectedOption);
+    }
+
+    return this.formatRetailProductChoiceReply(summary);
+  }
+
+  private formatRetailProductChoiceReply(summary: RetailProductLookupSummary) {
+    const lines = [`Encontrei opcoes de ${summary.query}:`, ""];
+
+    for (const option of summary.options.slice(0, 3)) {
+      const price = option.pricePf
+        ? ` - ${this.formatCurrency(option.pricePf)}`
+        : "";
+      lines.push(`${option.optionId}. ${option.label}${price}`);
+    }
+
+    lines.push("", "Responda o numero da opcao.");
+
+    if (summary.manualFallback && summary.options.every((option) => !option.pricePf)) {
+      lines.push(
+        "",
+        "Tenho essa categoria como produto de farmacia, mas nao encontrei preco na base. Posso seguir com orcamento manual?",
+      );
+    }
+
+    return lines.join("\n");
+  }
+
+  private extractRetailProductQuery(message: string) {
+    const normalized = this.normalize(message)
+      .replace(/[?!.:,;]/g, " ")
+      .replace(/\bvoces?\s+(?:tem|teriam|vendem)\b/g, " ")
+      .replace(/\b(?:tem|teria|vende|vendem|quero|queria|preciso)\b/g, " ")
+      .replace(/\b(?:preco|valor|quanto custa|qual valor)\b/g, " ")
+      .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
+      .replace(/\b(?:do|da|de|um|uma|o|a)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    return normalized.length >= 2 ? normalized : message.trim();
   }
 
   private async changeSelectedOption(conversation: Conversation, text: string) {
@@ -436,7 +568,7 @@ export class ConversationEngineService {
         : null,
       selectedOption.pricePf
         ? `Valor: ${this.formatCurrency(selectedOption.pricePf)}.`
-        : "Nao encontrei preco regulado para essa apresentacao.",
+        : this.formatMissingPrice(selectedOption),
       "",
       "Quantas unidades você deseja?",
     ]
@@ -447,16 +579,19 @@ export class ConversationEngineService {
   private async selectCandidateOption(conversation: Conversation, text: string) {
     const currentMedicineQuery =
       conversation.currentMedicineQuery || conversation.lastMedicine;
-    const options = this.getCandidateOptions(conversation.candidateOptions)
-      .filter((option) =>
+    const options = this.getCandidateOptions(conversation.candidateOptions).filter(
+      (option) =>
+        option.type === "retail_product" ||
         this.bulaApiService.optionBelongsToMedicine(
           currentMedicineQuery,
           option,
         ),
-      );
+    );
     const explicitOption = this.findOptionByNumber(text, options);
     const option =
-      explicitOption || this.bulaApiService.findOptionByReply(text, options);
+      explicitOption ||
+      this.findRetailOptionByReply(text, options) ||
+      this.bulaApiService.findOptionByReply(text, options);
 
     if (!option) {
       return null;
@@ -464,11 +599,15 @@ export class ConversationEngineService {
 
     const pricedOption = await this.ensureSelectedOptionPrice(option);
     this.logger.log(`Opcao escolhida: ${pricedOption.label}`);
+    if (pricedOption.type === "retail_product") {
+      this.logger.log(`RETAIL PRODUCT SELECTED: ${pricedOption.label}`);
+    }
     return pricedOption;
   }
 
   private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
     if (
+      option.type === "retail_product" ||
       option.pricePf !== undefined ||
       option.selectionReason?.includes("fonte pharmadb") ||
       option.selectionReason?.includes("fonte popular_manual")
@@ -477,6 +616,57 @@ export class ConversationEngineService {
     }
 
     return this.bulaApiService.priceSelectedOption(option);
+  }
+
+  private formatSelectedOptionReply(option: CommercialMedicineOption) {
+    if (option.type !== "retail_product") {
+      return this.bulaApiService.formatSelectedOptionReply(option);
+    }
+
+    const lines = [`Perfeito, separei ${option.label}.`];
+
+    if (option.packageDescription) {
+      lines.push(`Detalhe: ${option.packageDescription}.`);
+    }
+
+    lines.push(
+      option.pricePf
+        ? `Valor: ${this.formatCurrency(option.pricePf)}.`
+        : this.formatMissingPrice(option),
+      "",
+      "Quantas unidades voce deseja?",
+    );
+
+    return lines.join("\n");
+  }
+
+  private findRetailOptionByReply(
+    text: string,
+    options: CommercialMedicineOption[],
+  ) {
+    const normalized = this.normalize(text).trim();
+
+    return (
+      options.find((option) => {
+        if (option.type !== "retail_product") {
+          return false;
+        }
+
+        const searchText = this.normalize(
+          [option.label, option.productName, option.brand, option.description]
+            .filter(Boolean)
+            .join(" "),
+        );
+
+        return normalized.length >= 2 && searchText.includes(normalized);
+      }) || null
+    );
+  }
+
+  private formatMissingPrice(option: CommercialMedicineOption) {
+    return option.type === "retail_product"
+      ? "Nao encontrei preco na base para esse produto. Posso seguir com orcamento manual?"
+      : "Nao encontrei preco regulado para essa apresentacao.";
   }
 
   private async saveSelectedOption(
@@ -503,7 +693,7 @@ export class ConversationEngineService {
     if (this.isPriceQuestion(text)) {
       answer = option.pricePf
         ? `O valor é ${this.formatCurrency(option.pricePf)}.`
-        : "Nao encontrei preco regulado para essa apresentacao.";
+        : this.formatMissingPrice(option);
     } else if (
       /\b(quantos|vem quantos|qual embalagem|embalagem)\b/.test(normalized)
     ) {
@@ -529,7 +719,7 @@ export class ConversationEngineService {
   ) {
     const answer = option.pricePf
       ? `O valor é ${this.formatCurrency(option.pricePf)}.`
-      : "Nao encontrei preco regulado para essa apresentacao.";
+      : this.formatMissingPrice(option);
 
     return [answer, "", this.repeatStatePrompt(state)].join("\n");
   }
@@ -566,14 +756,20 @@ export class ConversationEngineService {
       option.pricePf !== undefined ? Number((option.pricePf * quantity).toFixed(2)) : undefined;
 
     return {
+      type: option.type || "medicine",
       medicineName: option.medicineName,
       name: option.label,
+      brand: option.brand,
       form: option.formGroup,
+      presentation: option.packageDescription,
+      description: option.description,
       dosage: option.strength,
       packageInfo: option.packageDescription,
       unitPrice: option.pricePf,
       quantity,
       total,
+      imageUrl: option.imageUrl,
+      source: option.source || option.selectionReason,
     };
   }
 
@@ -589,7 +785,7 @@ export class ConversationEngineService {
           item.total !== undefined
             ? this.formatCurrency(item.total)
             : "preco nao encontrado";
-        return `${index + 1}. ${item.name}${packageText}\nQuantidade: ${item.quantity}\nValor: ${total}`;
+        return `${index + 1}. ${item.name}${packageText}\nQuantidade: ${item.quantity} un\nValor: ${total}`;
       })
       .join("\n\n");
   }

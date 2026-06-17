@@ -21,6 +21,10 @@ export class HealthController {
     const bulaApiBaseUrl =
       this.configService.get<string>("BULA_API_BASE_URL") ||
       "https://bulapi.com.br/api/v1";
+    const cosmosApiBaseUrl =
+      this.configService.get<string>("COSMOS_API_BASE_URL") ||
+      "https://api.cosmos.bluesoft.com.br";
+    const cosmosApiToken = this.configService.get<string>("COSMOS_API_TOKEN");
 
     return {
       status: "ok",
@@ -32,6 +36,10 @@ export class HealthController {
         },
         bulapi: {
           configured: Boolean(bulaApiBaseUrl),
+        },
+        cosmos: {
+          configured: Boolean(cosmosApiBaseUrl && cosmosApiToken?.trim()),
+          lazy: true,
         },
       },
     };

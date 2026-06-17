@@ -25,6 +25,7 @@ export interface CommercialMedicineOption {
   optionId: number;
   productId: number;
   presentationId: number;
+  type?: "medicine" | "retail_product";
   productName: string;
   medicineName: string;
   label: string;
@@ -34,6 +35,10 @@ export interface CommercialMedicineOption {
   packageInfo?: PackageInfo;
   pricePf?: number;
   selectionReason?: string;
+  brand?: string;
+  description?: string;
+  imageUrl?: string;
+  source?: string;
 }
 
 export interface MedicineLookupSummary {

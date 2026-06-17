@@ -57,6 +57,14 @@ const envSchema = z.object({
     .default("pharmadb"),
   BULA_API_BASE_URL: z.string().trim().url().optional(),
   VIACEP_BASE_URL: z.string().trim().url().optional(),
+  COSMOS_API_BASE_URL: z
+    .string()
+    .trim()
+    .url()
+    .default("https://api.cosmos.bluesoft.com.br"),
+  COSMOS_API_TOKEN: z.string().trim().optional(),
+  COSMOS_USER_AGENT: z.string().trim().default("farmacia-whatsapp-ai"),
+  COSMOS_PRICE_MULTIPLIER: z.coerce.number().positive().default(1),
   PIX_PROVIDER: z.string().trim().default("none"),
   PIX_MERCHANT_NAME: z.string().trim().optional(),
   PIX_MERCHANT_CITY: z.string().trim().optional(),
