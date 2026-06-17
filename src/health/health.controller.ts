@@ -1,12 +1,13 @@
 import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { ModuleRef } from "@nestjs/core";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Controller("health")
 export class HealthController {
   constructor(
     private readonly configService: ConfigService,
-    private readonly prisma: PrismaService,
+    private readonly moduleRef: ModuleRef,
   ) {}
 
   @Get()
@@ -52,13 +53,25 @@ export class HealthController {
   }
 
   @Get("bootstrap")
-  async bootstrap() {
+  bootstrap() {
     const cosmosTokenCount = this.getCosmosTokenCount();
 
     return {
       cosmosConfigured: cosmosTokenCount > 0,
       cosmosTokenCount,
       pharmadbConfigured: this.isPharmaDbConfigured(),
+      databaseConfigured: Boolean(
+        this.configService.get<string>("DATABASE_URL")?.trim(),
+      ),
+    };
+  }
+
+  @Get("database")
+  async database() {
+    return {
+      databaseConfigured: Boolean(
+        this.configService.get<string>("DATABASE_URL")?.trim(),
+      ),
       databaseConnected: await this.isDatabaseConnected(),
     };
   }
@@ -87,7 +100,8 @@ export class HealthController {
 
   private async isDatabaseConnected() {
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      const prisma = this.moduleRef.get(PrismaService, { strict: false });
+      await prisma.$queryRaw`SELECT 1`;
       return true;
     } catch {
       return false;

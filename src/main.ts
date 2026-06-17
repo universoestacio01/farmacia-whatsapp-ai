@@ -1,5 +1,4 @@
 import { NestFactory } from "@nestjs/core";
-import { ConfigService } from "@nestjs/config";
 import { Logger } from "@nestjs/common";
 import { AppModule } from "./app.module";
 
@@ -9,17 +8,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     rawBody: true,
   });
-  const configService = app.get(ConfigService);
-  const port = configService.get<number>("PORT") || 3000;
-  const primaryProvider =
-    configService.get<string>("MEDICINE_PRIMARY_PROVIDER") || "pharmadb";
-
-  logger.log(`MEDICINE PROVIDER PRIMARY: ${primaryProvider}`);
-
-  if (primaryProvider === "pharmadb") {
-    logger.log("PHARMADB LAZY AUTH ENABLED");
-  }
-
+  const port = Number(process.env.PORT) || 3000;
   app.enableCors();
   await app.listen(port, "0.0.0.0");
   logger.log("BOOT COMPLETED");
