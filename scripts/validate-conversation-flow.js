@@ -317,6 +317,12 @@ function assertCopyQuality(reply) {
     /\bconfirmacao\b/i,
     /\bremedio\b/i,
     /\bdisponivel\b/i,
+    /\bUNKNOWN\b/i,
+    /\bUNDEFINED\b/i,
+    /\bNULL\b/i,
+    /\bN\/A\b/i,
+    /\bNaN\b/i,
+    /\[object Object\]/i,
   ];
 
   for (const term of forbiddenTerms) {
@@ -332,11 +338,12 @@ function assertPixMessageSet(reply) {
   assert.equal(Array.isArray(reply), true);
   assert.equal(reply.length, 3);
   assert.match(reply[0], /Pedido confirmado/);
+  assert.match(reply[0], /Basta tocar e copiar/);
   assert.equal(reply[1], "000201PIXTESTE");
   assert.doesNotMatch(reply[1], /\s/);
   assert.match(reply[2], /checkout\.example/);
   assert.match(reply[2], /Entrega gr/i);
-  assert.match(reply[2], /30 minutos/);
+  assert.match(reply[2], /Após a confirmação do pagamento/);
 }
 
 async function runScenario(name, inputs, assertFn, options = {}) {
@@ -359,6 +366,7 @@ async function run() {
   ], (result) => {
     assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
     assert.match(replyText(result.replies.at(-2)), /Entrega: gr/i);
+    assert.match(replyText(result.replies.at(-2)), /Prazo: até 30 minutos após a confirmação do pagamento/);
     assert.doesNotMatch(replyText(result.replies.at(-2)), /frete|calcular/i);
     assertPixMessageSet(result.replies.at(-1));
   }));

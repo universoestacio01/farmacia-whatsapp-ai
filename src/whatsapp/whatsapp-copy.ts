@@ -1,4 +1,4 @@
-import { CommercialMedicineOption } from "../integrations/bula-api.service";
+import type { CommercialMedicineOption } from "../integrations/bula-api.service";
 
 export interface CartSummaryItem {
   name: string;
@@ -65,6 +65,7 @@ const COMMON_DISPLAY_WORDS: Record<string, string> = {
   dragea: "Drágea",
   drageas: "Drágeas",
   generico: "Genérico",
+  comprimidos: "comprimidos",
   fps: "FPS",
 };
 
@@ -109,7 +110,7 @@ export const WhatsappCopy = {
     });
 
     lines.push(`${Math.min(brands.length, 5) + 1}. Qualquer marca`);
-    lines.push("", "Responda com o número ou o nome da marca.");
+    lines.push("", "Digite o número ou o nome da marca.");
 
     return lines.join("\n");
   },
@@ -127,12 +128,13 @@ export const WhatsappCopy = {
     ];
 
     options.slice(0, 3).forEach((option) => {
+      const price = formatCurrency(option.pricePf);
       lines.push(
-        `${option.optionId}. ${formatProductDisplayName(option.label)} - ${formatCurrency(option.pricePf)}`,
+        `${option.optionId}. ${formatProductDisplayName(option.label)}${price ? ` - ${price}` : ""}`,
       );
     });
 
-    lines.push("", "Qual delas você quer levar?");
+    lines.push("", choicePrompt());
     return lines.join("\n");
   },
 
@@ -147,14 +149,18 @@ export const WhatsappCopy = {
     ];
 
     if (this.shouldShowPackage(product)) {
-      lines.push(`Embalagem: ${formatProductDisplayName(product.packageDescription || "")}`);
+      lines.push(
+        `Embalagem: ${formatProductDisplayName(product.packageDescription || "")}`,
+      );
     }
 
-    lines.push(
-      `Valor: ${formatCurrency(product.pricePf)}`,
-      "",
-      this.askQuantity(),
-    );
+    const price = formatCurrency(product.pricePf);
+
+    if (price) {
+      lines.push(`Valor: ${price}`);
+    }
+
+    lines.push("", this.askQuantity());
 
     return lines.join("\n");
   },
@@ -170,7 +176,9 @@ export const WhatsappCopy = {
     ];
 
     if (this.shouldShowPackage(product)) {
-      lines.push(`Embalagem: ${formatProductDisplayName(product.packageDescription || "")}`);
+      lines.push(
+        `Embalagem: ${formatProductDisplayName(product.packageDescription || "")}`,
+      );
     }
 
     if (product.pricePf !== undefined) {
@@ -224,9 +232,9 @@ export const WhatsappCopy = {
     ].join("\n");
   },
 
-  productNotFound(productName: string) {
+  productNotFound(_productName: string) {
     return [
-      `No momento não encontrei ${formatProductDisplayName(productName)} disponível.`,
+      "No momento não encontrei esse produto disponível.",
       "",
       "Posso te mostrar uma opção parecida?",
     ].join("\n");
@@ -277,7 +285,7 @@ export const WhatsappCopy = {
       "",
       `Subtotal: ${formatCurrency(subtotal)}`,
       "Entrega: grátis",
-      "Prazo estimado: até 30 minutos",
+      "Prazo: até 30 minutos após a confirmação do pagamento",
       `Total: ${formatCurrency(subtotal)}`,
       "",
       "Endereço:",
@@ -292,19 +300,29 @@ export const WhatsappCopy = {
   },
 
   shouldShowPackage(product: CommercialMedicineOption) {
-    if (!product.packageDescription) {
+    const packageDescription = formatProductDisplayName(
+      product.packageDescription || "",
+    );
+
+    if (!packageDescription) {
       return false;
     }
 
     return (
-      normalizeText(product.packageDescription) !== normalizeText(product.label)
+      normalizeText(packageDescription) !== normalizeText(product.label)
     );
   },
 };
 
-export function formatProductDisplayName(name: string) {
+export function formatProductDisplayName(name: unknown) {
+  const sanitized = sanitizeCustomerText(name);
+
+  if (!sanitized) {
+    return "";
+  }
+
   const cleaned = removeRepeatedWords(
-    name
+    sanitized
       .replace(/\s+/g, " ")
       .replace(/\bgen[eé]rico\b/gi, "")
       .trim(),
@@ -318,11 +336,53 @@ export function formatProductDisplayName(name: string) {
       return `${value}${unit.toLowerCase()}`;
     })
     .replace(/\b(Com|De|Da|Do|Das|Dos|E)\b/g, (word) => word.toLowerCase())
+    .replace(/\bCaixa com\b/g, "caixa com")
+    .replace(/\bCápsula\b(?=.*\bcaixa com \d+ cápsulas\b)/i, "Cápsulas")
+    .replace(/\b(\d+)\s+Cápsulas\b/g, "$1 cápsulas")
     .replace(/\bAnti Usure\b/g, "Anti-Usure")
+    .replace(/\s+-\s+/g, " - ")
+    .replace(/\s+-\s*$/g, "")
+    .replace(/^\s*-\s+/g, "")
     .replace(/\s+/g, " ")
     .trim();
 
-  return reorderCategoryBrand(titleCased);
+  return sanitizeCustomerText(reorderCategoryBrand(titleCased));
+}
+
+export function sanitizeCustomerText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  return String(value)
+    .replace(/\[object Object\]/gi, "")
+    .replace(/\b(?:UNKNOWN|UNDEFINED|NULL|N\/A|NaN)\b/gi, "")
+    .replace(/\bcaixa\s+com\s+0\s+(?:unidades|cápsulas|capsulas|comprimidos)\b/gi, "")
+    .replace(/\b0\s+(?:cápsulas|capsulas|comprimidos)\b/gi, "")
+    .replace(/\bcaixa\s+com\s*$/gi, "")
+    .replace(/\bapresentação\s*$/gi, "")
+    .replace(/\bdosagem\s*$/gi, "")
+    .replace(/\(\s*\)/g, "")
+    .replace(/\s+-\s+-\s+/g, " - ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+-\s*$/g, "")
+    .replace(/^\s*-\s+/g, "")
+    .replace(/\bCapsula\b/g, "Cápsula")
+    .replace(/\bCapsulas\b/g, "Cápsulas")
+    .replace(/\bcapsula\b/g, "cápsula")
+    .replace(/\bcapsulas\b/g, "cápsulas")
+    .replace(/\bsolucao\b/gi, (match) =>
+      match[0] === match[0].toUpperCase() ? "Solução" : "solução",
+    )
+    .trim();
+}
+
+export function choicePrompt() {
+  return [
+    "Qual delas você quer levar?",
+    "",
+    "Digite apenas o número da opção.",
+  ].join("\n");
 }
 
 function formatDisplayWord(word: string): string {

@@ -14,7 +14,12 @@ import {
 import { ViaCepAddress, ViaCepService } from "../integrations/via-cep.service";
 import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
-import { formatProductDisplayName, WhatsappCopy } from "./whatsapp-copy";
+import {
+  choicePrompt,
+  formatProductDisplayName,
+  sanitizeCustomerText,
+  WhatsappCopy,
+} from "./whatsapp-copy";
 
 interface CartItem {
   type: "medicine" | "retail_product";
@@ -73,7 +78,7 @@ export class ConversationEngineService {
     const extractedMedicine = this.bulaApiService.extractMedicineName(text);
     const retailProductQuery = this.productSearch.isRetailProductQuery(text);
     this.logger.log(
-      `Intencao detectada: ${medicineQuestion?.intent || "UNKNOWN"}`,
+      `Intencao detectada: ${medicineQuestion?.intent || "nenhuma"}`,
     );
     this.logger.log(`Medicamento extraido: ${extractedMedicine || "nenhum"}`);
 
@@ -375,7 +380,7 @@ export class ConversationEngineService {
         "",
         this.formatCandidateOptions(options),
         "",
-        "Qual delas você quer levar?",
+        choicePrompt(),
       ].join("\n");
     }
 
@@ -440,7 +445,7 @@ export class ConversationEngineService {
     const selectedOption = await this.selectCandidateOption(conversation, text);
 
     if (!selectedOption) {
-      return "Não consegui identificar a opção. Responda com o número ou me diga qual apresentação você quer levar.";
+      return "Não consegui identificar a opção. Digite o número ou me diga qual apresentação você quer levar.";
     }
 
     await this.saveSelectedOption(conversation.id, selectedOption);
@@ -736,7 +741,7 @@ export class ConversationEngineService {
         "Seu pedido já está sendo separado.",
         "",
         "🚚 Entrega grátis por motoboy",
-        "⏱️ Prazo estimado: até 30 minutos",
+        "⏱️ Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
       ].join("\n");
     }
 
@@ -763,7 +768,9 @@ export class ConversationEngineService {
       "",
       `Total: ${this.formatCurrency(totalCents / 100)}`,
       "",
-      "Vou te enviar o Pix Copia e Cola na próxima mensagem para facilitar a cópia.",
+      "Vou te enviar o Pix Copia e Cola na próxima mensagem.",
+      "",
+      "Basta tocar e copiar.",
     ].join("\n");
 
     const deliveryInfo = [
@@ -781,7 +788,7 @@ export class ConversationEngineService {
 
     deliveryInfo.push(
       "🚚 Entrega grátis por motoboy",
-      "⏱️ Prazo estimado: até 30 minutos",
+      "⏱️ Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
     );
 
     return [
@@ -793,7 +800,11 @@ export class ConversationEngineService {
 
   private formatPixResendReply(pixCopyPaste: string) {
     return [
-      "Claro, vou reenviar o Pix Copia e Cola na próxima mensagem para facilitar a cópia.",
+      [
+        "Claro, vou reenviar o Pix Copia e Cola na próxima mensagem.",
+        "",
+        "Basta tocar e copiar.",
+      ].join("\n"),
       this.normalizePixCopyPaste(pixCopyPaste),
       "Após o pagamento, eu aviso você automaticamente por aqui.",
     ];
@@ -1110,7 +1121,7 @@ export class ConversationEngineService {
   private formatFreeDeliveryReply() {
     return [
       "A entrega é grátis por motoboy.",
-      "Prazo estimado: até 30 minutos.",
+      "Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
     ].join("\n");
   }
 
@@ -1159,7 +1170,7 @@ export class ConversationEngineService {
       ].join("\n");
     }
 
-    return "Responda 1 para limpar o carrinho ou 2 para manter.";
+    return "Digite 1 para limpar o carrinho ou 2 para manter.";
   }
 
   private async handleRemoveItemRequest(conversation: Conversation, text: string) {
@@ -1182,7 +1193,7 @@ export class ConversationEngineService {
         "",
         this.formatCartLines(cart),
         "",
-        "Responda com o número do item.",
+        "Digite o número do item.",
       ].join("\n");
     }
 
@@ -1341,7 +1352,7 @@ export class ConversationEngineService {
       "",
       this.formatCandidateOptions(options),
       "",
-      "Qual delas você quer levar?",
+      choicePrompt(),
     ].join("\n");
   }
 
@@ -1801,12 +1812,14 @@ export class ConversationEngineService {
 
   private formatAddressForOrder(address: PendingAddress) {
     const lines = [
-      `${address.logradouro}, número ${address.number}`,
+      `${sanitizeCustomerText(address.logradouro)}, número ${sanitizeCustomerText(address.number)}`,
       address.addressComplement
-        ? `Complemento: ${address.addressComplement}`
+        ? `Complemento: ${sanitizeCustomerText(address.addressComplement)}`
         : null,
-      address.addressReference ? `Referência: ${address.addressReference}` : null,
-      `${address.bairro}, ${address.localidade}/${address.uf}`,
+      address.addressReference
+        ? `Referência: ${sanitizeCustomerText(address.addressReference)}`
+        : null,
+      `${sanitizeCustomerText(address.bairro)}, ${sanitizeCustomerText(address.localidade)}/${sanitizeCustomerText(address.uf)}`,
     ];
 
     return lines.filter(Boolean).join("\n");
@@ -1821,14 +1834,14 @@ export class ConversationEngineService {
 
     return {
       type: option.type || "medicine",
-      medicineName: option.medicineName,
+      medicineName: sanitizeCustomerText(option.medicineName),
       name: formatProductDisplayName(option.label),
-      brand: option.brand,
-      form: option.formGroup,
-      presentation: option.packageDescription,
-      description: option.description,
-      dosage: option.strength,
-      packageInfo: option.packageDescription,
+      brand: sanitizeCustomerText(option.brand),
+      form: sanitizeCustomerText(option.formGroup),
+      presentation: sanitizeCustomerText(option.packageDescription),
+      description: sanitizeCustomerText(option.description),
+      dosage: sanitizeCustomerText(option.strength),
+      packageInfo: sanitizeCustomerText(option.packageDescription),
       unitPrice: option.pricePf,
       quantity,
       total,
@@ -2290,7 +2303,7 @@ export class ConversationEngineService {
   }
 
   private formatCurrency(value: number | undefined) {
-    if (value === undefined) {
+    if (value === undefined || !Number.isFinite(value)) {
       return "";
     }
 

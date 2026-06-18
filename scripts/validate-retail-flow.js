@@ -40,6 +40,15 @@ async function run() {
     ),
     "Kérastase Resistance Ciment Anti-Usure Condicionador 200ml",
   );
+  assert.equal(
+    formatProductDisplayName("Cimegripe Capsula UNKNOWN - caixa com 10 cápsulas"),
+    "Cimegripe Cápsulas - caixa com 10 cápsulas",
+  );
+  assert.doesNotMatch(
+    formatProductDisplayName("Dorflex Comprimido UNKNOWN"),
+    /UNKNOWN|undefined|null|NaN|\[object Object\]/i,
+  );
+  assert.equal(formatProductDisplayName(null), "");
   assert.match(
     WhatsappCopy.askRetailBrand("shampoo", manual.getPopularBrands("shampoo")),
     /Você tem alguma marca de preferência/,
@@ -118,7 +127,16 @@ async function run() {
       noPriceSummary.options,
       (value) => `R$ ${Number(value).toFixed(2)}`,
     ),
-    /orcamento|orçamento|sem preco|sem preço/i,
+    /orcamento|orçamento|sem preco|sem preço|UNKNOWN|undefined|null|NaN|\[object Object\]/i,
+  );
+  assert.match(
+    WhatsappCopy.showRetailOptions(
+      noPriceSummary.category,
+      noPriceSummary.requestedBrand,
+      noPriceSummary.options,
+      (value) => `R$ ${Number(value).toFixed(2)}`,
+    ),
+    /Digite apenas o número da opção/,
   );
 
   const premiumFallbackSummary = await new ProductSearchOrchestratorService(

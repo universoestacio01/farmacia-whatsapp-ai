@@ -272,7 +272,7 @@ async function run() {
   assert.equal(prisma.payments[0].status, PaymentStatus.PAID);
   assert.equal(prisma.orders[0].status, OrderStatus.PAID);
   assert.match(approved.message, /Entrega grátis por motoboy/);
-  assert.match(approved.message, /até 30 minutos/);
+  assert.match(approved.message, /Após a confirmação do pagamento/);
 
   const duplicated = await service.handleSigiloPayWebhook({
     event: "TRANSACTION_PAID",

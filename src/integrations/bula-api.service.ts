@@ -1,6 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  choicePrompt,
+  formatProductDisplayName,
+  sanitizeCustomerText,
+} from "../whatsapp/whatsapp-copy";
+import {
   CommercialMedicineSelector,
   PackageInfo,
   SelectorPresentation,
@@ -388,9 +393,9 @@ export class BulaApiService {
     return { ...option, pricePf };
   }
 
-  formatNotFound(medicineName: string) {
+  formatNotFound(_medicineName: string) {
     return [
-      `No momento não encontrei "${medicineName}" disponível.`,
+      "No momento não encontrei esse medicamento disponível.",
       "",
       "Você pode conferir o nome do medicamento ou me enviar uma foto da embalagem?",
     ].join("\n");
@@ -398,7 +403,7 @@ export class BulaApiService {
 
   formatPresentationChoiceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Tenho ${this.title(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
+      return `Tenho ${formatProductDisplayName(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -406,7 +411,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Tenho estas opções de ${this.title(summary.medicineName)} para você:`,
+      `Tenho estas opções de ${formatProductDisplayName(summary.medicineName)} para você:`,
       "",
     ];
 
@@ -414,17 +419,13 @@ export class BulaApiService {
       lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
-    const optionNumbers = summary.options
-      .slice(0, 3)
-      .map((option) => option.optionId)
-      .join(", ");
-    lines.push("", `Qual delas você quer levar? Responda ${optionNumbers}.`);
+    lines.push("", choicePrompt());
     return lines.join("\n");
   }
 
   formatPriceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Tenho ${this.title(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
+      return `Tenho ${formatProductDisplayName(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -432,7 +433,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Tenho estas opções de ${this.title(summary.medicineName)} para você:`,
+      `Tenho estas opções de ${formatProductDisplayName(summary.medicineName)} para você:`,
       "",
     ];
 
@@ -440,15 +441,23 @@ export class BulaApiService {
       lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
-    lines.push("", "Qual delas você quer levar?");
+    lines.push("", choicePrompt());
     return lines.join("\n");
   }
 
   formatSelectedOptionReply(option: CommercialMedicineOption) {
-    const lines = [`Perfeito, separei este item para você:`, "", option.label];
+    const lines = [
+      `Perfeito, separei este item para você:`,
+      "",
+      formatProductDisplayName(option.label),
+    ];
 
-    if (option.packageDescription) {
-      lines.push(`Embalagem: ${option.packageDescription}.`);
+    const packageDescription = formatProductDisplayName(
+      option.packageDescription || "",
+    );
+
+    if (packageDescription) {
+      lines.push(`Embalagem: ${packageDescription}.`);
     }
 
     lines.push(
@@ -740,7 +749,7 @@ export class BulaApiService {
       presentationName = `${presentationName} ${strength}`;
     }
 
-    return `${productName} ${presentationName}`.replace(/\s+/g, " ").trim();
+    return formatProductDisplayName(`${productName} ${presentationName}`);
   }
 
   private formatProductDisplayName(
@@ -778,11 +787,13 @@ export class BulaApiService {
   }
 
   private formatStrength(strength?: string) {
-    if (!strength) {
+    const sanitized = sanitizeCustomerText(strength);
+
+    if (!sanitized) {
       return "";
     }
 
-    return strength
+    return sanitized
       .toUpperCase()
       .replace(/\s*MG\b/g, "mg")
       .replace(/\s*G\b/g, "g")
@@ -791,9 +802,14 @@ export class BulaApiService {
   }
 
   private formatOptionLine(option: CommercialMedicineOption) {
+    const label = formatProductDisplayName(option.label);
+    const packageDescription = formatProductDisplayName(
+      option.packageDescription || "",
+    );
+
     return option.packageDescription
-      ? `${option.label} - ${option.packageDescription}`
-      : option.label;
+      ? sanitizeCustomerText(`${label} - ${packageDescription}`)
+      : label;
   }
 
   private formatPackageDescription(
@@ -819,14 +835,14 @@ export class BulaApiService {
       const unit = unitByGroup[group] || "unidades";
 
       if (unit === "frasco" || unit === "unidade") {
-        return `${packageInfo.unitCount} ${unit}`;
+        return sanitizeCustomerText(`${packageInfo.unitCount} ${unit}`);
       }
 
-      return `caixa com ${packageInfo.unitCount} ${unit}`;
+      return sanitizeCustomerText(`caixa com ${packageInfo.unitCount} ${unit}`);
     }
 
     if (packageInfo?.volumeMl) {
-      return `frasco com ${packageInfo.volumeMl} ml`;
+      return sanitizeCustomerText(`frasco com ${packageInfo.volumeMl} ml`);
     }
 
     if (presentation.package_quantity && group !== "outro") {
@@ -843,7 +859,9 @@ export class BulaApiService {
       return undefined;
     }
 
-    return this.humanizePackageDescription(presentation.package_description);
+    return sanitizeCustomerText(
+      this.humanizePackageDescription(presentation.package_description),
+    );
   }
 
   private humanizePackageDescription(value: string) {
@@ -982,7 +1000,7 @@ export class BulaApiService {
   }
 
   private formatCurrency(value: number | undefined) {
-    if (value === undefined) {
+    if (value === undefined || !Number.isFinite(value)) {
       return "";
     }
 

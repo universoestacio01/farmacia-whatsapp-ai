@@ -467,7 +467,7 @@ export class PaymentsService {
       "Seu pedido já está sendo separado.",
       "",
       "🚚 Entrega grátis por motoboy",
-      "⏱️ Prazo estimado: até 30 minutos",
+      "⏱️ Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
     ].join("\n");
   }
 
