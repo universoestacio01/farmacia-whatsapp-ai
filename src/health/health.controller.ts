@@ -1,6 +1,7 @@
 import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
+import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Controller("health")
@@ -73,6 +74,43 @@ export class HealthController {
       databaseConfigured: Boolean(
         this.configService.get<string>("DATABASE_URL")?.trim(),
       ),
+    };
+  }
+
+  @Get("payments")
+  payments() {
+    const publicKey = getEnvPreview(
+      this.configService.get<string>("SIGILOPAY_PUBLIC_KEY") ??
+        process.env.SIGILOPAY_PUBLIC_KEY,
+    );
+    const secretKey = getEnvPreview(
+      this.configService.get<string>("SIGILOPAY_SECRET_KEY") ??
+        process.env.SIGILOPAY_SECRET_KEY,
+    );
+
+    return {
+      provider: sanitizeEnv(
+        this.configService.get<string>("PIX_PROVIDER") ?? process.env.PIX_PROVIDER,
+      ) || "none",
+      enabled:
+        this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
+        sanitizeEnv(process.env.SIGILOPAY_ENABLED).toLowerCase() === "true",
+      apiBaseUrl:
+        sanitizeEnv(
+          this.configService.get<string>("SIGILOPAY_API_BASE_URL") ??
+            process.env.SIGILOPAY_API_BASE_URL,
+        ) || "https://app.sigilopay.com.br/api/v1",
+      publicKeyConfigured: publicKey.configured,
+      publicKeyLength: publicKey.length,
+      publicKeyPrefix: publicKey.prefix,
+      secretKeyConfigured: secretKey.configured,
+      secretKeyLength: secretKey.length,
+      secretKeyPrefix: secretKey.prefix,
+      callbackUrl:
+        sanitizeEnv(
+          this.configService.get<string>("SIGILOPAY_CALLBACK_URL") ??
+            process.env.SIGILOPAY_CALLBACK_URL,
+        ) || "https://io-web.link/webhook/sigilopay",
     };
   }
 

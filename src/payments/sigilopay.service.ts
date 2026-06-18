@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { sanitizeEnv } from "../config/env-sanitize";
 import {
   CreatePixPaymentInput,
   PixPaymentResult,
@@ -61,14 +62,15 @@ export class SigiloPayService implements PixProvider {
   constructor(private readonly configService: ConfigService) {}
 
   isEnabled() {
-    return this.configService.get<boolean>("SIGILOPAY_ENABLED") === true;
+    return (
+      this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
+      sanitizeEnv(process.env.SIGILOPAY_ENABLED).toLowerCase() === "true"
+    );
   }
 
   isConfigured() {
     return Boolean(
-      this.getPublicKey() &&
-        this.getSecretKey() &&
-        this.configService.get<string>("SIGILOPAY_API_BASE_URL")?.trim(),
+      this.getPublicKey() && this.getSecretKey() && this.getBaseUrl(),
     );
   }
 
@@ -206,23 +208,26 @@ export class SigiloPayService implements PixProvider {
     const requestBody = this.safeParseJson(init.body);
 
     try {
+      const headers = {
+        "Content-Type": "application/json",
+        "x-public-key": this.getPublicKey(),
+        "x-secret-key": this.getSecretKey(),
+        ...(init.headers || {}),
+      };
+
       this.logger.log(
         `SIGILOPAY REQUEST: ${JSON.stringify({
           url,
           endpoint: path,
           method: init.method || "GET",
+          headers: this.maskHeaders(headers),
           body: requestBody,
         })}`,
       );
 
       const response = await fetch(url, {
         ...init,
-        headers: {
-          "Content-Type": "application/json",
-          "x-public-key": this.getPublicKey(),
-          "x-secret-key": this.getSecretKey(),
-          ...(init.headers || {}),
-        },
+        headers,
         signal: controller.signal,
       });
 
@@ -234,6 +239,7 @@ export class SigiloPayService implements PixProvider {
           url,
           endpoint: path,
           status: response.status,
+          headers: this.getRelevantResponseHeaders(response.headers),
           data,
         })}`,
       );
@@ -317,32 +323,31 @@ export class SigiloPayService implements PixProvider {
   }
 
   private getBaseUrl() {
-    return (
-      this.configService.get<string>("SIGILOPAY_API_BASE_URL") ||
-      "https://app.sigilopay.com.br/api/v1"
+    return this.getEnv(
+      "SIGILOPAY_API_BASE_URL",
+      "https://app.sigilopay.com.br/api/v1",
     ).replace(/\/+$/, "");
   }
 
   private getPublicKey() {
-    return this.configService.get<string>("SIGILOPAY_PUBLIC_KEY")?.trim() || "";
+    return this.getEnv("SIGILOPAY_PUBLIC_KEY");
   }
 
   private getSecretKey() {
-    return this.configService.get<string>("SIGILOPAY_SECRET_KEY")?.trim() || "";
+    return this.getEnv("SIGILOPAY_SECRET_KEY");
   }
 
   private getWebhookToken() {
     return (
-      this.configService.get<string>("SIGILOPAY_WEBHOOK_TOKEN")?.trim() ||
-      this.configService.get<string>("SIGILOPAY_WEBHOOK_SECRET")?.trim() ||
-      ""
+      this.getEnv("SIGILOPAY_WEBHOOK_TOKEN") ||
+      this.getEnv("SIGILOPAY_WEBHOOK_SECRET")
     );
   }
 
   private getCallbackUrl() {
-    return (
-      this.configService.get<string>("SIGILOPAY_CALLBACK_URL")?.trim() ||
-      "https://io-web.link/webhook/sigilopay"
+    return this.getEnv(
+      "SIGILOPAY_CALLBACK_URL",
+      "https://io-web.link/webhook/sigilopay",
     );
   }
 
@@ -364,6 +369,41 @@ export class SigiloPayService implements PixProvider {
     } catch {
       return value;
     }
+  }
+
+  private getEnv(name: string, fallback = "") {
+    return sanitizeEnv(
+      this.configService.get<string>(name) ?? process.env[name] ?? fallback,
+    );
+  }
+
+  private maskHeaders(headers: HeadersInit) {
+    const record = headers as Record<string, string>;
+
+    return {
+      "Content-Type": record["Content-Type"] || record["content-type"],
+      "x-public-key": this.maskCredential(record["x-public-key"]),
+      "x-secret-key": this.maskCredential(record["x-secret-key"]),
+    };
+  }
+
+  private maskCredential(value: unknown) {
+    const sanitized = sanitizeEnv(value);
+
+    return {
+      configured: sanitized.length > 0,
+      prefix: sanitized.slice(0, 4),
+      length: sanitized.length,
+    };
+  }
+
+  private getRelevantResponseHeaders(headers: Headers) {
+    return {
+      "content-type": headers.get("content-type"),
+      date: headers.get("date"),
+      "x-request-id": headers.get("x-request-id"),
+      "cf-ray": headers.get("cf-ray"),
+    };
   }
 
   private getApiErrorMessage(data: unknown) {
