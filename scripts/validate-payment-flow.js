@@ -78,7 +78,13 @@ class FakePrisma {
                 (condition) =>
                   condition.providerTransactionId ===
                     item.providerTransactionId ||
-                  condition.providerPaymentId === item.providerPaymentId,
+                  condition.providerPaymentId === item.providerPaymentId ||
+                  (condition.pixCopyPaste?.not === null &&
+                    item.pixCopyPaste !== null &&
+                    item.pixCopyPaste !== undefined) ||
+                  (condition.pixPayload?.not === null &&
+                    item.pixPayload !== null &&
+                    item.pixPayload !== undefined),
               );
             }
             return true;
@@ -121,12 +127,15 @@ class FakePrisma {
   }
 }
 
-function fakeSigiloPay(enabled = true, calls = []) {
+function fakeSigiloPay(enabled = true, calls = [], options = {}) {
   return {
     isEnabled: () => enabled,
     isConfigured: () => enabled,
     async createPayment(input) {
       calls.push(input);
+      if (options.fail) {
+        throw new Error("SigiloPay indisponível");
+      }
       return {
         provider: "sigilopay",
         providerPaymentId: `tx_${input.orderId}`,
@@ -158,20 +167,38 @@ async function run() {
     },
   ];
 
-  const manualPrisma = new FakePrisma();
-  const manualService = new PaymentsService(
+  const disabledPrisma = new FakePrisma();
+  const disabledService = new PaymentsService(
     config({ PIX_PROVIDER: "sigilopay", SIGILOPAY_ENABLED: false }),
-    manualPrisma,
+    disabledPrisma,
     fakeSigiloPay(false),
   );
-  const manual = await manualService.confirmCheckout({
+  const disabled = await disabledService.confirmCheckout({
     conversationId: "conv_1",
     customerId: "customer_1",
     cart,
   });
-  assert.equal(manual.manualFallback, true);
-  assert.equal(manual.provider, "manual");
-  assert.equal(manualPrisma.orders[0].status, OrderStatus.PENDING_PAYMENT_MANUAL);
+  assert.equal(disabled.manualFallback, false);
+  assert.equal(disabled.pixCreationFailed, true);
+  assert.equal(disabled.provider, "sigilopay");
+  assert.equal(disabledPrisma.payments.length, 0);
+  assert.equal(disabledPrisma.orders[0].status, OrderStatus.CONFIRMED);
+
+  const failingPrisma = new FakePrisma();
+  const failingCalls = [];
+  const failingService = new PaymentsService(
+    config({ PIX_PROVIDER: "sigilopay", SIGILOPAY_ENABLED: true }),
+    failingPrisma,
+    fakeSigiloPay(true, failingCalls, { fail: true }),
+  );
+  const failedPix = await failingService.confirmCheckout({
+    conversationId: "conv_fail",
+    customerId: "customer_1",
+    cart,
+  });
+  assert.equal(failedPix.pixCreationFailed, true);
+  assert.equal(failedPix.manualFallback, false);
+  assert.equal(failingPrisma.payments.length, 0);
 
   const prisma = new FakePrisma();
   const pixCalls = [];
@@ -216,6 +243,8 @@ async function run() {
   assert.equal(approved.notified, true);
   assert.equal(prisma.payments[0].status, PaymentStatus.PAID);
   assert.equal(prisma.orders[0].status, OrderStatus.PAID);
+  assert.match(approved.message, /Entrega grátis por motoboy/);
+  assert.match(approved.message, /até 30 minutos/);
 
   const duplicated = await service.handleSigiloPayWebhook({
     event: "TRANSACTION_PAID",

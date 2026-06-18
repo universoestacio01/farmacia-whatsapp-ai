@@ -100,6 +100,10 @@ export class ConversationEngineService {
       return this.formatCartStatus(conversation);
     }
 
+    if (this.isDeliveryPriceQuestion(text)) {
+      return this.formatFreeDeliveryReply();
+    }
+
     if (this.isPaymentCommand(text)) {
       return this.handlePaymentCommand(conversation, text);
     }
@@ -503,7 +507,7 @@ export class ConversationEngineService {
     }
 
     if (this.isDeliveryPriceQuestion(text)) {
-      return "Para calcular a entrega, me envie seu CEP. Pode mandar apenas os 8 dígitos.";
+      return this.formatFreeDeliveryReply();
     }
 
     if (this.isDeliveryRequest(text)) {
@@ -639,8 +643,8 @@ export class ConversationEngineService {
       },
     });
 
-    if (payment.manualFallback || !payment.pixCopyPaste) {
-      return this.formatManualPaymentFallback(payment.totalCents);
+    if (payment.pixCreationFailed || !payment.pixCopyPaste) {
+      return this.formatPixFailureRetryReply();
     }
 
     return this.formatPixPaymentReply(
@@ -651,6 +655,15 @@ export class ConversationEngineService {
   }
 
   private async handleWaitingPix(conversation: Conversation, text: string) {
+    if (this.isPixRetryCommand(text)) {
+      return this.confirmOrderAndCreatePayment(conversation);
+    }
+
+    if (this.isPixCancelChoice(text)) {
+      await this.resetConversationContext(conversation.id);
+      return "Pedido cancelado. Se quiser recomeçar, é só me chamar por aqui.";
+    }
+
     if (this.isAlreadyPaidCommand(text)) {
       return this.formatWaitingPaymentConfirmationReply();
     }
@@ -664,15 +677,22 @@ export class ConversationEngineService {
     );
     const payment = order?.payments?.[0];
 
-    if (!order || !payment) {
+    if (!order) {
       return "Para gerar o Pix, finalize o carrinho primeiro.";
+    }
+
+    if (!payment) {
+      return this.confirmOrderAndCreatePayment(conversation);
     }
 
     if (payment.status === "PAID") {
       return [
         "Pagamento confirmado ✅",
         "",
-        "Seu pedido já foi recebido e será preparado para entrega.",
+        "Seu pedido já está sendo separado.",
+        "",
+        "🚚 Entrega grátis por motoboy",
+        "⏱️ Prazo estimado: até 30 minutos",
       ].join("\n");
     }
 
@@ -686,7 +706,7 @@ export class ConversationEngineService {
       return this.formatPixResendReply(pixCopyPaste);
     }
 
-    return this.formatManualPaymentFallback(payment.amountCents);
+    return this.confirmOrderAndCreatePayment(conversation);
   }
 
   private formatPixPaymentReply(
@@ -695,11 +715,11 @@ export class ConversationEngineService {
     paymentUrl?: string,
   ) {
     const lines = [
-      "Pedido confirmado ✅",
+      "✅ Pedido confirmado!",
       "",
       `Total: ${this.formatCurrency(totalCents / 100)}`,
       "",
-      "Para pagar, copie e cole este Pix no app do seu banco:",
+      "📲 Pix Copia e Cola:",
       "",
       pixCopyPaste,
       "",
@@ -709,7 +729,12 @@ export class ConversationEngineService {
       lines.push("Você também pode pagar por este link:", paymentUrl, "");
     }
 
-    lines.push("Assim que o pagamento for confirmado, eu te aviso por aqui.");
+    lines.push(
+      "Após o pagamento, eu aviso você automaticamente por aqui.",
+      "",
+      "🚚 Entrega grátis por motoboy",
+      "⏱️ Prazo estimado: até 30 minutos",
+    );
 
     return lines.join("\n");
   }
@@ -719,6 +744,8 @@ export class ConversationEngineService {
       "Claro, aqui está o Pix Copia e Cola do seu pedido:",
       "",
       pixCopyPaste,
+      "",
+      "Após o pagamento, eu aviso você automaticamente por aqui.",
     ].join("\n");
   }
 
@@ -726,19 +753,19 @@ export class ConversationEngineService {
     return [
       "Perfeito 👍",
       "",
-      "Estou aguardando a confirmação automática do banco.",
-      "Assim que o pagamento for identificado, eu aviso você por aqui.",
+      "Estou aguardando a confirmação automática do pagamento.",
+      "Assim que for confirmado, aviso você por aqui.",
     ].join("\n");
   }
 
-  private formatManualPaymentFallback(totalCents: number) {
+  private formatPixFailureRetryReply() {
     return [
-      "Pedido confirmado ✅",
+      "Não consegui gerar o Pix neste momento.",
       "",
-      `Total: ${this.formatCurrency(totalCents / 100)}`,
+      "Deseja tentar novamente?",
       "",
-      "Não consegui gerar o Pix automaticamente agora.",
-      "Nossa equipe vai te enviar os dados de pagamento em instantes.",
+      "1. Gerar Pix novamente",
+      "2. Cancelar pedido",
     ].join("\n");
   }
 
@@ -1006,7 +1033,7 @@ export class ConversationEngineService {
     return [
       this.formatCartStatus(conversation),
       "",
-      "Para calcular a entrega e finalizar, me envie seu CEP. Pode mandar apenas os 8 dígitos.",
+      "Para finalizar, me envie o CEP da entrega. Pode mandar apenas os 8 dígitos.",
     ].join("\n");
   }
 
@@ -1025,6 +1052,13 @@ export class ConversationEngineService {
       `Subtotal: ${this.formatCurrency(this.cartSubtotal(cart))}`,
       "",
       "Para finalizar, responda finalizar.",
+    ].join("\n");
+  }
+
+  private formatFreeDeliveryReply() {
+    return [
+      "A entrega é grátis por motoboy.",
+      "Prazo estimado: até 30 minutos nas capitais.",
     ].join("\n");
   }
 
@@ -1863,14 +1897,28 @@ export class ConversationEngineService {
 
   private isPaymentCommand(text: string) {
     const normalized = this.normalize(text).trim();
-    return /^(pix|manda o pix|mandar pix|enviar pix|pagar|quero pagar|status do pagamento|pagamento|ja paguei|já paguei)$/.test(
+    return /^(pix|manda o pix|mandar pix|enviar pix|pagar|quero pagar|gerar pix novamente|gerar pix|tentar pix novamente|status do pagamento|pagamento|ja paguei|já paguei|paguei|fiz o pix)$/.test(
       normalized,
     );
   }
 
   private isAlreadyPaidCommand(text: string) {
     const normalized = this.normalize(text).trim();
-    return /^(ja paguei|já paguei|paguei|pagamento feito)$/.test(normalized);
+    return /^(ja paguei|já paguei|paguei|pagamento feito|fiz o pix)$/.test(
+      normalized,
+    );
+  }
+
+  private isPixRetryCommand(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(1|pix|gerar pix|gerar pix novamente|tentar novamente|tentar pix novamente|manda o pix|mandar pix|enviar pix|pagar|quero pagar)$/.test(
+      normalized,
+    );
+  }
+
+  private isPixCancelChoice(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(2|cancelar|cancela|cancelar pedido|desistir)$/.test(normalized);
   }
 
   private isRecommendationRequest(text: string) {

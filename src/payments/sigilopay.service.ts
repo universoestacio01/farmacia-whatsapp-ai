@@ -202,9 +202,20 @@ export class SigiloPayService implements PixProvider {
   ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
+    const url = `${this.getBaseUrl()}${path}`;
+    const requestBody = this.safeParseJson(init.body);
 
     try {
-      const response = await fetch(`${this.getBaseUrl()}${path}`, {
+      this.logger.log(
+        `SIGILOPAY REQUEST: ${JSON.stringify({
+          url,
+          endpoint: path,
+          method: init.method || "GET",
+          body: requestBody,
+        })}`,
+      );
+
+      const response = await fetch(url, {
         ...init,
         headers: {
           "Content-Type": "application/json",
@@ -216,7 +227,16 @@ export class SigiloPayService implements PixProvider {
       });
 
       const text = await response.text();
-      const data = text ? (JSON.parse(text) as T) : ({} as T);
+      const data = text ? (this.safeParseJson(text) as T) : ({} as T);
+
+      this.logger.log(
+        `SIGILOPAY RESPONSE: ${JSON.stringify({
+          url,
+          endpoint: path,
+          status: response.status,
+          data,
+        })}`,
+      );
 
       if (!response.ok) {
         this.logger.error(`SIGILOPAY API ERROR STATUS: ${response.status}`);
@@ -230,13 +250,48 @@ export class SigiloPayService implements PixProvider {
       return data;
     } catch (error) {
       if (error instanceof SigiloPayError) {
+        this.logger.error(
+          `SIGILOPAY ERROR: ${JSON.stringify({
+            url,
+            endpoint: path,
+            statusCode: error.statusCode,
+            message: error.message,
+            name: error.name,
+          })}`,
+          error.stack,
+        );
         throw error;
       }
 
       if (error instanceof Error && error.name === "AbortError") {
-        throw new SigiloPayError("Timeout ao chamar SigiloPay.", "TIMEOUT");
+        const sigiloError = new SigiloPayError(
+          "Timeout ao chamar SigiloPay.",
+          "TIMEOUT",
+        );
+        this.logger.error(
+          `SIGILOPAY ERROR: ${JSON.stringify({
+            url,
+            endpoint: path,
+            message: sigiloError.message,
+            name: sigiloError.name,
+          })}`,
+          error.stack,
+        );
+        throw sigiloError;
       }
 
+      this.logger.error(
+        `SIGILOPAY ERROR: ${JSON.stringify({
+          url,
+          endpoint: path,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Erro desconhecido ao chamar SigiloPay.",
+          name: error instanceof Error ? error.name : "UnknownError",
+        })}`,
+        error instanceof Error ? error.stack : undefined,
+      );
       throw new SigiloPayError(
         error instanceof Error
           ? error.message
@@ -297,6 +352,18 @@ export class SigiloPayService implements PixProvider {
 
   private defaultCustomerEmail(orderId: string) {
     return `cliente+${orderId}@farmacia-whatsapp-ai.local`;
+  }
+
+  private safeParseJson(value: unknown) {
+    if (typeof value !== "string") {
+      return value;
+    }
+
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
   }
 
   private getApiErrorMessage(data: unknown) {

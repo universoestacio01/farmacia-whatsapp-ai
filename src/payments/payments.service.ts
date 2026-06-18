@@ -89,7 +89,7 @@ export class PaymentsService {
       return {
         orderId: order.id,
         totalCents,
-        provider: reusablePayment.provider === "sigilopay" ? "sigilopay" : "manual",
+        provider: "sigilopay",
         status: this.toNormalizedStatus(reusablePayment.status),
         providerTransactionId:
           reusablePayment.providerTransactionId ||
@@ -101,14 +101,15 @@ export class PaymentsService {
         paymentUrl: reusablePayment.paymentUrl || undefined,
         expiresAt: reusablePayment.expiresAt || undefined,
         rawResponse: reusablePayment.rawResponse || undefined,
-        manualFallback: reusablePayment.provider !== "sigilopay",
+        manualFallback: false,
       };
     }
 
     if (!this.shouldUseSigiloPay()) {
-      await this.createManualFallbackPayment(order.id, totalCents);
-      await this.markOrderManualFallback(order.id);
-      return this.manualFallbackResult(order.id, totalCents);
+      const message =
+        "SigiloPay não configurada. Verifique PIX_PROVIDER, SIGILOPAY_ENABLED e credenciais.";
+      this.logger.error(`SIGILOPAY PIX CREATION FAILED: ${message}`);
+      return this.pixFailureResult(order.id, totalCents, message);
     }
 
     try {
@@ -159,15 +160,14 @@ export class PaymentsService {
         manualFallback: false,
       };
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "erro desconhecido";
       this.logger.error(
-        `SIGILOPAY PIX CREATION FAILED: ${
-          error instanceof Error ? error.message : "erro desconhecido"
-        }`,
+        `SIGILOPAY PIX CREATION FAILED: ${message}`,
+        error instanceof Error ? error.stack : undefined,
       );
-      await this.createManualFallbackPayment(order.id, totalCents);
-      await this.markOrderManualFallback(order.id);
 
-      return this.manualFallbackResult(order.id, totalCents);
+      return this.pixFailureResult(order.id, totalCents, message);
     }
   }
 
@@ -273,7 +273,7 @@ export class PaymentsService {
     return {
       notified: true as const,
       whatsappNumber: payment.order.customer.whatsappNumber,
-      message: this.formatPaymentConfirmedMessage(),
+      message: this.formatPaidDeliveryMessage(),
     };
   }
 
@@ -309,64 +309,31 @@ export class PaymentsService {
         prisma.payment.findFirst({
           where: {
             orderId,
+            provider: "sigilopay",
             status: PaymentStatus.PENDING,
+            OR: [
+              { pixCopyPaste: { not: null } },
+              { pixPayload: { not: null } },
+            ],
           },
           orderBy: { createdAt: "desc" },
         }),
     );
   }
 
-  private async createManualFallbackPayment(orderId: string, totalCents: number) {
-    const existingManual = await this.prisma.safePrismaCall(
-      "payments.payment.findFirst.manual",
-      (prisma) =>
-        prisma.payment.findFirst({
-          where: {
-            orderId,
-            provider: "manual",
-            status: PaymentStatus.PENDING,
-          },
-        }),
-    );
-
-    if (existingManual) {
-      return existingManual;
-    }
-
-    return this.prisma.safePrismaCall("payments.payment.create.manual", (prisma) =>
-      prisma.payment.create({
-        data: {
-          orderId,
-          status: PaymentStatus.PENDING,
-          amountCents: totalCents,
-          amount: this.centsToMoney(totalCents),
-          provider: "manual",
-        },
-      }),
-    );
-  }
-
-  private async markOrderManualFallback(orderId: string) {
-    await this.prisma.safePrismaCall(
-      "payments.order.update.manual_fallback",
-      (prisma) =>
-        prisma.order.update({
-          where: { id: orderId },
-          data: { status: OrderStatus.PENDING_PAYMENT_MANUAL },
-        }),
-    );
-  }
-
-  private manualFallbackResult(
+  private pixFailureResult(
     orderId: string,
     totalCents: number,
+    errorMessage: string,
   ): ConfirmCheckoutResult {
     return {
       orderId,
       totalCents,
-      provider: "manual",
-      status: "pending",
-      manualFallback: true,
+      provider: "sigilopay",
+      status: "failed",
+      manualFallback: false,
+      pixCreationFailed: true,
+      errorMessage,
     };
   }
 
@@ -467,6 +434,17 @@ export class PaymentsService {
 
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? new Date() : date;
+  }
+
+  private formatPaidDeliveryMessage() {
+    return [
+      "Pagamento confirmado ✅",
+      "",
+      "Seu pedido já está sendo separado.",
+      "",
+      "🚚 Entrega grátis por motoboy",
+      "⏱️ Prazo estimado: até 30 minutos",
+    ].join("\n");
   }
 
   private formatPaymentConfirmedMessage() {

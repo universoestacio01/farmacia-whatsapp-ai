@@ -247,24 +247,19 @@ export const WhatsappCopy = {
   orderConfirmation(
     cartLines: string,
     subtotal: number,
-    deliveryFee: number,
+    _deliveryFee: number,
     address: string,
     formatCurrency: (value: number | undefined) => string,
   ) {
-    const hasDeliveryFee = deliveryFee > 0;
-
     return [
       "Resumo do pedido:",
       "",
       cartLines,
       "",
       `Subtotal: ${formatCurrency(subtotal)}`,
-      hasDeliveryFee
-        ? `Entrega: ${formatCurrency(deliveryFee)}`
-        : "Entrega: a confirmar",
-      hasDeliveryFee
-        ? `Total: ${formatCurrency(subtotal + deliveryFee)}`
-        : `Total parcial: ${formatCurrency(subtotal)}`,
+      "Entrega: grátis",
+      "Prazo estimado: até 30 minutos",
+      `Total: ${formatCurrency(subtotal)}`,
       "",
       "Endereço:",
       address,

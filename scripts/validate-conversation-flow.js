@@ -86,7 +86,7 @@ class FakePrisma {
   }
 }
 
-function createEngine(conversation) {
+function createEngine(conversation, options = {}) {
   const prisma = new FakePrisma(conversation);
   const aiService = {
     generatePharmacyReply: async (text) => `IA fallback: ${text}`,
@@ -182,10 +182,28 @@ function createEngine(conversation) {
         : null,
   };
   let latestOrder = null;
+  let checkoutAttempts = 0;
   const paymentsService = {
     confirmCheckout: async ({ cart }) => {
+      checkoutAttempts += 1;
       const total = cart.reduce((sum, item) => sum + (item.total || 0), 0);
       const totalCents = Math.round(total * 100);
+      if (options.failPix || (options.failPixOnce && checkoutAttempts === 1)) {
+        latestOrder = {
+          id: "order_conversation_flow",
+          payments: [],
+        };
+
+        return {
+          orderId: "order_conversation_flow",
+          totalCents,
+          provider: "sigilopay",
+          status: "failed",
+          manualFallback: false,
+          pixCreationFailed: true,
+        };
+      }
+
       latestOrder = {
         id: "order_conversation_flow",
         payments: [
@@ -223,7 +241,7 @@ function createEngine(conversation) {
   );
 }
 
-async function runConversation(inputs) {
+async function runConversation(inputs, options = {}) {
   const conversation = {
     id: "conversation-flow-test",
     customerId: "customer-flow-test",
@@ -237,7 +255,7 @@ async function runConversation(inputs) {
     cart: null,
     pendingAddress: null,
   };
-  const engine = createEngine(conversation);
+  const engine = createEngine(conversation, options);
   const replies = [];
 
   for (const input of inputs) {
@@ -258,6 +276,26 @@ async function run() {
   ]);
   assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
   assert.match(result.replies.at(-1), /Pedido confirmado/);
+  assert.match(result.replies.at(-2), /Entrega: gr/i);
+  assert.match(result.replies.at(-2), /Prazo estimado: at/i);
+  assert.match(result.replies.at(-1), /Entrega gr/i);
+  assert.match(result.replies.at(-1), /30 minutos/);
+
+  result = await runConversation(
+    ["Tem Dorflex?", "1", "1", "01001000", "123", "1"],
+    { failPix: true },
+  );
+  assert.match(result.replies.at(-1), /Não consegui gerar o Pix/);
+  assert.match(result.replies.at(-1), /Gerar Pix novamente/);
+  assert.doesNotMatch(result.replies.at(-1), /equipe|manual|instantes/i);
+
+  result = await runConversation(
+    ["Tem Dorflex?", "1", "1", "01001000", "123", "1", "1"],
+    { failPixOnce: true },
+  );
+  assert.match(result.replies.at(-2), /Não consegui gerar o Pix/);
+  assert.match(result.replies.at(-1), /Pix Copia e Cola/);
+  assert.match(result.replies.at(-1), /000201PIXTESTE/);
 
   result = await runConversation([
     "Tem Dorflex?",
@@ -272,6 +310,10 @@ async function run() {
   assert.match(result.replies.at(-2), /Pix Copia e Cola/);
   assert.match(result.replies.at(-2), /000201PIXTESTE/);
   assert.match(result.replies.at(-1), /aguardando a confirmação automática/i);
+
+  result = await runConversation(["quanto fica a entrega?"]);
+  assert.match(result.replies[0], /entrega .*gr/i);
+  assert.match(result.replies[0], /30 minutos/i);
 
   result = await runConversation(["ver carrinho"]);
   assert.match(result.replies[0], /carrinho ainda está vazio/i);

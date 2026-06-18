@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Logger,
   Post,
@@ -21,6 +22,14 @@ export class SigiloPayWebhookController {
     private readonly sigiloPayService: SigiloPayService,
     private readonly moduleRef: ModuleRef,
   ) {}
+
+  @Get("webhook/sigilopay")
+  health() {
+    return {
+      status: "ok",
+      provider: "sigilopay",
+    };
+  }
 
   @Post("webhook/sigilopay")
   @HttpCode(200)

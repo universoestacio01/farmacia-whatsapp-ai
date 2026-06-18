@@ -55,6 +55,8 @@ export interface CreatePaymentResult {
   expiresAt?: Date;
   rawResponse?: unknown;
   manualFallback: boolean;
+  pixCreationFailed?: boolean;
+  errorMessage?: string;
 }
 
 export interface SigiloPayWebhookEvent {
