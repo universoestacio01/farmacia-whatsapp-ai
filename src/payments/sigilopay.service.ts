@@ -1,0 +1,323 @@
+import { Injectable, Logger } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import {
+  CreatePixPaymentInput,
+  PixPaymentResult,
+  PixProvider,
+} from "./pix/pix-provider.interface";
+import {
+  NormalizedPaymentStatus,
+  SigiloPayWebhookEvent,
+} from "./payment.types";
+
+interface SigiloPayPixResponse {
+  transactionId?: string;
+  status?: string;
+  fee?: number;
+  order?: {
+    id?: string;
+    url?: string;
+  };
+  pix?: {
+    code?: string;
+    base64?: string;
+    image?: string;
+  };
+  details?: string;
+  errorDescription?: string;
+  message?: string;
+}
+
+interface SigiloPayTransactionResponse {
+  id?: string;
+  clientIdentifier?: string;
+  amount?: number;
+  chargeAmount?: number;
+  status?: string;
+  payedAt?: string | null;
+  pixInformation?: {
+    qrCode?: string;
+    image?: string;
+    base64?: string;
+  } | null;
+  [key: string]: unknown;
+}
+
+export class SigiloPayError extends Error {
+  constructor(
+    message: string,
+    readonly code: "CONFIG_MISSING" | "API_ERROR" | "TIMEOUT" | "INVALID_RESPONSE",
+    readonly statusCode?: number,
+  ) {
+    super(message);
+    this.name = "SigiloPayError";
+  }
+}
+
+@Injectable()
+export class SigiloPayService implements PixProvider {
+  private readonly logger = new Logger(SigiloPayService.name);
+
+  constructor(private readonly configService: ConfigService) {}
+
+  isEnabled() {
+    return this.configService.get<boolean>("SIGILOPAY_ENABLED") === true;
+  }
+
+  isConfigured() {
+    return Boolean(
+      this.getPublicKey() &&
+        this.getSecretKey() &&
+        this.configService.get<string>("SIGILOPAY_API_BASE_URL")?.trim(),
+    );
+  }
+
+  isWebhookConfigured() {
+    return Boolean(this.getWebhookToken());
+  }
+
+  async createPayment(input: CreatePixPaymentInput): Promise<PixPaymentResult> {
+    this.assertReady();
+
+    const amount = this.centsToMoney(input.amountCents);
+    const payload = {
+      identifier: `order_${input.orderId}`,
+      amount,
+      client: {
+        name: input.customerName || "Cliente WhatsApp",
+        email: input.customerEmail || this.defaultCustomerEmail(input.orderId),
+        phone: input.customerPhone || "00000000000",
+        document: input.customerDocument || "00000000000",
+      },
+      products: (input.items || []).map((item) => ({
+        id: item.id,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.unitPrice,
+        physical: true,
+      })),
+      metadata: {
+        provider: "farmacia-whatsapp-ai",
+        orderId: input.orderId,
+      },
+      callbackUrl: input.callbackUrl || this.getCallbackUrl(),
+    };
+
+    const response = await this.request<SigiloPayPixResponse>(
+      "/gateway/pix/receive",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+
+    const pixCode = response.pix?.code;
+    const transactionId = response.transactionId;
+
+    if (!transactionId || !pixCode) {
+      throw new SigiloPayError(
+        "Resposta da SigiloPay sem transactionId ou Pix copia e cola.",
+        "INVALID_RESPONSE",
+      );
+    }
+
+    this.logger.log(
+      `SIGILOPAY PIX CREATED: transaction=${transactionId}, pix=${this.maskPix(pixCode)}`,
+    );
+
+    return {
+      provider: "sigilopay",
+      providerPaymentId: transactionId,
+      providerTransactionId: transactionId,
+      pixPayload: pixCode,
+      pixCopyPaste: pixCode,
+      pixQrCode: response.pix?.base64 || response.pix?.image,
+      paymentUrl: response.order?.url,
+      rawResponse: response,
+    };
+  }
+
+  async getTransaction(
+    transactionId: string,
+  ): Promise<SigiloPayTransactionResponse | null> {
+    if (!transactionId) {
+      return null;
+    }
+
+    this.assertReady();
+
+    const data = await this.request<
+      SigiloPayTransactionResponse | SigiloPayTransactionResponse[]
+    >(`/gateway/transactions?id=${encodeURIComponent(transactionId)}`, {
+      method: "GET",
+    });
+
+    return Array.isArray(data) ? data[0] || null : data;
+  }
+
+  validateWebhook(payload: SigiloPayWebhookEvent) {
+    const secret = this.getWebhookToken();
+
+    if (!secret) {
+      this.logger.warn("SIGILOPAY WEBHOOK TOKEN NOT CONFIGURED");
+      return true;
+    }
+
+    return payload.token === secret;
+  }
+
+  mapStatus(status: string | undefined): NormalizedPaymentStatus {
+    const normalized = (status || "").toLowerCase();
+
+    if (
+      ["paid", "approved", "completed", "confirmed", "payment_approved"].includes(
+        normalized,
+      )
+    ) {
+      return "paid";
+    }
+
+    if (["pending", "waiting_payment", "created", "ok"].includes(normalized)) {
+      return "pending";
+    }
+
+    if (["failed", "refused", "error", "rejected"].includes(normalized)) {
+      return "failed";
+    }
+
+    if (["cancelled", "canceled"].includes(normalized)) {
+      return "cancelled";
+    }
+
+    if (normalized === "expired") {
+      return "expired";
+    }
+
+    return "pending";
+  }
+
+  private async request<T>(
+    path: string,
+    init: RequestInit,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    try {
+      const response = await fetch(`${this.getBaseUrl()}${path}`, {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          "x-public-key": this.getPublicKey(),
+          "x-secret-key": this.getSecretKey(),
+          ...(init.headers || {}),
+        },
+        signal: controller.signal,
+      });
+
+      const text = await response.text();
+      const data = text ? (JSON.parse(text) as T) : ({} as T);
+
+      if (!response.ok) {
+        this.logger.error(`SIGILOPAY API ERROR STATUS: ${response.status}`);
+        throw new SigiloPayError(
+          this.getApiErrorMessage(data),
+          "API_ERROR",
+          response.status,
+        );
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof SigiloPayError) {
+        throw error;
+      }
+
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new SigiloPayError("Timeout ao chamar SigiloPay.", "TIMEOUT");
+      }
+
+      throw new SigiloPayError(
+        error instanceof Error
+          ? error.message
+          : "Erro desconhecido ao chamar SigiloPay.",
+        "API_ERROR",
+      );
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private assertReady() {
+    if (!this.isEnabled()) {
+      throw new SigiloPayError("SigiloPay desabilitada.", "CONFIG_MISSING");
+    }
+
+    if (!this.isConfigured()) {
+      throw new SigiloPayError(
+        "Credenciais da SigiloPay ausentes.",
+        "CONFIG_MISSING",
+      );
+    }
+  }
+
+  private getBaseUrl() {
+    return (
+      this.configService.get<string>("SIGILOPAY_API_BASE_URL") ||
+      "https://app.sigilopay.com.br/api/v1"
+    ).replace(/\/+$/, "");
+  }
+
+  private getPublicKey() {
+    return this.configService.get<string>("SIGILOPAY_PUBLIC_KEY")?.trim() || "";
+  }
+
+  private getSecretKey() {
+    return this.configService.get<string>("SIGILOPAY_SECRET_KEY")?.trim() || "";
+  }
+
+  private getWebhookToken() {
+    return (
+      this.configService.get<string>("SIGILOPAY_WEBHOOK_TOKEN")?.trim() ||
+      this.configService.get<string>("SIGILOPAY_WEBHOOK_SECRET")?.trim() ||
+      ""
+    );
+  }
+
+  private getCallbackUrl() {
+    return (
+      this.configService.get<string>("SIGILOPAY_CALLBACK_URL")?.trim() ||
+      "https://io-web.link/webhook/sigilopay"
+    );
+  }
+
+  private centsToMoney(value: number) {
+    return Number((value / 100).toFixed(2));
+  }
+
+  private defaultCustomerEmail(orderId: string) {
+    return `cliente+${orderId}@farmacia-whatsapp-ai.local`;
+  }
+
+  private getApiErrorMessage(data: unknown) {
+    if (data && typeof data === "object") {
+      const response = data as Record<string, unknown>;
+      return String(
+        response.errorDescription ||
+          response.message ||
+          response.details ||
+          "Erro retornado pela SigiloPay.",
+      );
+    }
+
+    return "Erro retornado pela SigiloPay.";
+  }
+
+  private maskPix(value: string) {
+    if (value.length <= 16) {
+      return "***";
+    }
+
+    return `${value.slice(0, 8)}...${value.slice(-8)}`;
+  }
+}

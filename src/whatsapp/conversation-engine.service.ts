@@ -12,6 +12,7 @@ import {
   RetailProductLookupSummary,
 } from "../integrations/product-search-orchestrator.service";
 import { ViaCepAddress, ViaCepService } from "../integrations/via-cep.service";
+import { PaymentsService } from "../payments/payments.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { formatProductDisplayName, WhatsappCopy } from "./whatsapp-copy";
 
@@ -54,6 +55,7 @@ export class ConversationEngineService {
     private readonly medicineSearch: MedicineSearchOrchestratorService,
     private readonly productSearch: ProductSearchOrchestratorService,
     private readonly viaCepService: ViaCepService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   async resolveReply(conversation: Conversation, text: string) {
@@ -96,6 +98,10 @@ export class ConversationEngineService {
 
     if (this.isViewCartRequest(text)) {
       return this.formatCartStatus(conversation);
+    }
+
+    if (this.isPaymentCommand(text)) {
+      return this.handlePaymentCommand(conversation, text);
     }
 
     if (this.isFinalizeRequest(text)) {
@@ -183,6 +189,11 @@ export class ConversationEngineService {
       conversation.pendingAction !== ConversationState.WAITING_MEDICINE_NAME
     ) {
       return this.handleMedicineQuestion(conversation.id, medicineQuestion);
+    }
+
+    const paymentStates: ConversationState[] = [ConversationState.WAITING_PIX];
+    if (paymentStates.includes(conversation.pendingAction)) {
+      return this.handleWaitingPix(conversation, text);
     }
 
     switch (conversation.pendingAction) {
@@ -572,12 +583,7 @@ export class ConversationEngineService {
     text: string,
   ) {
     if (this.isPositiveConfirmation(text) || this.isConfirmChoice(text)) {
-      await this.prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { pendingAction: ConversationState.WAITING_PIX },
-      });
-
-      return "Pedido confirmado. Vou preparar o Pix para pagamento e te aviso por aqui.";
+      return this.confirmOrderAndCreatePayment(conversation);
     }
 
     if (this.isAddMoreRequest(text) || this.isAddMoreConfirmationChoice(text)) {
@@ -603,6 +609,142 @@ export class ConversationEngineService {
     }
 
     return "Confirma o pedido?\n\n1. Confirmar\n2. Adicionar mais produtos\n3. Cancelar";
+  }
+
+  private async confirmOrderAndCreatePayment(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart);
+
+    if (cart.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
+      });
+
+      return "Seu carrinho ainda está vazio. Qual produto você deseja pedir?";
+    }
+
+    const payment = await this.paymentsService.confirmCheckout({
+      conversationId: conversation.id,
+      customerId: conversation.customerId,
+      cart,
+      address: this.getPendingAddress(conversation.pendingAddress),
+      existingOrderId: this.extractConfirmedOrderId(conversation.lastIntent),
+    });
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: `ORDER_CONFIRMED:${payment.orderId}`,
+        pendingAction: ConversationState.WAITING_PIX,
+      },
+    });
+
+    if (payment.manualFallback || !payment.pixCopyPaste) {
+      return this.formatManualPaymentFallback(payment.totalCents);
+    }
+
+    return this.formatPixPaymentReply(
+      payment.totalCents,
+      payment.pixCopyPaste,
+      payment.paymentUrl,
+    );
+  }
+
+  private async handleWaitingPix(conversation: Conversation, text: string) {
+    if (this.isAlreadyPaidCommand(text)) {
+      return this.formatWaitingPaymentConfirmationReply();
+    }
+
+    return this.handlePaymentCommand(conversation, text);
+  }
+
+  private async handlePaymentCommand(conversation: Conversation, text: string) {
+    const order = await this.paymentsService.findLatestPaymentForCustomer(
+      conversation.customerId,
+    );
+    const payment = order?.payments?.[0];
+
+    if (!order || !payment) {
+      return "Para gerar o Pix, finalize o carrinho primeiro.";
+    }
+
+    if (payment.status === "PAID") {
+      return [
+        "Pagamento confirmado ✅",
+        "",
+        "Seu pedido já foi recebido e será preparado para entrega.",
+      ].join("\n");
+    }
+
+    if (this.isAlreadyPaidCommand(text)) {
+      return this.formatWaitingPaymentConfirmationReply();
+    }
+
+    const pixCopyPaste = payment.pixCopyPaste || payment.pixPayload;
+
+    if (payment.provider === "sigilopay" && pixCopyPaste) {
+      return this.formatPixResendReply(pixCopyPaste);
+    }
+
+    return this.formatManualPaymentFallback(payment.amountCents);
+  }
+
+  private formatPixPaymentReply(
+    totalCents: number,
+    pixCopyPaste: string,
+    paymentUrl?: string,
+  ) {
+    const lines = [
+      "Pedido confirmado ✅",
+      "",
+      `Total: ${this.formatCurrency(totalCents / 100)}`,
+      "",
+      "Para pagar, copie e cole este Pix no app do seu banco:",
+      "",
+      pixCopyPaste,
+      "",
+    ];
+
+    if (paymentUrl) {
+      lines.push("Você também pode pagar por este link:", paymentUrl, "");
+    }
+
+    lines.push("Assim que o pagamento for confirmado, eu te aviso por aqui.");
+
+    return lines.join("\n");
+  }
+
+  private formatPixResendReply(pixCopyPaste: string) {
+    return [
+      "Claro, aqui está o Pix Copia e Cola do seu pedido:",
+      "",
+      pixCopyPaste,
+    ].join("\n");
+  }
+
+  private formatWaitingPaymentConfirmationReply() {
+    return [
+      "Perfeito 👍",
+      "",
+      "Estou aguardando a confirmação automática do banco.",
+      "Assim que o pagamento for identificado, eu aviso você por aqui.",
+    ].join("\n");
+  }
+
+  private formatManualPaymentFallback(totalCents: number) {
+    return [
+      "Pedido confirmado ✅",
+      "",
+      `Total: ${this.formatCurrency(totalCents / 100)}`,
+      "",
+      "Não consegui gerar o Pix automaticamente agora.",
+      "Nossa equipe vai te enviar os dados de pagamento em instantes.",
+    ].join("\n");
+  }
+
+  private extractConfirmedOrderId(lastIntent: string | null) {
+    const match = lastIntent?.match(/^ORDER_CONFIRMED:(.+)$/);
+    return match?.[1] || null;
   }
 
   private async handleMedicineQuestion(
@@ -1717,6 +1859,18 @@ export class ConversationEngineService {
     return /^(finalizar|fechar pedido|concluir pedido|calcular entrega e finalizar|quero finalizar)$/.test(
       normalized,
     );
+  }
+
+  private isPaymentCommand(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(pix|manda o pix|mandar pix|enviar pix|pagar|quero pagar|status do pagamento|pagamento|ja paguei|já paguei)$/.test(
+      normalized,
+    );
+  }
+
+  private isAlreadyPaidCommand(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(ja paguei|já paguei|paguei|pagamento feito)$/.test(normalized);
   }
 
   private isRecommendationRequest(text: string) {

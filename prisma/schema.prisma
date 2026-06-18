@@ -45,6 +45,8 @@ enum MessageStatus {
 enum OrderStatus {
   DRAFT
   CONFIRMED
+  PENDING_PAYMENT_MANUAL
+  PAID
   CANCELLED
   DELIVERED
 }
@@ -52,6 +54,7 @@ enum OrderStatus {
 enum PaymentStatus {
   PENDING
   PAID
+  EXPIRED
   FAILED
   CANCELLED
 }
@@ -148,21 +151,28 @@ model Order {
 }
 
 model Payment {
-  id                String        @id @default(cuid())
-  orderId           String        @map("order_id")
-  method            PaymentMethod @default(PIX)
-  status            PaymentStatus @default(PENDING)
-  amountCents       Int           @map("amount_cents")
-  provider          String?
-  providerPaymentId String?       @map("provider_payment_id")
-  pixPayload        String?       @map("pix_payload") @db.Text
-  expiresAt         DateTime?     @map("expires_at")
-  paidAt            DateTime?     @map("paid_at")
-  createdAt         DateTime      @default(now()) @map("created_at")
-  updatedAt         DateTime      @updatedAt @map("updated_at")
-  order             Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  id                    String        @id @default(cuid())
+  orderId               String        @map("order_id")
+  method                PaymentMethod @default(PIX)
+  status                PaymentStatus @default(PENDING)
+  amountCents           Int           @map("amount_cents")
+  amount                Decimal       @default(0) @db.Decimal(10, 2)
+  provider              String?       @default("manual")
+  providerPaymentId     String?       @map("provider_payment_id")
+  providerTransactionId String?       @unique @map("provider_transaction_id")
+  pixPayload            String?       @map("pix_payload") @db.Text
+  pixCopyPaste          String?       @map("pix_copy_paste") @db.Text
+  pixQrCode             String?       @map("pix_qr_code") @db.Text
+  paymentUrl            String?       @map("payment_url")
+  expiresAt             DateTime?     @map("expires_at")
+  paidAt                DateTime?     @map("paid_at")
+  rawResponse           Json?         @map("raw_response")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  order                 Order         @relation(fields: [orderId], references: [id], onDelete: Restrict)
 
   @@index([orderId])
   @@index([status])
+  @@index([provider])
   @@map("payments")
 }

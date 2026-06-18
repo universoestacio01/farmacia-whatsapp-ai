@@ -34,6 +34,16 @@ export class HealthController {
     return {
       status: "ok",
       primaryProvider,
+      payments: {
+        provider: this.configService.get<string>("PIX_PROVIDER") || "none",
+        enabled:
+          this.configService.get<boolean>("SIGILOPAY_ENABLED") === true,
+        configured: this.isSigiloPayConfigured(),
+        callbackUrlConfigured: Boolean(
+          this.configService.get<string>("SIGILOPAY_CALLBACK_URL")?.trim(),
+        ),
+        webhookTokenConfigured: this.isSigiloPayWebhookTokenConfigured(),
+      },
       providers: {
         pharmadb: {
           configured: Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim()),
@@ -96,6 +106,20 @@ export class HealthController {
     const pharmaDbApiKey = this.configService.get<string>("PHARMADB_API_KEY");
 
     return Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim());
+  }
+
+  private isSigiloPayConfigured() {
+    return Boolean(
+      this.configService.get<string>("SIGILOPAY_PUBLIC_KEY")?.trim() &&
+        this.configService.get<string>("SIGILOPAY_SECRET_KEY")?.trim(),
+    );
+  }
+
+  private isSigiloPayWebhookTokenConfigured() {
+    return Boolean(
+      this.configService.get<string>("SIGILOPAY_WEBHOOK_TOKEN")?.trim() ||
+        this.configService.get<string>("SIGILOPAY_WEBHOOK_SECRET")?.trim(),
+    );
   }
 
   private async isDatabaseConnected() {

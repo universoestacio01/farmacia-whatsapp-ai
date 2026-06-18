@@ -181,6 +181,36 @@ function createEngine(conversation) {
           }
         : null,
   };
+  let latestOrder = null;
+  const paymentsService = {
+    confirmCheckout: async ({ cart }) => {
+      const total = cart.reduce((sum, item) => sum + (item.total || 0), 0);
+      const totalCents = Math.round(total * 100);
+      latestOrder = {
+        id: "order_conversation_flow",
+        payments: [
+          {
+            provider: "sigilopay",
+            status: "PENDING",
+            amountCents: totalCents,
+            pixCopyPaste: "000201PIXTESTE",
+            paymentUrl: "https://checkout.example/pagar",
+          },
+        ],
+      };
+
+      return {
+        orderId: "order_conversation_flow",
+        totalCents,
+        provider: "sigilopay",
+        status: "pending",
+        pixCopyPaste: "000201PIXTESTE",
+        paymentUrl: "https://checkout.example/pagar",
+        manualFallback: false,
+      };
+    },
+    findLatestPaymentForCustomer: async () => latestOrder,
+  };
 
   return new ConversationEngineService(
     prisma,
@@ -189,12 +219,14 @@ function createEngine(conversation) {
     medicineSearch,
     productSearch,
     viaCepService,
+    paymentsService,
   );
 }
 
 async function runConversation(inputs) {
   const conversation = {
     id: "conversation-flow-test",
+    customerId: "customer-flow-test",
     pendingAction: ConversationState.IDLE,
     lastIntent: null,
     lastMedicine: null,
@@ -226,6 +258,20 @@ async function run() {
   ]);
   assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
   assert.match(result.replies.at(-1), /Pedido confirmado/);
+
+  result = await runConversation([
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "1",
+    "manda o pix",
+    "já paguei",
+  ]);
+  assert.match(result.replies.at(-2), /Pix Copia e Cola/);
+  assert.match(result.replies.at(-2), /000201PIXTESTE/);
+  assert.match(result.replies.at(-1), /aguardando a confirmação automática/i);
 
   result = await runConversation(["ver carrinho"]);
   assert.match(result.replies[0], /carrinho ainda está vazio/i);

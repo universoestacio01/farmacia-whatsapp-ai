@@ -5,6 +5,8 @@ const envSchema = z.object({
     .enum(["development", "test", "production"])
     .default("development"),
   PORT: z.coerce.number().int().positive().default(3000),
+  APP_URL: z.string().trim().url().optional(),
+  PUBLIC_APP_URL: z.string().trim().url().optional(),
   DATABASE_URL: z
     .string({
       required_error: "DATABASE_URL e obrigatoria",
@@ -71,6 +73,21 @@ const envSchema = z.object({
   PIX_PROVIDER: z.string().trim().default("none"),
   PIX_MERCHANT_NAME: z.string().trim().optional(),
   PIX_MERCHANT_CITY: z.string().trim().optional(),
+  SIGILOPAY_API_BASE_URL: z
+    .string()
+    .trim()
+    .url()
+    .default("https://app.sigilopay.com.br/api/v1"),
+  SIGILOPAY_CALLBACK_URL: z
+    .string()
+    .trim()
+    .url()
+    .default("https://io-web.link/webhook/sigilopay"),
+  SIGILOPAY_PUBLIC_KEY: z.string().trim().optional(),
+  SIGILOPAY_SECRET_KEY: z.string().trim().optional(),
+  SIGILOPAY_WEBHOOK_TOKEN: z.string().trim().optional(),
+  SIGILOPAY_WEBHOOK_SECRET: z.string().trim().optional(),
+  SIGILOPAY_ENABLED: z.coerce.boolean().default(false),
 });
 
 export function validateEnv(config: Record<string, unknown>) {
