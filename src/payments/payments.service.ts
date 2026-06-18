@@ -366,11 +366,7 @@ export class PaymentsService {
   }
 
   private shouldUseSigiloPay() {
-    return (
-      this.configService.get<string>("PIX_PROVIDER") === "sigilopay" &&
-      this.sigiloPayService.isEnabled() &&
-      this.sigiloPayService.isConfigured()
-    );
+    return this.sigiloPayService.isEnabled() && this.sigiloPayService.isConfigured();
   }
 
   private getCallbackUrl() {

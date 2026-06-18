@@ -332,6 +332,55 @@ async function run() {
     { received: true },
   );
 
+  const originalFetch = global.fetch;
+  let sigiloPayPayload;
+
+  global.fetch = async (_url, init) => {
+    sigiloPayPayload = JSON.parse(init.body);
+    return new Response(
+      JSON.stringify({
+        transactionId: "tx_phone_fallback",
+        status: "OK",
+        order: { url: "https://checkout.example/tx_phone_fallback" },
+        pix: { code: "000201PIXPHONE" },
+      }),
+      {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      },
+    );
+  };
+
+  try {
+    const directSigiloPayService = new SigiloPayService(
+      config({
+        SIGILOPAY_PUBLIC_KEY: "pk_test_123",
+        SIGILOPAY_SECRET_KEY: "sk_test_123",
+        SIGILOPAY_API_BASE_URL: "https://app.sigilopay.com.br/api/v1",
+      }),
+    );
+    const directPayment = await directSigiloPayService.createPayment({
+      orderId: "order_phone_fallback",
+      amountCents: 200,
+      customerPhone: "15556714740",
+      items: [
+        {
+          id: "item_1",
+          name: "Novalgina Comprimido 1g",
+          quantity: 1,
+          unitPrice: 2,
+        },
+      ],
+      callbackUrl: "https://io-web.link/webhook/sigilopay",
+    });
+
+    assert.equal(directPayment.pixCopyPaste, "000201PIXPHONE");
+    assert.equal(sigiloPayPayload.client.phone, "11999999999");
+    assert.equal(sigiloPayPayload.metadata.phoneFallbackApplied, true);
+  } finally {
+    global.fetch = originalFetch;
+  }
+
   console.log("Payment flow validations passed.");
 }
 

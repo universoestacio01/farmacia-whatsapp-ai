@@ -136,9 +136,16 @@ export class HealthController {
   }
 
   private isSigiloPayEnabled() {
+    const explicitEnabled = this.getSanitizedEnv(
+      "SIGILOPAY_ENABLED",
+    ).toLowerCase();
+
     return (
       this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
-      this.getSanitizedEnv("SIGILOPAY_ENABLED").toLowerCase() === "true"
+      ["true", "1", "yes", "sim"].includes(explicitEnabled) ||
+      this.getSanitizedEnv("PIX_PROVIDER").toLowerCase() === "sigilopay" ||
+      (!["false", "0", "no", "nao", "não"].includes(explicitEnabled) &&
+        this.isSigiloPayConfigured())
     );
   }
 

@@ -64,9 +64,16 @@ export class SigiloPayService implements PixProvider {
   constructor(private readonly configService: ConfigService) {}
 
   isEnabled() {
+    const explicitEnabled = sanitizeEnv(
+      process.env.SIGILOPAY_ENABLED,
+    ).toLowerCase();
+    const pixProvider = this.getEnv("PIX_PROVIDER").toLowerCase();
+
     return (
       this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
-      sanitizeEnv(process.env.SIGILOPAY_ENABLED).toLowerCase() === "true"
+      ["true", "1", "yes", "sim"].includes(explicitEnabled) ||
+      pixProvider === "sigilopay" ||
+      (!this.isExplicitlyDisabled() && this.isConfigured())
     );
   }
 
@@ -86,13 +93,14 @@ export class SigiloPayService implements PixProvider {
     const amount = this.centsToMoney(input.amountCents);
     const customerDocument = sanitizeEnv(input.customerDocument);
     const documentGenerated = !isValidCpf(customerDocument);
+    const phone = this.normalizeCustomerPhone(input.customerPhone);
     const payload = {
       identifier: `order_${input.orderId}`,
       amount,
       client: {
         name: input.customerName || "Cliente WhatsApp",
         email: input.customerEmail || this.defaultCustomerEmail(input.orderId),
-        phone: input.customerPhone || "00000000000",
+        phone: phone.value,
         document: documentGenerated ? generateValidCpf() : customerDocument,
       },
       products: (input.items || []).map((item) => ({
@@ -106,6 +114,7 @@ export class SigiloPayService implements PixProvider {
         provider: "farmacia-whatsapp-ai",
         orderId: input.orderId,
         documentGenerated,
+        phoneFallbackApplied: phone.fallbackApplied,
       },
       callbackUrl: input.callbackUrl || this.getCallbackUrl(),
     };
@@ -118,7 +127,7 @@ export class SigiloPayService implements PixProvider {
       },
     );
 
-    const pixCode = response.pix?.code;
+    const pixCode = this.extractPixCode(response);
     const transactionId = response.transactionId;
 
     if (!transactionId || !pixCode) {
@@ -334,6 +343,11 @@ export class SigiloPayService implements PixProvider {
     }
   }
 
+  private isExplicitlyDisabled() {
+    const value = sanitizeEnv(process.env.SIGILOPAY_ENABLED).toLowerCase();
+    return ["false", "0", "no", "nao", "não"].includes(value);
+  }
+
   private getBaseUrl() {
     return this.getEnv(
       "SIGILOPAY_API_BASE_URL",
@@ -369,6 +383,54 @@ export class SigiloPayService implements PixProvider {
 
   private defaultCustomerEmail(orderId: string) {
     return `cliente+${orderId}@farmacia-whatsapp-ai.local`;
+  }
+
+  private normalizeCustomerPhone(value: string | undefined) {
+    const digits = sanitizeEnv(value).replace(/\D/g, "");
+    const withoutBrazilCountryCode =
+      digits.startsWith("55") && [12, 13].includes(digits.length)
+        ? digits.slice(2)
+        : digits;
+
+    if (this.isBrazilianPhoneForGateway(withoutBrazilCountryCode)) {
+      return {
+        value: withoutBrazilCountryCode,
+        fallbackApplied: false,
+      };
+    }
+
+    return {
+      value: "11999999999",
+      fallbackApplied: true,
+    };
+  }
+
+  private isBrazilianPhoneForGateway(value: string) {
+    if (!/^\d+$/.test(value)) {
+      return false;
+    }
+
+    if (value.length === 11) {
+      return value[2] === "9";
+    }
+
+    if (value.length === 10) {
+      return ["2", "3", "4", "5"].includes(value[2]);
+    }
+
+    return false;
+  }
+
+  private extractPixCode(response: SigiloPayPixResponse) {
+    const pix = response.pix as
+      | (SigiloPayPixResponse["pix"] & {
+          qrCode?: string;
+          copiaECola?: string;
+          copyPaste?: string;
+        })
+      | undefined;
+
+    return pix?.code || pix?.qrCode || pix?.copiaECola || pix?.copyPaste;
   }
 
   private safeParseJson(value: unknown) {
