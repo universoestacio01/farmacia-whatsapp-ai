@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+import { Controller, Get, Headers, Post, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
@@ -79,27 +79,98 @@ export class HealthController {
 
   @Get("payments")
   payments() {
+    return this.getPaymentsHealth();
+  }
+
+  @Post("payments/test-pix")
+  async testPix(@Headers("x-debug-token") debugToken: string | undefined) {
+    this.assertValidDebugToken(debugToken);
+
+    const paymentsHealth = this.getPaymentsHealth();
+    const endpoint = "/gateway/pix/receive";
+    const url = `${paymentsHealth.apiBaseUrl.replace(/\/+$/, "")}${endpoint}`;
+    const publicKey = this.getSanitizedEnv("SIGILOPAY_PUBLIC_KEY");
+    const secretKey = this.getSanitizedEnv("SIGILOPAY_SECRET_KEY");
+    const payload = {
+      identifier: `health_test_${Date.now()}`,
+      amount: 1,
+      client: {
+        name: "Cliente Teste",
+        email: "cliente.teste@example.com",
+        phone: "11999999999",
+        document: "00000000000",
+      },
+      products: [
+        {
+          id: "health_test_1",
+          name: "Teste Pix Farmacia",
+          quantity: 1,
+          price: 1,
+          physical: true,
+        },
+      ],
+      metadata: {
+        provider: "farmacia-whatsapp-ai",
+        diagnostic: true,
+      },
+      callbackUrl: paymentsHealth.callbackUrl,
+    };
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-public-key": publicKey,
+          "x-secret-key": secretKey,
+        },
+        body: JSON.stringify(payload),
+      });
+      const text = await response.text();
+      const responseBody = this.parseResponseBody(text);
+
+      return {
+        ...paymentsHealth,
+        url,
+        endpoint,
+        payload,
+        status: response.status,
+        responseBody,
+      };
+    } catch (error) {
+      return {
+        ...paymentsHealth,
+        url,
+        endpoint,
+        payload,
+        status: null,
+        responseBody: {
+          error: {
+            message:
+              error instanceof Error ? error.message : "Erro desconhecido",
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+        },
+      };
+    }
+  }
+
+  private getPaymentsHealth() {
     const publicKey = getEnvPreview(
-      this.configService.get<string>("SIGILOPAY_PUBLIC_KEY") ??
-        process.env.SIGILOPAY_PUBLIC_KEY,
+      this.getSanitizedEnv("SIGILOPAY_PUBLIC_KEY"),
     );
     const secretKey = getEnvPreview(
-      this.configService.get<string>("SIGILOPAY_SECRET_KEY") ??
-        process.env.SIGILOPAY_SECRET_KEY,
+      this.getSanitizedEnv("SIGILOPAY_SECRET_KEY"),
     );
 
     return {
-      provider: sanitizeEnv(
-        this.configService.get<string>("PIX_PROVIDER") ?? process.env.PIX_PROVIDER,
-      ) || "none",
+      provider: this.getSanitizedEnv("PIX_PROVIDER") || "none",
       enabled:
         this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
-        sanitizeEnv(process.env.SIGILOPAY_ENABLED).toLowerCase() === "true",
+        this.getSanitizedEnv("SIGILOPAY_ENABLED").toLowerCase() === "true",
       apiBaseUrl:
-        sanitizeEnv(
-          this.configService.get<string>("SIGILOPAY_API_BASE_URL") ??
-            process.env.SIGILOPAY_API_BASE_URL,
-        ) || "https://app.sigilopay.com.br/api/v1",
+        this.getSanitizedEnv("SIGILOPAY_API_BASE_URL") ||
+        "https://app.sigilopay.com.br/api/v1",
       publicKeyConfigured: publicKey.configured,
       publicKeyLength: publicKey.length,
       publicKeyPrefix: publicKey.prefix,
@@ -107,10 +178,8 @@ export class HealthController {
       secretKeyLength: secretKey.length,
       secretKeyPrefix: secretKey.prefix,
       callbackUrl:
-        sanitizeEnv(
-          this.configService.get<string>("SIGILOPAY_CALLBACK_URL") ??
-            process.env.SIGILOPAY_CALLBACK_URL,
-        ) || "https://io-web.link/webhook/sigilopay",
+        this.getSanitizedEnv("SIGILOPAY_CALLBACK_URL") ||
+        "https://io-web.link/webhook/sigilopay",
     };
   }
 
@@ -135,6 +204,30 @@ export class HealthController {
     return this.parseTokenList(
       this.configService.get<string>("COSMOS_API_TOKEN"),
     ).length;
+  }
+
+  private assertValidDebugToken(debugToken: string | undefined) {
+    const expectedToken = this.getSanitizedEnv("SIGILOPAY_WEBHOOK_TOKEN");
+
+    if (!expectedToken || sanitizeEnv(debugToken) !== expectedToken) {
+      throw new UnauthorizedException("Debug token inválido.");
+    }
+  }
+
+  private getSanitizedEnv(name: string) {
+    return sanitizeEnv(this.configService.get<string>(name) ?? process.env[name]);
+  }
+
+  private parseResponseBody(text: string) {
+    if (!text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return text;
+    }
   }
 
   private isPharmaDbConfigured() {
