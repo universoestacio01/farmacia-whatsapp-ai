@@ -510,10 +510,33 @@ export class SigiloPayService implements PixProvider {
         continue;
       }
 
+      if (this.isSensitivePaymentField(key)) {
+        masked[key] = this.maskPaymentFieldValue(item);
+        continue;
+      }
+
       masked[key] = this.maskSensitiveData(item);
     }
 
     return masked;
+  }
+
+  private isSensitivePaymentField(key: string) {
+    return ["code", "qrcode", "copiaecola", "copypaste", "base64", "image"].includes(
+      key.toLowerCase(),
+    );
+  }
+
+  private maskPaymentFieldValue(value: unknown) {
+    if (typeof value !== "string") {
+      return "[masked]";
+    }
+
+    return {
+      configured: value.length > 0,
+      prefix: value.slice(0, 8),
+      length: value.length,
+    };
   }
 
   private getResponseHeaders(headers: Headers) {

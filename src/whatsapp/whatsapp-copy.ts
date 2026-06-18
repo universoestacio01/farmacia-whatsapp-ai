@@ -94,7 +94,7 @@ const CATEGORY_WORDS = [
 
 export const WhatsappCopy = {
   resetConversation() {
-    return "Conversa reiniciada. Como posso ajudar você hoje?";
+    return "Conversa reiniciada. Olá! 😊 O que você precisa hoje?";
   },
 
   askRetailBrand(category: string, brands: string[]) {
@@ -122,7 +122,7 @@ export const WhatsappCopy = {
   ) {
     const title = uniqueDisplayParts([category, brand]).join(" ");
     const lines = [
-      `Encontrei estas opções${title ? ` de ${title}` : ""}:`,
+      `Tenho estas opções${title ? ` de ${title}` : ""} para você:`,
       "",
     ];
 
@@ -132,7 +132,7 @@ export const WhatsappCopy = {
       );
     });
 
-    lines.push("", "Qual opção você prefere?");
+    lines.push("", "Qual delas você quer levar?");
     return lines.join("\n");
   },
 
@@ -141,7 +141,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Perfeito, separei para você:",
+      "Perfeito, separei este item para você:",
       "",
       formatProductDisplayName(product.label),
     ];
@@ -164,7 +164,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Perfeito, separei para você:",
+      "Perfeito, separei este item para você:",
       "",
       formatProductDisplayName(product.label),
     ];
@@ -203,10 +203,10 @@ export const WhatsappCopy = {
 
   askAddMoreOrCheckout() {
     return [
-      "Deseja:",
+      "O que você quer fazer agora?",
       "",
       "1. Adicionar mais produtos",
-      "2. Calcular entrega e finalizar pedido",
+      "2. Finalizar pedido",
     ].join("\n");
   },
 
@@ -215,9 +215,9 @@ export const WhatsappCopy = {
     const brandText = brand ? ` de ${formatProductDisplayName(brand)}` : "";
 
     return [
-      `No momento encontrei só essas opções${brandText}.`,
+      `No momento tenho estas opções${brandText}.`,
       "",
-      `Posso te mostrar opções similares de ${categoryText}?`,
+      `Posso te mostrar opções parecidas de ${categoryText}?`,
       "",
       "1. Sim",
       "2. Não",
@@ -225,23 +225,42 @@ export const WhatsappCopy = {
   },
 
   productNotFound(productName: string) {
-    return `No momento não localizei ${formatProductDisplayName(productName)} disponível. Pode confirmar o nome ou enviar outra opção?`;
+    return [
+      `No momento não encontrei ${formatProductDisplayName(productName)} disponível.`,
+      "",
+      "Posso te mostrar uma opção parecida?",
+    ].join("\n");
   },
 
   medicineNotFound() {
-    return "No momento não localizei esse medicamento. Pode conferir o nome ou me enviar uma foto da embalagem?";
+    return [
+      "No momento não encontrei esse medicamento disponível.",
+      "",
+      "Você pode conferir o nome ou me enviar uma foto da embalagem?",
+    ].join("\n");
   },
 
   askQuantity() {
-    return "Quantas unidades deseja?";
+    return "Quantas unidades você quer?";
   },
 
   askCep() {
-    return "Perfeito. Qual o CEP para entrega?";
+    return "Perfeito. Me envie o CEP da entrega, por favor.";
   },
 
   askAddressNumber(address: string) {
-    return `Encontrei: ${address}.\nQual o número do endereço?`;
+    return `Encontrei: ${address}.\nQual é o número do endereço?`;
+  },
+
+  askAddressComplement() {
+    return [
+      "Tem complemento ou ponto de referência?",
+      "",
+      "Exemplos:",
+      "Apto 302, bloco B, casa azul, próximo ao mercado.",
+      "",
+      'Se não tiver, responda "não".',
+    ].join("\n");
   },
 
   orderConfirmation(
@@ -264,9 +283,9 @@ export const WhatsappCopy = {
       "Endereço:",
       address,
       "",
-      "Confirma o pedido?",
+      "Está tudo certo para confirmar o pedido?",
       "",
-      "1. Confirmar",
+      "1. Confirmar pedido",
       "2. Adicionar mais produtos",
       "3. Cancelar",
     ].join("\n");

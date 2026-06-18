@@ -30,64 +30,64 @@ export class PopularManualMedicineService implements MedicineProvider {
 
     if (/\bdor de cabeca\b|\bcefaleia\b/.test(normalized)) {
       return [
-        "Para dor de cabeça, opções comuns são:",
+        "Para dor de cabeça, tenho estas opções comuns:",
         "",
         "1. Dipirona",
         "2. Paracetamol",
         "3. Ibuprofeno",
         "4. Dorflex, se for dor por tensão muscular",
         "",
-        "Qual opção você deseja?",
+        "Qual delas você quer consultar?",
       ].join("\n");
     }
 
     if (/\bnariz entupido\b|\bcongestao nasal\b/.test(normalized)) {
       return [
-        "Para nariz entupido, opções comuns são:",
+        "Para nariz entupido, tenho estas opções comuns:",
         "",
         "1. Neosoro adulto",
         "2. Neosoro infantil",
         "3. Soro fisiológico nasal",
         "",
-        "Qual opção você deseja?",
+        "Qual delas você quer consultar?",
       ].join("\n");
     }
 
     if (/\bgripe\b|\bresfriado\b/.test(normalized)) {
       return [
-        "Para gripe ou resfriado, opções comuns são:",
+        "Para gripe ou resfriado, tenho estas opções comuns:",
         "",
         "1. Benegrip",
         "2. Cimegripe",
         "3. Paracetamol",
         "4. Dipirona",
         "",
-        "Qual opção você deseja?",
+        "Qual delas você quer consultar?",
       ].join("\n");
     }
 
     if (/\balergia\b/.test(normalized)) {
-      return "Para alergia, uma opção comum é Loratadina. Deseja consultar?";
+      return "Para alergia, uma opção comum é Loratadina. Quer consultar?";
     }
 
     if (/\bazia\b/.test(normalized)) {
-      return "Para azia, uma opção comum é Omeprazol. Deseja consultar?";
+      return "Para azia, uma opção comum é Omeprazol. Quer consultar?";
     }
 
     if (/\bgases\b/.test(normalized)) {
-      return "Para gases, uma opção comum é Luftal. Deseja consultar?";
+      return "Para gases, uma opção comum é Luftal. Quer consultar?";
     }
 
     if (/\bdor muscular\b/.test(normalized)) {
-      return "Para dor muscular, opções comuns são Dorflex e Torsilax. Qual deseja consultar?";
+      return "Para dor muscular, opções comuns são Dorflex e Torsilax. Qual você quer consultar?";
     }
 
     if (/\btosse\b/.test(normalized)) {
-      return "Para tosse, preciso saber se é seca ou com catarro para consultar uma opção comum.";
+      return "Para tosse, preciso saber se é seca ou com catarro para te indicar uma opção comum.";
     }
 
     if (/\bdor de garganta\b/.test(normalized)) {
-      return "Para dor de garganta, posso consultar opções comuns de pastilhas ou analgésicos. Qual produto você prefere?";
+      return "Para dor de garganta, posso consultar opções comuns de pastilhas ou analgésicos. Qual produto você quer ver?";
     }
 
     return null;

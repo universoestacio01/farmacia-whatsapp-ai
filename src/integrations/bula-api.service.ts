@@ -389,12 +389,16 @@ export class BulaApiService {
   }
 
   formatNotFound(medicineName: string) {
-    return `No momento não localizei "${medicineName}". Pode conferir o nome do medicamento ou me enviar uma foto da embalagem?`;
+    return [
+      `No momento não encontrei "${medicineName}" disponível.`,
+      "",
+      "Você pode conferir o nome do medicamento ou me enviar uma foto da embalagem?",
+    ].join("\n");
   }
 
   formatPresentationChoiceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
+      return `Tenho ${this.title(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -402,7 +406,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Encontrei ${this.title(summary.medicineName)}. Qual apresentação você deseja?`,
+      `Tenho estas opções de ${this.title(summary.medicineName)} para você:`,
       "",
     ];
 
@@ -414,13 +418,13 @@ export class BulaApiService {
       .slice(0, 3)
       .map((option) => option.optionId)
       .join(", ");
-    lines.push("", `Responda ${optionNumbers}.`);
+    lines.push("", `Qual delas você quer levar? Responda ${optionNumbers}.`);
     return lines.join("\n");
   }
 
   formatPriceReply(summary: MedicineLookupSummary) {
     if (summary.options.length === 0) {
-      return `Encontrei ${this.title(summary.products[0]?.name || summary.medicineName)}, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
+      return `Tenho ${this.title(summary.products[0]?.name || summary.medicineName)} para você, mas preciso confirmar a apresentação. Você prefere comprimido, gotas, cápsula ou xarope?`;
     }
 
     if (summary.options.length === 1) {
@@ -428,7 +432,7 @@ export class BulaApiService {
     }
 
     const lines = [
-      `Encontrei algumas opções de ${this.title(summary.medicineName)}:`,
+      `Tenho estas opções de ${this.title(summary.medicineName)} para você:`,
       "",
     ];
 
@@ -436,12 +440,12 @@ export class BulaApiService {
       lines.push(`${option.optionId}. ${this.formatOptionLine(option)}`);
     }
 
-    lines.push("", "Qual opção você prefere?");
+    lines.push("", "Qual delas você quer levar?");
     return lines.join("\n");
   }
 
   formatSelectedOptionReply(option: CommercialMedicineOption) {
-    const lines = [`Perfeito, separei ${option.label}.`];
+    const lines = [`Perfeito, separei este item para você:`, "", option.label];
 
     if (option.packageDescription) {
       lines.push(`Embalagem: ${option.packageDescription}.`);
@@ -450,9 +454,9 @@ export class BulaApiService {
     lines.push(
       option.pricePf
         ? `Valor: ${this.formatCurrency(option.pricePf)}.`
-        : "Não encontrei preço regulado para essa apresentação.",
+        : "No momento não encontrei preço para essa apresentação.",
       "",
-      "Quantas unidades deseja?",
+      "Quantas unidades você quer?",
     );
 
     return lines.join("\n");

@@ -18,6 +18,8 @@ interface WhatsappGraphResponse {
   }>;
 }
 
+type WhatsappReplyContent = string | string[];
+
 export class WhatsappSendError extends Error {
   constructor(
     message: string,
@@ -211,6 +213,18 @@ export class WhatsappService {
   }
 
   private async replyAndRecord(
+    conversationId: string,
+    recipient: string,
+    content: WhatsappReplyContent,
+  ) {
+    const messages = Array.isArray(content) ? content : [content];
+
+    for (const message of messages) {
+      await this.sendAndRecordSingleReply(conversationId, recipient, message);
+    }
+  }
+
+  private async sendAndRecordSingleReply(
     conversationId: string,
     recipient: string,
     content: string,

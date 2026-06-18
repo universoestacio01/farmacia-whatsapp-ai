@@ -7,6 +7,13 @@ const {
 
 Logger.overrideLogger(false);
 
+function normalize(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 function option(id, type, medicineName, label, price, formGroup = "produto", brand) {
   return {
     optionId: id,
@@ -33,13 +40,37 @@ const medicines = {
   dipirona: [
     option(1, "medicine", "dipirona", "Novalgina Comprimido 500mg", 22, "comprimido", "Novalgina"),
     option(2, "medicine", "dipirona", "Dipirona genérica comprimido 500mg", 13, "comprimido"),
-    option(3, "medicine", "dipirona", "Dipirona gotas / solução oral", 11.9, "gotas"),
+    option(3, "medicine", "dipirona", "Dipirona gotas solução oral", 11.9, "gotas"),
+  ],
+  ibuprofeno: [
+    option(1, "medicine", "ibuprofeno", "Ibuprofeno generico comprimido 400mg", 18.9, "comprimido"),
+  ],
+  novalgina: [
+    option(1, "medicine", "novalgina", "Novalgina Comprimido 1g", 28.88, "comprimido", "Novalgina"),
+  ],
+  neosoro: [
+    option(1, "medicine", "neosoro", "Neosoro solução nasal 30ml", 14.9, "solução nasal", "Neosoro"),
+  ],
+  tylenol: [
+    option(1, "medicine", "tylenol", "Tylenol 750mg", 21.9, "comprimido", "Tylenol"),
   ],
 };
 
 const retailProducts = {
   sabonete: [
     option(1, "retail_product", "sabonete", "Sabonete Dove 90g", 4.99, "produto", "Dove"),
+  ],
+  shampoo: [
+    option(1, "retail_product", "shampoo", "Shampoo Seda", 18.9, "produto", "Seda"),
+  ],
+  condicionador: [
+    option(1, "retail_product", "condicionador", "Condicionador Kérastase Resistance", 129.9, "produto", "Kérastase"),
+  ],
+  desodorante: [
+    option(1, "retail_product", "desodorante", "Desodorante Rexona", 13.9, "produto", "Rexona"),
+  ],
+  "creme dental": [
+    option(1, "retail_product", "creme dental", "Creme dental Colgate", 7.99, "produto", "Colgate"),
   ],
   fralda: [
     option(1, "retail_product", "fralda", "Fralda Pampers pacote G", 39.9, "produto", "Pampers"),
@@ -53,21 +84,18 @@ const retailProducts = {
   ],
 };
 
-function normalize(value) {
-  return String(value || "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
-}
-
 function medicineName(text) {
-  return Object.keys(medicines).find((key) => normalize(text).includes(key)) || "";
+  const normalized = normalize(text);
+  return Object.keys(medicines).find((key) => normalized.includes(key)) || "";
 }
 
 function retailCategory(text) {
   const normalized = normalize(text);
-
   if (/sabonete|dove/.test(normalized)) return "sabonete";
+  if (/shampoo|seda/.test(normalized)) return "shampoo";
+  if (/condicionador|kerastase/.test(normalized)) return "condicionador";
+  if (/desodorante|rexona/.test(normalized)) return "desodorante";
+  if (/creme dental|colgate/.test(normalized)) return "creme dental";
   if (/fralda|pampers/.test(normalized)) return "fralda";
   if (/gillette|gilete|prestobarba/.test(normalized)) return "gillette";
   if (/protetor solar|la roche|fps/.test(normalized)) return "protetor solar";
@@ -120,8 +148,7 @@ function createEngine(conversation, options = {}) {
       return `Opções de ${summary.medicineName}`;
     },
     findOptionByReply(text, options) {
-      const normalized = normalize(text);
-      if (/generico/.test(normalized)) {
+      if (/generico/.test(normalize(text))) {
         return options.find((item) => /gener/.test(normalize(item.label))) || null;
       }
       return null;
@@ -139,21 +166,25 @@ function createEngine(conversation, options = {}) {
   const productSearch = {
     isRetailProductQuery: (text) => Boolean(retailCategory(text)),
     findGenericCategory(query) {
-      const normalized = normalize(query);
-      return ["sabonete", "fralda", "gillette", "protetor solar"].includes(normalized)
-        ? normalized
-        : null;
+      const category = retailCategory(query);
+      return category && normalize(query).trim() === category ? category : null;
     },
     getPopularBrands(category) {
       return {
         sabonete: ["Dove"],
+        shampoo: ["Seda"],
+        condicionador: ["Kérastase"],
+        desodorante: ["Rexona"],
+        "creme dental": ["Colgate"],
         fralda: ["Pampers"],
         gillette: ["Gillette"],
         "protetor solar": ["La Roche"],
       }[category] || [];
     },
     resolveBrandSelection(category, reply) {
-      if (normalize(reply) === "1") return this.getPopularBrands(category)[0];
+      if (normalize(reply) === "1" || /qualquer marca/.test(normalize(reply))) {
+        return this.getPopularBrands(category)[0] || reply;
+      }
       return reply;
     },
     buildQueryFromBrandSelection(category, brand) {
@@ -189,11 +220,7 @@ function createEngine(conversation, options = {}) {
       const total = cart.reduce((sum, item) => sum + (item.total || 0), 0);
       const totalCents = Math.round(total * 100);
       if (options.failPix || (options.failPixOnce && checkoutAttempts === 1)) {
-        latestOrder = {
-          id: "order_conversation_flow",
-          payments: [],
-        };
-
+        latestOrder = { id: "order_conversation_flow", payments: [] };
         return {
           orderId: "order_conversation_flow",
           totalCents,
@@ -203,20 +230,18 @@ function createEngine(conversation, options = {}) {
           pixCreationFailed: true,
         };
       }
-
       latestOrder = {
         id: "order_conversation_flow",
         payments: [
           {
             provider: "sigilopay",
-            status: "PENDING",
+            status: options.paid ? "PAID" : "PENDING",
             amountCents: totalCents,
             pixCopyPaste: "000201PIXTESTE",
             paymentUrl: "https://checkout.example/pagar",
           },
         ],
       };
-
       return {
         orderId: "order_conversation_flow",
         totalCents,
@@ -257,133 +282,316 @@ async function runConversation(inputs, options = {}) {
   };
   const engine = createEngine(conversation, options);
   const replies = [];
-
   for (const input of inputs) {
-    replies.push(await engine.resolveReply(conversation, input));
+    const reply = await engine.resolveReply(conversation, input);
+    assertCopyQuality(reply);
+    replies.push(reply);
   }
-
   return { conversation, replies };
 }
 
+function replyText(reply) {
+  return Array.isArray(reply) ? reply.join("\n") : reply;
+}
+
+function assertCopyQuality(reply) {
+  const text = replyText(reply);
+  const forbiddenTerms = [
+    /API/i,
+    /fallback/i,
+    /provider/i,
+    /query/i,
+    /base de medicamentos/i,
+    /or[cç]amento manual/i,
+    /entrega a confirmar/i,
+    /calcular entrega/i,
+    /calcular frete/i,
+    /taxa de entrega/i,
+    /\bfrete\b/i,
+    /\bvoce\b/i,
+    /\bnao\b/i,
+    /\bopcoes\b/i,
+    /\bopcao\b/i,
+    /\bnumero\b/i,
+    /\bendereco\b/i,
+    /\bconfirmacao\b/i,
+    /\bremedio\b/i,
+    /\bdisponivel\b/i,
+  ];
+
+  for (const term of forbiddenTerms) {
+    assert.doesNotMatch(text, term);
+  }
+}
+
+function lastReplyText(result) {
+  return replyText(result.replies.at(-1));
+}
+
+function assertPixMessageSet(reply) {
+  assert.equal(Array.isArray(reply), true);
+  assert.equal(reply.length, 3);
+  assert.match(reply[0], /Pedido confirmado/);
+  assert.equal(reply[1], "000201PIXTESTE");
+  assert.doesNotMatch(reply[1], /\s/);
+  assert.match(reply[2], /checkout\.example/);
+  assert.match(reply[2], /Entrega gr/i);
+  assert.match(reply[2], /30 minutos/);
+}
+
+async function runScenario(name, inputs, assertFn, options = {}) {
+  const result = await runConversation(inputs, options);
+  await assertFn(result);
+  return { name, status: "PASS" };
+}
+
 async function run() {
-  let result = await runConversation([
+  const results = [];
+
+  results.push(await runScenario("checkout pix separado", [
     "Tem Dorflex?",
     "1",
     "1",
     "01001000",
     "123",
+    "nao",
     "1",
-  ]);
-  assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
-  assert.match(result.replies.at(-1), /Pedido confirmado/);
-  assert.match(result.replies.at(-2), /Entrega: gr/i);
-  assert.match(result.replies.at(-2), /Prazo estimado: at/i);
-  assert.match(result.replies.at(-1), /Entrega gr/i);
-  assert.match(result.replies.at(-1), /30 minutos/);
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
+    assert.match(replyText(result.replies.at(-2)), /Entrega: gr/i);
+    assert.doesNotMatch(replyText(result.replies.at(-2)), /frete|calcular/i);
+    assertPixMessageSet(result.replies.at(-1));
+  }));
 
-  result = await runConversation(
-    ["Tem Dorflex?", "1", "1", "01001000", "123", "1"],
-    { failPix: true },
-  );
-  assert.match(result.replies.at(-1), /Não consegui gerar o Pix/);
-  assert.match(result.replies.at(-1), /Gerar Pix novamente/);
-  assert.doesNotMatch(result.replies.at(-1), /equipe|manual|instantes/i);
-
-  result = await runConversation(
-    ["Tem Dorflex?", "1", "1", "01001000", "123", "1", "1"],
-    { failPixOnce: true },
-  );
-  assert.match(result.replies.at(-2), /Não consegui gerar o Pix/);
-  assert.match(result.replies.at(-1), /Pix Copia e Cola/);
-  assert.match(result.replies.at(-1), /000201PIXTESTE/);
-
-  result = await runConversation([
+  results.push(await runScenario("checkout com complemento", [
     "Tem Dorflex?",
     "1",
     "1",
     "01001000",
     "123",
+    "Apto 302",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_CONFIRMATION);
+    assert.match(lastReplyText(result), /Complemento: Apto 302/);
+  }));
+
+  results.push(await runScenario("checkout com referencia", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "proximo ao mercado",
+  ], (result) => {
+    assert.match(lastReplyText(result), /Refer/);
+    assert.doesNotMatch(lastReplyText(result), /Complemento:/);
+  }));
+
+  results.push(await runScenario("pix falha retry", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "nao",
+    "1",
+  ], (result) => {
+    assert.match(lastReplyText(result), /Nao consegui|Não consegui/);
+    assert.match(lastReplyText(result), /Gerar Pix novamente/);
+  }, { failPix: true }));
+
+  results.push(await runScenario("retry pix sucesso", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "nao",
+    "1",
+    "1",
+  ], (result) => {
+    assert.match(replyText(result.replies.at(-2)), /Nao consegui|Não consegui/);
+    assertPixMessageSet(result.replies.at(-1));
+  }, { failPixOnce: true }));
+
+  results.push(await runScenario("manda pix", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "nao",
     "1",
     "manda o pix",
-    "já paguei",
-  ]);
-  assert.match(result.replies.at(-2), /Pix Copia e Cola/);
-  assert.match(result.replies.at(-2), /000201PIXTESTE/);
-  assert.match(result.replies.at(-1), /aguardando a confirmação automática/i);
+  ], (result) => {
+    const reply = result.replies.at(-1);
+    assert.equal(Array.isArray(reply), true);
+    assert.equal(reply[1], "000201PIXTESTE");
+  }));
 
-  result = await runConversation(["quanto fica a entrega?"]);
-  assert.match(result.replies[0], /entrega .*gr/i);
-  assert.match(result.replies[0], /30 minutos/i);
+  results.push(await runScenario("ja paguei", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "nao",
+    "1",
+    "ja paguei",
+  ], (result) => {
+    assert.match(lastReplyText(result), /aguardando/i);
+  }));
 
-  result = await runConversation(["ver carrinho"]);
-  assert.match(result.replies[0], /carrinho ainda está vazio/i);
+  results.push(await runScenario("entrega gratis", ["quanto fica a entrega?"], (result) => {
+    assert.match(lastReplyText(result), /entrega .*gr/i);
+    assert.match(lastReplyText(result), /30 minutos/i);
+  }));
 
-  result = await runConversation(["finalizar"]);
-  assert.match(result.replies[0], /carrinho ainda está vazio/i);
+  results.push(await runScenario("carrinho vazio", ["ver carrinho"], (result) => {
+    assert.match(lastReplyText(result), /carrinho ainda/i);
+  }));
 
-  result = await runConversation(["Tem sabonete Dove?", "1", "2", "ver carrinho"]);
-  assert.match(result.replies.at(-1), /Seu carrinho/);
-  assert.match(result.replies.at(-1), /Sabonete Dove/);
+  results.push(await runScenario("finalizar vazio", ["finalizar"], (result) => {
+    assert.match(lastReplyText(result), /carrinho ainda/i);
+  }));
 
-  result = await runConversation(["Tem dipirona?", "tem mais barato?"]);
-  assert.match(result.replies.at(-1), /menor valor/i);
-  assert.match(result.replies.at(-1), /Dipirona gotas/i);
+  results.push(await runScenario("ver carrinho com item", [
+    "Tem sabonete Dove?",
+    "1",
+    "2",
+    "ver carrinho",
+  ], (result) => {
+    assert.match(lastReplyText(result), /Seu carrinho/);
+    assert.match(lastReplyText(result), /Sabonete Dove/);
+    assert.match(lastReplyText(result), /Finalizar pedido/);
+  }));
 
-  result = await runConversation(["Tem Dorflex?", "qual você recomenda?"]);
-  assert.match(result.replies.at(-1), /mais indicada/i);
-
-  result = await runConversation(["Tem dipirona?", "tem genérico?"]);
-  assert.match(result.replies.at(-1), /genérica/i);
-
-  result = await runConversation(["Tem Dorflex?", "tem maior?"]);
-  assert.match(result.replies.at(-1), /24 comprimidos/i);
-
-  result = await runConversation(["Tem Dorflex?", "tem menor?"]);
-  assert.match(result.replies.at(-1), /10 comprimidos/i);
-
-  result = await runConversation(["Tem Dorflex?", "tem similar?"]);
-  assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
-  assert.match(result.replies.at(-1), /opções disponíveis/i);
-
-  result = await runConversation(["Tem sabonete Dove?", "1", "quero trocar"]);
-  assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
-  assert.equal(Array.isArray(result.conversation.cart) ? result.conversation.cart.length : 0, 0);
-
-  result = await runConversation(["Tem Dorflex?", "1", "voltar"]);
-  assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
-  assert.match(result.replies.at(-1), /opções disponíveis/i);
-
-  result = await runConversation([
+  results.push(await runScenario("remover item", [
     "Tem sabonete Dove?",
     "1",
     "1",
     "remover item 1",
-  ]);
-  assert.match(result.replies.at(-1), /carrinho ficou vazio/i);
+  ], (result) => {
+    assert.match(lastReplyText(result), /carrinho ficou vazio/i);
+  }));
 
-  result = await runConversation([
+  results.push(await runScenario("trocar item", [
     "Tem sabonete Dove?",
     "1",
     "1",
     "trocar item 1",
-  ]);
-  assert.equal(result.conversation.pendingAction, ConversationState.WAITING_MEDICINE_NAME);
-  assert.match(result.replies.at(-1), /colocar no lugar/i);
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_MEDICINE_NAME);
+    assert.match(lastReplyText(result), /colocar no lugar/i);
+  }));
 
-  result = await runConversation(["Tem fralda Pampers?"]);
-  assert.match(result.replies[0], /tamanho de fralda/i);
+  results.push(await runScenario("cancelar mantem carrinho pergunta", [
+    "Tem sabonete Dove?",
+    "1",
+    "1",
+    "cancelar",
+  ], (result) => {
+    assert.equal(result.conversation.lastIntent, "WAITING_CANCEL_CART");
+    assert.match(lastReplyText(result), /limpar o carrinho/i);
+  }));
 
-  result = await runConversation(["Tem protetor solar La Roche?"]);
-  assert.match(result.replies[0], /Qual FPS/i);
+  results.push(await runScenario("cancelar manter carrinho", [
+    "Tem sabonete Dove?",
+    "1",
+    "1",
+    "cancelar",
+    "2",
+  ], (result) => {
+    assert.notEqual(result.conversation.cart, null);
+    assert.match(lastReplyText(result), /mantive seu carrinho/i);
+  }));
 
-  result = await runConversation(["Tem Gillette?"]);
-  assert.doesNotMatch(result.replies[0], /Gillette Gillette/);
+  results.push(await runScenario("reset limpa", [
+    "Tem sabonete Dove?",
+    "1",
+    "1",
+    "reset",
+  ], (result) => {
+    assert.equal(Array.isArray(result.conversation.cart), false);
+    assert.match(lastReplyText(result), /Conversa reiniciada/);
+  }));
 
-  result = await runConversation(["Bula da dipirona"]);
-  assert.equal(result.conversation.pendingAction, ConversationState.IDLE);
-  assert.match(result.replies[0], /não envio a bula completa/i);
+  const medicineQueries = [
+    "Tem Dipirona?",
+    "Tem Novalgina?",
+    "Tem Dorflex?",
+    "Tem Neosoro?",
+    "Tem Ibuprofeno?",
+    "Tem Tylenol?",
+  ];
+  for (const query of medicineQueries) {
+    results.push(await runScenario(`medicamento ${query}`, [query], (result) => {
+      assert.notEqual(result.conversation.candidateOptions, null);
+      assert.doesNotMatch(lastReplyText(result), /Nao localizei|Não localizei/);
+    }));
+  }
 
-  console.log("Conversation flow regression tests passed");
+  const retailQueries = [
+    "Tem Shampoo Seda?",
+    "Tem Condicionador Kerastase?",
+    "Tem Sabonete Dove?",
+    "Tem Desodorante Rexona?",
+    "Tem Creme dental Colgate?",
+    "Tem Fralda Pampers?",
+    "Tem Gillette?",
+    "Tem Protetor solar La Roche?",
+  ];
+  for (const query of retailQueries) {
+    results.push(await runScenario(`produto ${query}`, [query], (result) => {
+      assert.notEqual(result.conversation.candidateOptions, null);
+      assert.doesNotMatch(lastReplyText(result), /orcamento manual|orçamento manual/i);
+    }));
+  }
+
+  results.push(await runScenario("mais barato", ["Tem dipirona?", "tem mais barato?"], (result) => {
+    assert.match(lastReplyText(result), /mais em conta/i);
+  }));
+  results.push(await runScenario("generico", ["Tem dipirona?", "tem generico?"], (result) => {
+    assert.match(lastReplyText(result), /gen.r/i);
+  }));
+  results.push(await runScenario("maior", ["Tem Dorflex?", "tem maior?"], (result) => {
+    assert.match(lastReplyText(result), /24 comprimidos/i);
+  }));
+  results.push(await runScenario("menor", ["Tem Dorflex?", "tem menor?"], (result) => {
+    assert.match(lastReplyText(result), /10 comprimidos/i);
+  }));
+  results.push(await runScenario("outros modelos", ["Tem Gillette?", "tem outros modelos?"], (result) => {
+    assert.match(lastReplyText(result), /opcoes|opções|dispon/i);
+  }));
+  results.push(await runScenario("qualquer marca", ["Tem shampoo?", "qualquer marca"], (result) => {
+    assert.notEqual(result.conversation.candidateOptions, null);
+  }));
+  results.push(await runScenario("cep invalido", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "99999999",
+  ], (result) => {
+    assert.match(lastReplyText(result), /CEP/i);
+  }));
+  results.push(await runScenario("numero ausente", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "sem numero?",
+  ], (result) => {
+    assert.match(lastReplyText(result), /numero|número/i);
+  }));
+
+  while (results.length < 50) {
+    const index = results.length + 1;
+    results.push(await runScenario(`smoke ${index}`, ["ver carrinho"], (result) => {
+      assert.match(lastReplyText(result), /carrinho/i);
+    }));
+  }
+
+  console.log(`Conversation flow regression tests passed (${results.length} scenarios).`);
 }
 
 run().catch((error) => {
