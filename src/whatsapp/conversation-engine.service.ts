@@ -635,13 +635,20 @@ export class ConversationEngineService {
       existingOrderId: this.extractConfirmedOrderId(conversation.lastIntent),
     });
 
-    await this.prisma.conversation.update({
-      where: { id: conversation.id },
-      data: {
-        lastIntent: `ORDER_CONFIRMED:${payment.orderId}`,
-        pendingAction: ConversationState.WAITING_PIX,
-      },
-    });
+    try {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: `ORDER_CONFIRMED:${payment.orderId}`,
+          pendingAction: ConversationState.WAITING_PIX,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        "CHECKOUT CONTEXT UPDATE FAILED AFTER PAYMENT CREATION",
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
 
     if (payment.pixCreationFailed || !payment.pixCopyPaste) {
       return this.formatPixFailureRetryReply();

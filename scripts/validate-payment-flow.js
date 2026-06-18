@@ -219,7 +219,35 @@ async function run() {
   assert.equal(pix.manualFallback, false);
   assert.equal(pix.pixCopyPaste, "000201PIXTESTE");
   assert.equal(prisma.payments[0].status, PaymentStatus.PENDING);
+  assert.equal(prisma.payments[0].pixQrCode, undefined);
+  assert.equal(prisma.payments[0].rawResponse.pix.base64Exists, false);
   assert.equal(pixCalls[0].callbackUrl, "https://io-web.link/webhook/sigilopay");
+
+  const persistenceFailPrisma = new FakePrisma();
+  persistenceFailPrisma.payment.create = async () => {
+    const error = new Error("PANIC: timer has gone away");
+    error.name = "PrismaClientRustPanicError";
+    throw error;
+  };
+  const persistenceFailService = new PaymentsService(
+    config({
+      PIX_PROVIDER: "sigilopay",
+      SIGILOPAY_ENABLED: true,
+      SIGILOPAY_CALLBACK_URL: "https://io-web.link/webhook/sigilopay",
+    }),
+    persistenceFailPrisma,
+    fakeSigiloPay(true),
+  );
+  const pixWithPersistenceFailure =
+    await persistenceFailService.confirmCheckout({
+      conversationId: "conv_db_fail",
+      customerId: "customer_1",
+      cart,
+    });
+  assert.equal(pixWithPersistenceFailure.manualFallback, false);
+  assert.equal(pixWithPersistenceFailure.pixCreationFailed, undefined);
+  assert.equal(pixWithPersistenceFailure.pixCopyPaste, "000201PIXTESTE");
+  assert.equal(persistenceFailPrisma.payments.length, 0);
 
   const reused = await service.confirmCheckout({
     conversationId: "conv_2",
@@ -281,7 +309,7 @@ async function run() {
         token: "token-errado",
         transaction: { id: "tx_invalid", status: "COMPLETED" },
       }),
-    /Unauthorized/,
+    /SigiloPay/,
   );
 
   const panicController = new SigiloPayWebhookController(
@@ -292,12 +320,13 @@ async function run() {
         throw error;
       },
     },
-    new SigiloPayService(config({})),
+    new SigiloPayService(config({ SIGILOPAY_WEBHOOK_TOKEN: "token-correto" })),
     { get: () => ({ sendTextMessage: async () => undefined }) },
   );
   assert.deepEqual(
     panicController.receive({
       event: "TRANSACTION_PAID",
+      token: "token-correto",
       transaction: { id: "tx_panic", status: "COMPLETED" },
     }),
     { received: true },
