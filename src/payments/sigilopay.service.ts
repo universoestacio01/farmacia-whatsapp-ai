@@ -49,6 +49,7 @@ export class SigiloPayError extends Error {
     message: string,
     readonly code: "CONFIG_MISSING" | "API_ERROR" | "TIMEOUT" | "INVALID_RESPONSE",
     readonly statusCode?: number,
+    readonly responseData?: unknown,
   ) {
     super(message);
     this.name = "SigiloPayError";
@@ -239,7 +240,7 @@ export class SigiloPayService implements PixProvider {
           url,
           endpoint: path,
           status: response.status,
-          headers: this.getRelevantResponseHeaders(response.headers),
+          headers: this.getResponseHeaders(response.headers),
           data,
         })}`,
       );
@@ -250,6 +251,7 @@ export class SigiloPayService implements PixProvider {
           this.getApiErrorMessage(data),
           "API_ERROR",
           response.status,
+          data,
         );
       }
 
@@ -260,8 +262,14 @@ export class SigiloPayService implements PixProvider {
           `SIGILOPAY ERROR: ${JSON.stringify({
             url,
             endpoint: path,
-            statusCode: error.statusCode,
-            message: error.message,
+            error: {
+              message: error.message,
+              response: {
+                status: error.statusCode,
+                data: error.responseData,
+              },
+              stack: error.stack,
+            },
             name: error.name,
           })}`,
           error.stack,
@@ -397,13 +405,8 @@ export class SigiloPayService implements PixProvider {
     };
   }
 
-  private getRelevantResponseHeaders(headers: Headers) {
-    return {
-      "content-type": headers.get("content-type"),
-      date: headers.get("date"),
-      "x-request-id": headers.get("x-request-id"),
-      "cf-ray": headers.get("cf-ray"),
-    };
+  private getResponseHeaders(headers: Headers) {
+    return Object.fromEntries(headers.entries());
   }
 
   private getApiErrorMessage(data: unknown) {
