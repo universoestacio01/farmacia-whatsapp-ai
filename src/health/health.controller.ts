@@ -3,6 +3,7 @@ import { ConfigService } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
+import { generateValidCpf } from "../utils/cpf.util";
 
 @Controller("health")
 export class HealthController {
@@ -91,6 +92,7 @@ export class HealthController {
     const url = `${paymentsHealth.apiBaseUrl.replace(/\/+$/, "")}${endpoint}`;
     const publicKey = this.getSanitizedEnv("SIGILOPAY_PUBLIC_KEY");
     const secretKey = this.getSanitizedEnv("SIGILOPAY_SECRET_KEY");
+    const documentGenerated = true;
     const payload = {
       identifier: `health_test_${Date.now()}`,
       amount: 1,
@@ -98,7 +100,7 @@ export class HealthController {
         name: "Cliente Teste",
         email: "cliente.teste@example.com",
         phone: "11999999999",
-        document: "00000000000",
+        document: generateValidCpf(),
       },
       products: [
         {
@@ -112,9 +114,11 @@ export class HealthController {
       metadata: {
         provider: "farmacia-whatsapp-ai",
         diagnostic: true,
+        documentGenerated,
       },
       callbackUrl: paymentsHealth.callbackUrl,
     };
+    const diagnosticPayload = this.maskPixDiagnosticPayload(payload);
 
     try {
       const response = await fetch(url, {
@@ -127,14 +131,23 @@ export class HealthController {
         body: JSON.stringify(payload),
       });
       const text = await response.text();
-      const responseBody = this.parseResponseBody(text);
+      const responseBody = this.maskSensitiveData(this.parseResponseBody(text));
 
       return {
         ...paymentsHealth,
         url,
         endpoint,
-        payload,
+        payload: diagnosticPayload,
         status: response.status,
+        transactionId: this.getResponseValue(responseBody, "transactionId"),
+        pixCodeExists: Boolean(
+          this.getNestedResponseValue(responseBody, "pix", "code"),
+        ),
+        qrCodeExists: Boolean(
+          this.getNestedResponseValue(responseBody, "pix", "base64") ||
+            this.getNestedResponseValue(responseBody, "pix", "image"),
+        ),
+        orderUrl: this.getNestedResponseValue(responseBody, "order", "url"),
         responseBody,
       };
     } catch (error) {
@@ -142,7 +155,7 @@ export class HealthController {
         ...paymentsHealth,
         url,
         endpoint,
-        payload,
+        payload: diagnosticPayload,
         status: null,
         responseBody: {
           error: {
@@ -228,6 +241,72 @@ export class HealthController {
     } catch {
       return text;
     }
+  }
+
+  private maskPixDiagnosticPayload(payload: unknown) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return payload;
+    }
+
+    const masked = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    const client = masked.client;
+
+    if (client && typeof client === "object" && !Array.isArray(client)) {
+      const clientRecord = client as Record<string, unknown>;
+      delete clientRecord.document;
+      clientRecord.documentGenerated = true;
+    }
+
+    return masked;
+  }
+
+  private getResponseValue(responseBody: unknown, key: string) {
+    if (
+      !responseBody ||
+      typeof responseBody !== "object" ||
+      Array.isArray(responseBody)
+    ) {
+      return undefined;
+    }
+
+    return (responseBody as Record<string, unknown>)[key];
+  }
+
+  private getNestedResponseValue(
+    responseBody: unknown,
+    parentKey: string,
+    key: string,
+  ) {
+    const parent = this.getResponseValue(responseBody, parentKey);
+
+    if (!parent || typeof parent !== "object" || Array.isArray(parent)) {
+      return undefined;
+    }
+
+    return (parent as Record<string, unknown>)[key];
+  }
+
+  private maskSensitiveData(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.maskSensitiveData(item));
+    }
+
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+
+    const masked: Record<string, unknown> = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      if (["document", "cpf"].includes(key.toLowerCase())) {
+        masked[key] = "[masked]";
+        continue;
+      }
+
+      masked[key] = this.maskSensitiveData(item);
+    }
+
+    return masked;
   }
 
   private isPharmaDbConfigured() {

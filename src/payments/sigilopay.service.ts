@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { sanitizeEnv } from "../config/env-sanitize";
+import { generateValidCpf, isValidCpf } from "../utils/cpf.util";
 import {
   CreatePixPaymentInput,
   PixPaymentResult,
@@ -83,6 +84,8 @@ export class SigiloPayService implements PixProvider {
     this.assertReady();
 
     const amount = this.centsToMoney(input.amountCents);
+    const customerDocument = sanitizeEnv(input.customerDocument);
+    const documentGenerated = !isValidCpf(customerDocument);
     const payload = {
       identifier: `order_${input.orderId}`,
       amount,
@@ -90,7 +93,7 @@ export class SigiloPayService implements PixProvider {
         name: input.customerName || "Cliente WhatsApp",
         email: input.customerEmail || this.defaultCustomerEmail(input.orderId),
         phone: input.customerPhone || "00000000000",
-        document: input.customerDocument || "00000000000",
+        document: documentGenerated ? generateValidCpf() : customerDocument,
       },
       products: (input.items || []).map((item) => ({
         id: item.id,
@@ -102,6 +105,7 @@ export class SigiloPayService implements PixProvider {
       metadata: {
         provider: "farmacia-whatsapp-ai",
         orderId: input.orderId,
+        documentGenerated,
       },
       callbackUrl: input.callbackUrl || this.getCallbackUrl(),
     };
@@ -222,7 +226,7 @@ export class SigiloPayService implements PixProvider {
           endpoint: path,
           method: init.method || "GET",
           headers: this.maskHeaders(headers),
-          body: requestBody,
+          body: this.maskRequestBody(requestBody),
         })}`,
       );
 
@@ -241,7 +245,7 @@ export class SigiloPayService implements PixProvider {
           endpoint: path,
           status: response.status,
           headers: this.getResponseHeaders(response.headers),
-          data,
+          data: this.maskSensitiveData(data),
         })}`,
       );
 
@@ -266,7 +270,7 @@ export class SigiloPayService implements PixProvider {
               message: error.message,
               response: {
                 status: error.statusCode,
-                data: error.responseData,
+                data: this.maskSensitiveData(error.responseData),
               },
               stack: error.stack,
             },
@@ -403,6 +407,51 @@ export class SigiloPayService implements PixProvider {
       prefix: sanitized.slice(0, 4),
       length: sanitized.length,
     };
+  }
+
+  private maskRequestBody(value: unknown) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return value;
+    }
+
+    const body = JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+    const client = body.client;
+
+    if (client && typeof client === "object" && !Array.isArray(client)) {
+      const clientRecord = client as Record<string, unknown>;
+      const documentGenerated = Boolean(
+        (body.metadata as Record<string, unknown> | undefined)
+          ?.documentGenerated,
+      );
+
+      delete clientRecord.document;
+      clientRecord.documentGenerated = documentGenerated;
+    }
+
+    return body;
+  }
+
+  private maskSensitiveData(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.maskSensitiveData(item));
+    }
+
+    if (!value || typeof value !== "object") {
+      return value;
+    }
+
+    const masked: Record<string, unknown> = {};
+
+    for (const [key, item] of Object.entries(value)) {
+      if (["document", "cpf"].includes(key.toLowerCase())) {
+        masked[key] = "[masked]";
+        continue;
+      }
+
+      masked[key] = this.maskSensitiveData(item);
+    }
+
+    return masked;
   }
 
   private getResponseHeaders(headers: Headers) {
