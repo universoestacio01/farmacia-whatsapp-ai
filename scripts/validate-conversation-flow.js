@@ -158,7 +158,7 @@ function createEngine(conversation, options = {}) {
   const medicineSearch = {
     searchMedicine: async (name) => ({
       medicineName: name,
-      products: medicines[name] || [],
+      products: [],
       options: medicines[name] || [],
     }),
     findSymptomOptions: () => null,

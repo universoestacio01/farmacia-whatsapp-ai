@@ -865,7 +865,7 @@ export class ConversationEngineService {
       return this.formatMedicineInformationReply(question, summary);
     }
 
-    if (summary.products.length === 0 || summary.options.length === 0) {
+    if (summary.options.length === 0) {
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
