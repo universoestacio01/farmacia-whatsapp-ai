@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { sanitizeEnv } from "./env-sanitize";
 
 const sanitizedOptionalString = z.preprocess((value) => {
@@ -105,7 +105,7 @@ const envSchema = z.object({
   SIGILOPAY_CALLBACK_URL: z.preprocess(
     (value) => sanitizeEnv(value),
     z.string().url(),
-  ).default("https://io-web.link/webhook/sigilopay"),
+  ).default("https://farmaciadeliveryraia.com/webhook/sigilopay"),
   SIGILOPAY_PUBLIC_KEY: sanitizedOptionalString,
   SIGILOPAY_SECRET_KEY: sanitizedOptionalString,
   SIGILOPAY_WEBHOOK_TOKEN: sanitizedOptionalString,
@@ -129,3 +129,4 @@ export function validateEnv(config: Record<string, unknown>) {
     `Variaveis de ambiente invalidas ou ausentes:\n${messages.join("\n")}`,
   );
 }
+

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+﻿import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { OrderStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
@@ -372,7 +372,7 @@ export class PaymentsService {
   private getCallbackUrl() {
     return (
       this.configService.get<string>("SIGILOPAY_CALLBACK_URL")?.trim() ||
-      "https://io-web.link/webhook/sigilopay"
+      "https://farmaciadeliveryraia.com/webhook/sigilopay"
     );
   }
 
@@ -526,3 +526,4 @@ export class PaymentsService {
     return value as Record<string, unknown>;
   }
 }
+

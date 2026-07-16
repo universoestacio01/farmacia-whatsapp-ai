@@ -1,4 +1,4 @@
-# farmacia-whatsapp-ai
+﻿# farmacia-whatsapp-ai
 
 API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix via SigiloPay.
 
@@ -51,7 +51,7 @@ Copie `.env.example` para `.env` e ajuste:
 - `PIX_PROVIDER`: use `sigilopay` para Pix automático.
 - `SIGILOPAY_ENABLED`: `true` para habilitar criação automática de Pix.
 - `SIGILOPAY_API_BASE_URL`: por padrão `https://app.sigilopay.com.br/api/v1`.
-- `SIGILOPAY_CALLBACK_URL`: URL enviada no `callbackUrl` da cobrança Pix. Para produção atual, use `https://io-web.link/webhook/sigilopay`.
+- `SIGILOPAY_CALLBACK_URL`: URL enviada no `callbackUrl` da cobrança Pix. Para produção atual, use `https://farmaciadeliveryraia.com/webhook/sigilopay`.
 - `SIGILOPAY_PUBLIC_KEY` e `SIGILOPAY_SECRET_KEY`: credenciais da API SigiloPay.
 - `SIGILOPAY_WEBHOOK_TOKEN`: token usado para validar o campo `token` dos webhooks da SigiloPay.
 
@@ -128,7 +128,8 @@ Nossa equipe vai te enviar os dados de pagamento em instantes.
 O sistema envia o callback na criação da cobrança Pix:
 
 ```text
-https://io-web.link/webhook/sigilopay
+https://farmaciadeliveryraia.com/webhook/sigilopay
 ```
 
 O endpoint valida o `token` do payload com `SIGILOPAY_WEBHOOK_TOKEN` quando a variável estiver configurada. Se o token não estiver configurado, o webhook é aceito e o sistema registra um aviso nos logs.
+

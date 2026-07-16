@@ -1,4 +1,4 @@
-import { Controller, Get } from "@nestjs/common";
+﻿import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { ModuleRef } from "@nestjs/core";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
@@ -99,7 +99,7 @@ export class HealthController {
       secretKeyPrefix: secretKey.prefix,
       callbackUrl:
         this.getSanitizedEnv("SIGILOPAY_CALLBACK_URL") ||
-        "https://io-web.link/webhook/sigilopay",
+        "https://farmaciadeliveryraia.com/webhook/sigilopay",
     };
   }
 
@@ -186,3 +186,4 @@ export class HealthController {
       .filter(Boolean);
   }
 }
+

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+﻿import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { sanitizeEnv } from "../config/env-sanitize";
 import { generateValidCpf, isValidCpf } from "../utils/cpf.util";
@@ -373,7 +373,7 @@ export class SigiloPayService implements PixProvider {
   private getCallbackUrl() {
     return this.getEnv(
       "SIGILOPAY_CALLBACK_URL",
-      "https://io-web.link/webhook/sigilopay",
+      "https://farmaciadeliveryraia.com/webhook/sigilopay",
     );
   }
 
@@ -565,3 +565,4 @@ export class SigiloPayService implements PixProvider {
     return `${value.slice(0, 8)}...${value.slice(-8)}`;
   }
 }
+

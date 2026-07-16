@@ -1,4 +1,4 @@
-const assert = require("node:assert/strict");
+﻿const assert = require("node:assert/strict");
 const { Logger } = require("@nestjs/common");
 const { OrderStatus, PaymentStatus } = require("@prisma/client");
 const { PaymentsService } = require("../dist/payments/payments.service");
@@ -206,7 +206,7 @@ async function run() {
     config({
       PIX_PROVIDER: "sigilopay",
       SIGILOPAY_ENABLED: true,
-      SIGILOPAY_CALLBACK_URL: "https://io-web.link/webhook/sigilopay",
+      SIGILOPAY_CALLBACK_URL: "https://farmaciadeliveryraia.com/webhook/sigilopay",
     }),
     prisma,
     fakeSigiloPay(true, pixCalls),
@@ -221,7 +221,7 @@ async function run() {
   assert.equal(prisma.payments[0].status, PaymentStatus.PENDING);
   assert.equal(prisma.payments[0].pixQrCode, undefined);
   assert.equal(prisma.payments[0].rawResponse.pix.base64Exists, false);
-  assert.equal(pixCalls[0].callbackUrl, "https://io-web.link/webhook/sigilopay");
+  assert.equal(pixCalls[0].callbackUrl, "https://farmaciadeliveryraia.com/webhook/sigilopay");
 
   const persistenceFailPrisma = new FakePrisma();
   persistenceFailPrisma.payment.create = async () => {
@@ -233,7 +233,7 @@ async function run() {
     config({
       PIX_PROVIDER: "sigilopay",
       SIGILOPAY_ENABLED: true,
-      SIGILOPAY_CALLBACK_URL: "https://io-web.link/webhook/sigilopay",
+      SIGILOPAY_CALLBACK_URL: "https://farmaciadeliveryraia.com/webhook/sigilopay",
     }),
     persistenceFailPrisma,
     fakeSigiloPay(true),
@@ -371,7 +371,7 @@ async function run() {
           unitPrice: 2,
         },
       ],
-      callbackUrl: "https://io-web.link/webhook/sigilopay",
+      callbackUrl: "https://farmaciadeliveryraia.com/webhook/sigilopay",
     });
 
     assert.equal(directPayment.pixCopyPaste, "000201PIXPHONE");
@@ -388,3 +388,4 @@ run().catch((error) => {
   console.error(error);
   process.exit(1);
 });
+
