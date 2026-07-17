@@ -9,10 +9,10 @@
   <rect width="1200" height="630" fill="url(#g)"/>
   <circle cx="980" cy="110" r="250" fill="#b8f26d" opacity=".18"/>
   <circle cx="1040" cy="480" r="180" fill="#ffffff" opacity=".12"/>
-  <text x="80" y="150" fill="#b8f26d" font-family="Arial, sans-serif" font-size="36" font-weight="700">Delivery com IA</text>
+  <text x="80" y="150" fill="#b8f26d" font-family="Arial, sans-serif" font-size="36" font-weight="700">Farmácia delivery com IA</text>
   <text x="80" y="280" fill="#ffffff" font-family="Arial, sans-serif" font-size="92" font-weight="900">Raia Farmácias</text>
   <text x="80" y="380" fill="#ffffff" font-family="Arial, sans-serif" font-size="92" font-weight="900">Delivery</text>
-  <text x="84" y="470" fill="#d8f6ec" font-family="Arial, sans-serif" font-size="34">WhatsApp, Pix e entrega em casa</text>
+  <text x="84" y="470" fill="#d8f6ec" font-family="Arial, sans-serif" font-size="34">Pedido pelo WhatsApp e entrega em casa no Brasil</text>
   <rect x="82" y="520" width="360" height="58" rx="29" fill="#b8f26d"/>
   <text x="124" y="559" fill="#043c3a" font-family="Arial, sans-serif" font-size="24" font-weight="800">farmaciadeliveryraia.com</text>
 </svg>
