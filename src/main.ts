@@ -1,3 +1,6 @@
+import { join } from "path";
+import * as express from "express";
+import type { Request, Response } from "express";
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
 import { AppModule } from "./app.module";
@@ -10,6 +13,20 @@ async function bootstrap() {
   });
   const port = Number(process.env.PORT) || 3000;
   app.enableCors();
+  const publicPath = join(process.cwd(), "public");
+  const expressApp = app.getHttpAdapter().getInstance();
+
+  expressApp.use(
+    express.static(publicPath, {
+      index: false,
+      maxAge: "1d",
+    }),
+  );
+
+  expressApp.get("/", (_request: Request, response: Response) => {
+    response.sendFile(join(publicPath, "index.html"));
+  });
+
   await app.listen(port, "0.0.0.0");
   logger.log("BOOT COMPLETED");
 }

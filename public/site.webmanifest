@@ -1,0 +1,15 @@
+{
+  "name": "Raia Farmácias Delivery",
+  "short_name": "Raia Delivery",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#043c3a",
+  "theme_color": "#043c3a",
+  "icons": [
+    {
+      "src": "/assets/favicon.svg",
+      "sizes": "64x64",
+      "type": "image/svg+xml"
+    }
+  ]
+}
