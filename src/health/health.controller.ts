@@ -103,6 +103,43 @@ export class HealthController {
     };
   }
 
+  @Get("whatsapp")
+  whatsapp() {
+    const accessToken = getEnvPreview(
+      this.getSanitizedEnv("WHATSAPP_ACCESS_TOKEN"),
+    );
+    const phoneNumberId = getEnvPreview(
+      this.getSanitizedEnv("WHATSAPP_PHONE_NUMBER_ID"),
+    );
+    const appSecret = getEnvPreview(
+      this.getSanitizedEnv("WHATSAPP_APP_SECRET"),
+    );
+    const verifyToken = getEnvPreview(
+      this.getSanitizedEnv("WHATSAPP_VERIFY_TOKEN"),
+    );
+    const apiVersion =
+      this.getSanitizedEnv("WHATSAPP_API_VERSION") || "v25.0";
+
+    return {
+      status: "ok",
+      apiVersion,
+      envFileIgnored: this.isEnvFileIgnored(),
+      webhookUrl: "https://farmaciadeliveryraia.com/webhooks/whatsapp",
+      accessTokenConfigured: accessToken.configured,
+      accessTokenLength: accessToken.length,
+      accessTokenPrefix: accessToken.prefix,
+      phoneNumberIdConfigured: phoneNumberId.configured,
+      phoneNumberIdLength: phoneNumberId.length,
+      phoneNumberIdPrefix: phoneNumberId.prefix,
+      appSecretConfigured: appSecret.configured,
+      appSecretLength: appSecret.length,
+      appSecretPrefix: appSecret.prefix,
+      verifyTokenConfigured: verifyToken.configured,
+      verifyTokenLength: verifyToken.length,
+      verifyTokenPrefix: verifyToken.prefix,
+    };
+  }
+
   @Get("database")
   async database() {
     return {
@@ -177,6 +214,20 @@ export class HealthController {
 
   private getSanitizedEnv(name: string) {
     return sanitizeEnv(this.configService.get<string>(name) ?? process.env[name]);
+  }
+
+  private isEnvFileIgnored() {
+    const explicitValue = sanitizeEnv(process.env.IGNORE_ENV_FILE).toLowerCase();
+
+    if (["true", "1", "yes", "sim"].includes(explicitValue)) {
+      return true;
+    }
+
+    if (["false", "0", "no", "nao", "não"].includes(explicitValue)) {
+      return false;
+    }
+
+    return sanitizeEnv(process.env.NODE_ENV) === "production";
   }
 
   private parseTokenList(value: string | undefined) {

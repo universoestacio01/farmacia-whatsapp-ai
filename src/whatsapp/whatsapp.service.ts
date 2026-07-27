@@ -278,7 +278,7 @@ export class WhatsappService {
       "WHATSAPP_PHONE_NUMBER_ID",
     );
     const apiVersion =
-      this.configService.get<string>("WHATSAPP_API_VERSION") || "v21.0";
+      this.configService.get<string>("WHATSAPP_API_VERSION") || "v25.0";
 
     if (!accessToken || !phoneNumberId) {
       throw new WhatsappSendError(

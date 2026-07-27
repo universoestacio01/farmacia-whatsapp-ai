@@ -66,7 +66,7 @@ const envSchema = z.object({
     })
     .trim()
     .min(1, "WHATSAPP_APP_SECRET nao pode ficar vazia"),
-  WHATSAPP_API_VERSION: z.string().trim().default("v21.0"),
+  WHATSAPP_API_VERSION: z.string().trim().default("v25.0"),
   OPENAI_API_KEY: z.string().trim().optional(),
   OPENAI_MODEL: z.string().trim().default("gpt-4o-mini"),
   PHARMADB_API_BASE_URL: z
