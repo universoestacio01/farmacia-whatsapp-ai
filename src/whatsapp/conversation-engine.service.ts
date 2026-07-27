@@ -140,7 +140,7 @@ export class ConversationEngineService {
         },
       });
 
-      return "Claro 😊 Qual outro produto você quer adicionar?";
+      return "Claro. Me diga qual outro produto você quer incluir no pedido.";
     }
 
     if (
@@ -257,7 +257,7 @@ export class ConversationEngineService {
         },
       });
 
-      return "Qual produto você quer consultar?";
+      return "Qual produto você quer consultar? Pode me mandar o nome ou a marca.";
     }
 
     const symptomReply = this.medicineSearch.findSymptomOptions(text);
@@ -296,7 +296,7 @@ export class ConversationEngineService {
       });
     }
 
-    return "Qual medicamento você quer consultar?";
+    return "Me diga o nome do medicamento que eu procuro as melhores opções para você.";
   }
 
   private async handleWaitingRetailBrand(conversation: Conversation, text: string) {
@@ -308,7 +308,7 @@ export class ConversationEngineService {
         data: { pendingAction: ConversationState.IDLE },
       });
 
-      return "Qual produto você quer consultar?";
+      return "Me diga qual produto você quer consultar.";
     }
 
     if (
@@ -323,7 +323,7 @@ export class ConversationEngineService {
         },
       });
 
-      return "Tudo bem. Qual outro produto você quer consultar?";
+      return "Tudo bem. Me diga qual outro produto você quer consultar.";
     }
 
     if (conversation.lastIntent === "WAITING_DIAPER_SIZE") {
@@ -380,7 +380,7 @@ export class ConversationEngineService {
       });
 
       return [
-        "Tenho estas opções disponíveis:",
+        "Encontrei estas opções disponíveis:",
         "",
         this.formatCandidateOptions(options),
         "",
@@ -396,7 +396,7 @@ export class ConversationEngineService {
         : null);
 
     if (!category) {
-      return "Claro, vou te mostrar outras opções. Qual produto você quer ver?";
+      return "Claro. Me diga qual produto você quer ver que eu busco outras opções.";
     }
 
     const brand = selectedOption?.brand || undefined;
@@ -410,7 +410,7 @@ export class ConversationEngineService {
     });
 
     return [
-      `Claro, vou te mostrar outras opções de ${formatProductDisplayName(category)}${brand ? ` ${formatProductDisplayName(brand)}` : ""}.`,
+      `Claro. Vou buscar outras opções de ${formatProductDisplayName(category)}${brand ? ` ${formatProductDisplayName(brand)}` : ""}.`,
       "",
       WhatsappCopy.showSimilarOffer(category, brand),
     ].join("\n");
@@ -449,7 +449,7 @@ export class ConversationEngineService {
     const selectedOption = await this.selectCandidateOption(conversation, text);
 
     if (!selectedOption) {
-      return "Não consegui identificar a opção. Digite o número ou me diga qual apresentação você quer levar.";
+      return "Não consegui identificar a opção. Pode responder com o número da opção ou me dizer a apresentação que prefere.";
     }
 
     await this.saveSelectedOption(conversation.id, selectedOption);
@@ -474,7 +474,7 @@ export class ConversationEngineService {
         where: { id: conversation.id },
         data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
       });
-      return "Não encontrei a opção selecionada. Qual produto você quer adicionar?";
+      return "Não encontrei a opção selecionada. Me diga qual produto você quer adicionar.";
     }
 
     const cart = this.getCart(conversation.cart);
@@ -519,7 +519,7 @@ export class ConversationEngineService {
         },
       });
 
-      return "Claro 😊 Qual produto você quer adicionar?";
+      return "Claro. Me diga qual produto você quer adicionar.";
     }
 
     if (this.isDeliveryPriceQuestion(text)) {
@@ -544,13 +544,13 @@ export class ConversationEngineService {
           : WhatsappCopy.askCep();
       }
 
-      return "Me envie o CEP da entrega, por favor. Pode mandar apenas os 8 dígitos.";
+      return "Me envie o CEP da entrega para eu continuar. Pode mandar apenas os 8 dígitos.";
     }
 
     const address = await this.viaCepService.findAddressByCep(cep);
 
     if (!address) {
-      return "Não consegui localizar esse CEP. Pode conferir e enviar novamente?";
+      return "Não consegui localizar esse CEP. Pode conferir os números e enviar novamente?";
     }
 
     await this.prisma.conversation.update({
@@ -650,15 +650,15 @@ export class ConversationEngineService {
         },
       });
 
-      return "Claro 😊 Qual outro produto você quer adicionar?";
+      return "Claro. Me diga qual outro produto você quer incluir no pedido.";
     }
 
     if (this.isGlobalCancelRequest(text) || this.isCancelChoice(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Pedido cancelado. Se quiser recomeçar, é só me chamar por aqui.";
+      return "Pedido cancelado. Quando precisar, é só me chamar por aqui.";
     }
 
-    return "Confirma o pedido?\n\n1. Confirmar\n2. Adicionar mais produtos\n3. Cancelar";
+    return "Está tudo certo para confirmar?\n\n1. Confirmar pedido\n2. Adicionar mais produtos\n3. Cancelar";
   }
 
   private async confirmOrderAndCreatePayment(conversation: Conversation) {
@@ -670,7 +670,7 @@ export class ConversationEngineService {
         data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
       });
 
-      return "Seu carrinho ainda está vazio. Qual produto você quer pedir?";
+      return "Seu carrinho ainda está vazio. Me diga o que você precisa que eu procuro para você.";
     }
 
     const payment = await this.paymentsService.confirmCheckout({
@@ -714,7 +714,7 @@ export class ConversationEngineService {
 
     if (this.isPixCancelChoice(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Pedido cancelado. Se quiser recomeçar, é só me chamar por aqui.";
+      return "Pedido cancelado. Quando precisar, é só me chamar por aqui.";
     }
 
     if (this.isAlreadyPaidCommand(text)) {
@@ -731,7 +731,7 @@ export class ConversationEngineService {
     const payment = order?.payments?.[0];
 
     if (!order) {
-      return "Para gerar o Pix, finalize o carrinho primeiro.";
+      return "Para seguir com o pagamento, primeiro precisamos finalizar o carrinho.";
     }
 
     if (!payment) {
@@ -740,12 +740,12 @@ export class ConversationEngineService {
 
     if (payment.status === "PAID") {
       return [
-        "Pagamento confirmado ✅",
+        "Pagamento confirmado.",
         "",
-        "Seu pedido já está sendo separado.",
+        "Seu pedido já está sendo separado pela Raia Delivery.",
         "",
-        "🚚 Entrega grátis por motoboy",
-        "⏱️ Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
+        "Entrega grátis por motoboy.",
+        "Prazo estimado: até 30 minutos após a confirmação.",
       ].join("\n");
     }
 
@@ -768,7 +768,7 @@ export class ConversationEngineService {
     paymentUrl?: string,
   ) {
     const paymentInfo = [
-      "✅ Pedido confirmado!",
+      "Pedido confirmado.",
       "",
       `Total: ${this.formatCurrency(totalCents / 100)}`,
       "",
@@ -791,8 +791,8 @@ export class ConversationEngineService {
     }
 
     deliveryInfo.push(
-      "🚚 Entrega grátis por motoboy",
-      "⏱️ Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
+      "Entrega grátis por motoboy.",
+      "Prazo estimado: até 30 minutos após a confirmação.",
     );
 
     return [
@@ -816,7 +816,7 @@ export class ConversationEngineService {
 
   private formatWaitingPaymentConfirmationReply() {
     return [
-      "Perfeito 👍",
+      "Perfeito.",
       "",
       "Estou aguardando a confirmação automática do pagamento.",
       "Assim que for confirmado, aviso você por aqui.",
@@ -1087,7 +1087,7 @@ export class ConversationEngineService {
     const cart = this.getCart(conversation.cart);
 
     if (cart.length === 0) {
-      return "Seu carrinho ainda está vazio. Qual produto você quer pedir?";
+      return "Seu carrinho ainda está vazio. Me diga o que você precisa que eu procuro para você.";
     }
 
     await this.prisma.conversation.update({
@@ -1100,7 +1100,7 @@ export class ConversationEngineService {
       "",
       this.formatCartStatus(conversation),
       "",
-      "Me envie o CEP da entrega, por favor. Pode mandar apenas os 8 dígitos.",
+      "Me envie o CEP da entrega para eu continuar. Pode mandar apenas os 8 dígitos.",
     ].join("\n");
   }
 
@@ -1108,7 +1108,7 @@ export class ConversationEngineService {
     const cart = this.getCart(conversation.cart);
 
     if (cart.length === 0) {
-      return "Seu carrinho ainda está vazio. Qual produto você quer pedir?";
+      return "Seu carrinho ainda está vazio. Me diga o que você precisa que eu procuro para você.";
     }
 
     return [
@@ -1125,7 +1125,7 @@ export class ConversationEngineService {
   private formatFreeDeliveryReply() {
     return [
       "A entrega é grátis por motoboy.",
-      "Após a confirmação do pagamento, seu pedido chega em até 30 minutos.",
+      "Prazo estimado: até 30 minutos após a confirmação.",
     ].join("\n");
   }
 
@@ -1134,7 +1134,7 @@ export class ConversationEngineService {
 
     if (cart.length === 0) {
       await this.resetConversationContext(conversation.id);
-      return "Atendimento cancelado. Se precisar, é só me chamar por aqui.";
+      return "Atendimento cancelado. Quando precisar, é só chamar a Raia Delivery por aqui.";
     }
 
     await this.prisma.conversation.update({
@@ -1143,9 +1143,9 @@ export class ConversationEngineService {
     });
 
     return [
-      "Você tem itens no carrinho.",
+      "Você ainda tem itens no carrinho.",
       "",
-      "Você quer limpar o carrinho também?",
+      "Quer limpar o carrinho também?",
       "",
       "1. Sim, limpar carrinho",
       "2. Não, manter carrinho",
@@ -1155,7 +1155,7 @@ export class ConversationEngineService {
   private async handlePendingCancelCart(conversation: Conversation, text: string) {
     if (this.isConfirmChoice(text) || this.isPositiveConfirmation(text)) {
       await this.resetConversationContext(conversation.id);
-      return "Carrinho limpo e atendimento cancelado. Se precisar, é só me chamar por aqui.";
+      return "Carrinho limpo e atendimento cancelado. Quando precisar, é só chamar a Raia Delivery por aqui.";
     }
 
     if (this.isCancelKeepCartChoice(text) || this.isNegativeReply(text)) {
@@ -1168,20 +1168,20 @@ export class ConversationEngineService {
       });
 
       return [
-        "Tudo bem, mantive seu carrinho.",
+        "Tudo bem, mantive seu carrinho salvo.",
         "",
         this.formatCartStatus(conversation),
       ].join("\n");
     }
 
-    return "Digite 1 para limpar o carrinho ou 2 para manter.";
+    return "Responda 1 para limpar o carrinho ou 2 para manter.";
   }
 
   private async handleRemoveItemRequest(conversation: Conversation, text: string) {
     const cart = this.getCart(conversation.cart);
 
     if (cart.length === 0) {
-      return "Seu carrinho ainda está vazio. Qual produto você quer pedir?";
+      return "Seu carrinho ainda está vazio. Me diga o que você precisa que eu procuro para você.";
     }
 
     const itemNumber = this.extractCartItemNumber(text);
@@ -1328,7 +1328,7 @@ export class ConversationEngineService {
       },
     });
 
-    return "Tudo bem. Qual produto você quer consultar?";
+    return "Tudo bem. Me diga qual produto você quer consultar.";
   }
 
   private async reopenCandidateOptions(conversation: Conversation) {
@@ -1340,7 +1340,7 @@ export class ConversationEngineService {
         data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
       });
 
-      return "Tudo bem. Qual outro produto você quer consultar?";
+      return "Tudo bem. Me diga qual outro produto você quer consultar.";
     }
 
     await this.prisma.conversation.update({
@@ -1388,7 +1388,7 @@ export class ConversationEngineService {
     const option = this.pickRecommendedOption(options, mode);
 
     if (!option) {
-      return "No momento não encontrei outra opção disponível. Pode me dizer qual produto você quer levar?";
+      return "No momento não encontrei outra opção disponível. Me diga qual produto você quer levar.";
     }
 
     const pricedOption = await this.ensureSelectedOptionPrice(option);
@@ -1541,7 +1541,7 @@ export class ConversationEngineService {
     }
 
     return [
-      `Tenho ${presentation} para você.`,
+      `Encontrei ${presentation} para você.`,
       "Posso te ajudar com um resumo objetivo, mas não envio a bula completa por aqui.",
       "",
       safetyNote,
@@ -1738,22 +1738,22 @@ export class ConversationEngineService {
 
     if (this.isPriceQuestion(text)) {
       answer = option.pricePf
-        ? `O valor é ${this.formatCurrency(option.pricePf)}.`
+        ? `O valor dessa opção é ${this.formatCurrency(option.pricePf)}.`
         : this.formatMissingPrice(option);
     } else if (
       /\b(quantos|vem quantos|qual embalagem|embalagem)\b/.test(normalized)
     ) {
       answer = option.packageDescription
-        ? `A embalagem selecionada vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
-        : "No momento não encontrei a embalagem detalhada dessa apresentação.";
+        ? `Essa embalagem vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
+        : "Não encontrei a embalagem detalhada dessa apresentação.";
     } else if (
       /\b(comprimido|comprimidos|capsula|capsulas|gotas)\b/.test(normalized)
     ) {
-      answer = `A apresentação selecionada é ${this.formatPresentationText(option.formGroup)}.`;
+      answer = `Essa apresentação é ${this.formatPresentationText(option.formGroup)}.`;
     } else {
       answer = option.packageDescription
-        ? `A embalagem selecionada vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
-        : "No momento não encontrei a embalagem detalhada dessa apresentação.";
+        ? `Essa embalagem vem com ${option.packageDescription.replace(/^caixa com\s+/i, "")}.`
+        : "Não encontrei a embalagem detalhada dessa apresentação.";
     }
 
     return [answer, "", this.repeatStatePrompt(state)].join("\n");
@@ -1764,7 +1764,7 @@ export class ConversationEngineService {
     state: ConversationState,
   ) {
     const answer = option.pricePf
-      ? `O valor é ${this.formatCurrency(option.pricePf)}.`
+      ? `O valor dessa opção é ${this.formatCurrency(option.pricePf)}.`
       : this.formatMissingPrice(option);
 
     return [answer, "", this.repeatStatePrompt(state)].join("\n");
@@ -1974,10 +1974,10 @@ export class ConversationEngineService {
     }
 
     if (state === ConversationState.WAITING_CONFIRMATION) {
-      return "Confirma o pedido?\n\n1. Confirmar\n2. Adicionar mais produtos\n3. Cancelar";
+      return "Está tudo certo para confirmar?\n\n1. Confirmar pedido\n2. Adicionar mais produtos\n3. Cancelar";
     }
 
-    return "Como posso ajudar?";
+    return "Me diga o que você precisa que eu procuro para você.";
   }
 
   private async handleGreeting(conversation: Conversation) {
@@ -1998,14 +1998,10 @@ export class ConversationEngineService {
     }
 
     if (cart.length > 0) {
-      return [
-        "Olá! Seu carrinho continua salvo.",
-        "",
-        'Você pode me dizer outro produto, enviar "ver carrinho" ou "finalizar".',
-      ].join("\n");
+      return WhatsappCopy.welcomeWithCart();
     }
 
-    return "Olá! O que você precisa hoje?";
+    return WhatsappCopy.welcome();
   }
 
   private async resetConversationContext(conversationId: string) {

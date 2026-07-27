@@ -94,15 +94,39 @@ const CATEGORY_WORDS = [
 ];
 
 export const WhatsappCopy = {
+  welcome() {
+    return [
+      "Olá, aqui é a Raia Delivery.",
+      "",
+      "Me diga o que você precisa que eu já procuro para você.",
+      "",
+      "Pode ser medicamento, produto de higiene, perfumaria ou item de farmácia.",
+    ].join("\n");
+  },
+
+  welcomeWithCart() {
+    return [
+      "Olá, aqui é a Raia Delivery.",
+      "",
+      "Seu carrinho continua salvo por aqui.",
+      "",
+      'Você pode pedir outro produto, enviar "ver carrinho" ou "finalizar".',
+    ].join("\n");
+  },
+
   resetConversation() {
-    return "Conversa reiniciada. Olá! 😊 O que você precisa hoje?";
+    return [
+      "Conversa reiniciada.",
+      "",
+      "Aqui é a Raia Delivery. Me diga o que você precisa que eu procuro para você.",
+    ].join("\n");
   },
 
   askRetailBrand(category: string, brands: string[]) {
     const lines = [
-      "Claro 😊 Você tem alguma marca de preferência?",
+      `Claro. Para ${formatProductDisplayName(category)}, você tem alguma marca de preferência?`,
       "",
-      "Opções comuns:",
+      "Marcas mais pedidas:",
     ];
 
     brands.slice(0, 5).forEach((brand, index) => {
@@ -110,7 +134,7 @@ export const WhatsappCopy = {
     });
 
     lines.push(`${Math.min(brands.length, 5) + 1}. Qualquer marca`);
-    lines.push("", "Digite o número ou o nome da marca.");
+    lines.push("", "Pode responder com o número ou com o nome da marca.");
 
     return lines.join("\n");
   },
@@ -123,7 +147,7 @@ export const WhatsappCopy = {
   ) {
     const title = uniqueDisplayParts([category, brand]).join(" ");
     const lines = [
-      `Tenho estas opções${title ? ` de ${title}` : ""} para você:`,
+      `Encontrei estas opções${title ? ` de ${title}` : ""}:`,
       "",
     ];
 
@@ -143,7 +167,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Perfeito, separei este item para você:",
+      "Perfeito, deixei esta opção separada:",
       "",
       formatProductDisplayName(product.label),
     ];
@@ -170,7 +194,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Perfeito, separei este item para você:",
+      "Perfeito, deixei esta opção separada:",
       "",
       formatProductDisplayName(product.label),
     ];
@@ -195,7 +219,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Adicionado ao carrinho ✅",
+      "Pronto, adicionei ao seu carrinho.",
       "",
       `${item.quantity}x ${formatProductDisplayName(item.name)}`,
       `Subtotal: ${formatCurrency(item.total)}`,
@@ -211,7 +235,7 @@ export const WhatsappCopy = {
 
   askAddMoreOrCheckout() {
     return [
-      "O que você quer fazer agora?",
+      "Quer incluir mais alguma coisa ou fechar o pedido?",
       "",
       "1. Adicionar mais produtos",
       "2. Finalizar pedido",
@@ -223,9 +247,9 @@ export const WhatsappCopy = {
     const brandText = brand ? ` de ${formatProductDisplayName(brand)}` : "";
 
     return [
-      `No momento tenho estas opções${brandText}.`,
+      `Tenho estas opções${brandText} por aqui.`,
       "",
-      `Posso te mostrar opções parecidas de ${categoryText}?`,
+      `Quer que eu te mostre opções parecidas de ${categoryText}?`,
       "",
       "1. Sim",
       "2. Não",
@@ -234,30 +258,30 @@ export const WhatsappCopy = {
 
   productNotFound(_productName: string) {
     return [
-      "No momento não encontrei esse produto disponível.",
+      "Não localizei esse produto agora.",
       "",
-      "Posso te mostrar uma opção parecida?",
+      "Pode conferir o nome ou me mandar outra opção?",
     ].join("\n");
   },
 
   medicineNotFound() {
     return [
-      "No momento não encontrei esse medicamento disponível.",
+      "Não localizei esse medicamento agora.",
       "",
-      "Você pode conferir o nome ou me enviar uma foto da embalagem?",
+      "Pode conferir o nome ou enviar uma foto da embalagem?",
     ].join("\n");
   },
 
   askQuantity() {
-    return "Quantas unidades você quer?";
+    return "Quantas unidades você quer que eu coloque no carrinho?";
   },
 
   askCep() {
-    return "Perfeito. Me envie o CEP da entrega, por favor.";
+    return "Perfeito. Me envie o CEP da entrega para eu continuar.";
   },
 
   askAddressNumber(address: string) {
-    return `Encontrei: ${address}.\nQual é o número do endereço?`;
+    return `Encontrei este endereço: ${address}.\nQual é o número?`;
   },
 
   askAddressComplement() {
@@ -285,7 +309,7 @@ export const WhatsappCopy = {
       "",
       `Subtotal: ${formatCurrency(subtotal)}`,
       "Entrega: grátis",
-      "Prazo: até 30 minutos após a confirmação do pagamento",
+      "Prazo estimado: até 30 minutos após a confirmação",
       `Total: ${formatCurrency(subtotal)}`,
       "",
       "Endereço:",
@@ -379,9 +403,9 @@ export function sanitizeCustomerText(value: unknown): string {
 
 export function choicePrompt() {
   return [
-    "Qual delas você quer levar?",
+    "Qual opção você prefere?",
     "",
-    "Digite apenas o número da opção.",
+    "Responda apenas com o número.",
   ].join("\n");
 }
 
