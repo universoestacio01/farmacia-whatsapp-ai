@@ -1,5 +1,6 @@
 ﻿import { Controller, Get } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { existsSync } from "node:fs";
 import { ModuleRef } from "@nestjs/core";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
@@ -124,6 +125,7 @@ export class HealthController {
       status: "ok",
       apiVersion,
       envFileIgnored: this.isEnvFileIgnored(),
+      envSource: this.getEnvSource(),
       webhookUrl: "https://farmaciadeliveryraia.com/webhooks/whatsapp",
       accessTokenConfigured: accessToken.configured,
       accessTokenLength: accessToken.length,
@@ -227,7 +229,29 @@ export class HealthController {
       return false;
     }
 
-    return sanitizeEnv(process.env.NODE_ENV) === "production";
+    return (
+      sanitizeEnv(process.env.NODE_ENV) === "production" &&
+      !this.hasHostingerEnvFile()
+    );
+  }
+
+  private getEnvSource() {
+    if (this.hasHostingerEnvFile()) {
+      return "hostinger_env_file";
+    }
+
+    if (this.isEnvFileIgnored()) {
+      return "hostinger_panel";
+    }
+
+    return "local_env_file";
+  }
+
+  private hasHostingerEnvFile() {
+    const customPath = sanitizeEnv(process.env.HOSTINGER_ENV_FILE_PATH);
+    return Boolean(
+      customPath ? existsSync(customPath) : existsSync(".env.hostinger"),
+    );
   }
 
   private parseTokenList(value: string | undefined) {
