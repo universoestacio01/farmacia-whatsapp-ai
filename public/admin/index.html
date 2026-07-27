@@ -19,6 +19,7 @@
 
         <nav class="nav" aria-label="Navegação principal">
           <button class="nav-item active" data-section="overview">Visão geral</button>
+          <button class="nav-item" data-section="attention">Atenção</button>
           <button class="nav-item" data-section="conversations">Conversas</button>
           <button class="nav-item" data-section="orders">Pedidos</button>
           <button class="nav-item" data-section="providers">APIs</button>
@@ -52,13 +53,21 @@
           <div class="grid-two">
             <article class="panel">
               <div class="panel-header">
+                <h2>Precisa de atenção</h2>
+                <button class="link-button" data-section-target="attention" type="button">Ver fila</button>
+              </div>
+              <div id="latest-attention" class="list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
                 <h2 id="overview-title">Conversas recentes</h2>
                 <button class="link-button" data-section-target="conversations" type="button">Ver todas</button>
               </div>
               <div id="latest-conversations" class="list"></div>
             </article>
 
-            <article class="panel">
+            <article class="panel full-span">
               <div class="panel-header">
                 <h2>Pedidos recentes</h2>
                 <button class="link-button" data-section-target="orders" type="button">Ver pedidos</button>
@@ -68,7 +77,36 @@
           </div>
         </section>
 
+        <section id="attention" class="section" aria-labelledby="attention-title">
+          <article class="panel">
+            <div class="panel-header">
+              <h2 id="attention-title">Fila de atenção</h2>
+              <span class="muted">Conversas travadas, antigas ou com falha</span>
+            </div>
+            <div id="attention-list" class="list selectable"></div>
+          </article>
+        </section>
+
         <section id="conversations" class="section" aria-labelledby="conversations-title">
+          <div class="filters">
+            <input id="conversation-search" type="search" placeholder="Buscar por telefone, produto ou mensagem" />
+            <select id="conversation-state">
+              <option value="">Todos os estados</option>
+              <option value="IDLE">IDLE</option>
+              <option value="WAITING_MEDICINE_NAME">Aguardando produto</option>
+              <option value="WAITING_PRESENTATION">Aguardando opção</option>
+              <option value="WAITING_QUANTITY">Aguardando quantidade</option>
+              <option value="WAITING_CEP">Aguardando CEP</option>
+              <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
+              <option value="WAITING_PIX">Aguardando Pix</option>
+            </select>
+            <select id="conversation-status">
+              <option value="">Todas</option>
+              <option value="OPEN">Abertas</option>
+              <option value="CLOSED">Fechadas</option>
+            </select>
+          </div>
+
           <div class="workspace">
             <article class="panel list-panel">
               <div class="panel-header">
@@ -83,21 +121,43 @@
                 <h2>Histórico</h2>
                 <span id="conversation-context" class="muted">Selecione uma conversa</span>
               </div>
+              <div id="conversation-actions" class="action-row hidden">
+                <button id="reset-conversation-button" class="secondary-button" type="button">Resetar conversa</button>
+                <button id="close-conversation-button" class="secondary-button" type="button">Fechar conversa</button>
+              </div>
               <div id="message-thread" class="message-thread empty-state">
                 Selecione uma conversa para ver as mensagens.
               </div>
+              <form id="manual-message-form" class="manual-message hidden">
+                <textarea id="manual-message-text" rows="3" placeholder="Responder manualmente pelo WhatsApp"></textarea>
+                <button class="primary-button" type="submit">Enviar resposta</button>
+              </form>
             </article>
           </div>
         </section>
 
         <section id="orders" class="section" aria-labelledby="orders-title">
-          <article class="panel">
-            <div class="panel-header">
-              <h2 id="orders-title">Pedidos</h2>
-              <span class="muted">Status, pagamento e cliente</span>
-            </div>
-            <div id="orders-table" class="table"></div>
-          </article>
+          <div class="workspace orders-workspace">
+            <article class="panel list-panel">
+              <div class="panel-header">
+                <h2 id="orders-title">Pedidos</h2>
+                <span class="muted">Status, pagamento e cliente</span>
+              </div>
+              <div id="orders-table" class="table selectable"></div>
+            </article>
+            <article class="panel detail-panel">
+              <div class="panel-header">
+                <h2>Detalhe do pedido</h2>
+                <select id="order-status-select" class="hidden">
+                  <option value="CONFIRMED">Confirmado</option>
+                  <option value="PAID">Pago</option>
+                  <option value="DELIVERED">Entregue</option>
+                  <option value="CANCELLED">Cancelado</option>
+                </select>
+              </div>
+              <div id="order-detail" class="empty-state">Selecione um pedido.</div>
+            </article>
+          </div>
         </section>
 
         <section id="providers" class="section" aria-labelledby="providers-title">

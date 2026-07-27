@@ -2,10 +2,13 @@ const state = {
   section: "overview",
   token: localStorage.getItem("raia_admin_token") || "",
   conversations: [],
+  selectedConversationId: null,
+  selectedOrderId: null,
 };
 
 const pageTitleBySection = {
   overview: "Visão geral",
+  attention: "Fila de atenção",
   conversations: "Conversas",
   orders: "Pedidos",
   providers: "APIs",
@@ -78,6 +81,13 @@ function bindAuth() {
 function bindActions() {
   document.getElementById("refresh-button").addEventListener("click", refresh);
   document.getElementById("database-check-button").addEventListener("click", checkDatabase);
+  document.getElementById("conversation-search").addEventListener("input", debounce(loadConversations, 350));
+  document.getElementById("conversation-state").addEventListener("change", loadConversations);
+  document.getElementById("conversation-status").addEventListener("change", loadConversations);
+  document.getElementById("manual-message-form").addEventListener("submit", sendManualMessage);
+  document.getElementById("reset-conversation-button").addEventListener("click", resetSelectedConversation);
+  document.getElementById("close-conversation-button").addEventListener("click", closeSelectedConversation);
+  document.getElementById("order-status-select").addEventListener("change", updateSelectedOrderStatus);
   document.getElementById("logout-button").addEventListener("click", () => {
     localStorage.removeItem("raia_admin_token");
     state.token = "";
@@ -102,6 +112,8 @@ async function refresh() {
   try {
     if (state.section === "overview") {
       await loadOverview();
+    } else if (state.section === "attention") {
+      await loadAttention();
     } else if (state.section === "conversations") {
       await loadConversations();
     } else if (state.section === "orders") {
@@ -121,12 +133,24 @@ async function refresh() {
 async function loadOverview() {
   const data = await api("/admin/api/overview");
   renderMetrics(data.cards);
+  renderAttentionList(document.getElementById("latest-attention"), data.attention || [], false);
   renderConversationList(document.getElementById("latest-conversations"), data.latestConversations, false);
   renderOrders(document.getElementById("latest-orders"), data.latestOrders, "list");
 }
 
+async function loadAttention() {
+  const items = await api("/admin/api/attention?limit=40");
+  renderAttentionList(document.getElementById("attention-list"), items, true);
+}
+
 async function loadConversations() {
-  state.conversations = await api("/admin/api/conversations?limit=30");
+  const params = new URLSearchParams({
+    limit: "30",
+    search: document.getElementById("conversation-search").value.trim(),
+    state: document.getElementById("conversation-state").value,
+    status: document.getElementById("conversation-status").value,
+  });
+  state.conversations = await api(`/admin/api/conversations?${params.toString()}`);
   renderConversationList(document.getElementById("conversation-list"), state.conversations, true);
 }
 
@@ -212,7 +236,45 @@ function renderConversationList(target, conversations, selectable) {
   }
 }
 
+function renderAttentionList(target, items, selectable) {
+  if (!items.length) {
+    target.innerHTML = empty("Nenhuma conversa pedindo atenção agora.");
+    return;
+  }
+
+  target.innerHTML = items
+    .map((item) => `
+      <div class="list-item" ${selectable ? `data-attention-conversation-id="${item.id}"` : ""}>
+        <div class="item-title">
+          <span>${escapeHtml(item.customerName || item.whatsappNumber)}</span>
+          ${statusBadge(item.reason, "warn")}
+        </div>
+        <p class="muted">${escapeHtml(item.lastMessage || "Sem última mensagem")}</p>
+        <div class="item-meta">
+          <span>${escapeHtml(item.whatsappNumber)}</span>
+          <span>${dateTime.format(new Date(item.updatedAt))}</span>
+          <span>${escapeHtml(item.pendingAction)}</span>
+        </div>
+      </div>
+    `)
+    .join("");
+
+  if (selectable) {
+    target.querySelectorAll("[data-attention-conversation-id]").forEach((item) => {
+      item.addEventListener("click", async () => {
+        setSection("conversations");
+        document.getElementById("conversation-search").value = "";
+        document.getElementById("conversation-state").value = "";
+        document.getElementById("conversation-status").value = "";
+        await loadConversations();
+        await selectConversation(item.dataset.attentionConversationId);
+      });
+    });
+  }
+}
+
 async function selectConversation(id) {
+  state.selectedConversationId = id;
   document.querySelectorAll("[data-conversation-id]").forEach((item) => {
     item.classList.toggle("active", item.dataset.conversationId === id);
   });
@@ -221,6 +283,8 @@ async function selectConversation(id) {
   document.getElementById("conversation-context").textContent = conversation
     ? `${conversation.whatsappNumber} · ${conversation.pendingAction}`
     : "Conversa selecionada";
+  document.getElementById("conversation-actions").classList.remove("hidden");
+  document.getElementById("manual-message-form").classList.remove("hidden");
 
   const messages = await api(`/admin/api/conversations/${id}/messages?limit=80`);
   const thread = document.getElementById("message-thread");
@@ -243,6 +307,54 @@ async function selectConversation(id) {
   thread.scrollTop = thread.scrollHeight;
 }
 
+async function sendManualMessage(event) {
+  event.preventDefault();
+
+  if (!state.selectedConversationId) {
+    showToast("Selecione uma conversa primeiro.");
+    return;
+  }
+
+  const input = document.getElementById("manual-message-text");
+  const text = input.value.trim();
+
+  if (!text) {
+    showToast("Digite uma mensagem para enviar.");
+    return;
+  }
+
+  await api(`/admin/api/conversations/${state.selectedConversationId}/messages`, {
+    method: "POST",
+    body: { text },
+  });
+  input.value = "";
+  await selectConversation(state.selectedConversationId);
+  showToast("Mensagem enviada pelo WhatsApp.");
+}
+
+async function resetSelectedConversation() {
+  if (!state.selectedConversationId) return;
+  await api(`/admin/api/conversations/${state.selectedConversationId}/reset`, {
+    method: "POST",
+  });
+  await loadConversations();
+  await selectConversation(state.selectedConversationId);
+  showToast("Conversa resetada.");
+}
+
+async function closeSelectedConversation() {
+  if (!state.selectedConversationId) return;
+  await api(`/admin/api/conversations/${state.selectedConversationId}/close`, {
+    method: "POST",
+  });
+  await loadConversations();
+  document.getElementById("message-thread").className = "message-thread empty-state";
+  document.getElementById("message-thread").textContent = "Conversa fechada.";
+  document.getElementById("manual-message-form").classList.add("hidden");
+  document.getElementById("conversation-actions").classList.add("hidden");
+  showToast("Conversa fechada.");
+}
+
 function renderOrders(target, orders, mode) {
   if (!orders.length) {
     target.innerHTML = empty("Nenhum pedido encontrado.");
@@ -252,10 +364,11 @@ function renderOrders(target, orders, mode) {
   if (mode === "table") {
     target.innerHTML = orders
       .map((order) => `
-        <div class="table-row">
+        <div class="table-row selectable-row" data-order-id="${order.id}">
           <div>
             <strong>${escapeHtml(order.customer.whatsappNumber)}</strong>
             <div class="muted">${escapeHtml(order.customer.name || "Cliente WhatsApp")}</div>
+            <div class="muted">${renderOrderItemPreview(order.notes?.items)}</div>
           </div>
           <div>${statusBadge(order.status, orderStatusTone(order.status))}</div>
           <div>
@@ -269,6 +382,9 @@ function renderOrders(target, orders, mode) {
         </div>
       `)
       .join("");
+    target.querySelectorAll("[data-order-id]").forEach((item) => {
+      item.addEventListener("click", () => selectOrder(item.dataset.orderId));
+    });
     return;
   }
 
@@ -287,6 +403,130 @@ function renderOrders(target, orders, mode) {
       </div>
     `)
     .join("");
+}
+
+async function selectOrder(id) {
+  state.selectedOrderId = id;
+  document.querySelectorAll("[data-order-id]").forEach((item) => {
+    item.classList.toggle("active", item.dataset.orderId === id);
+  });
+
+  const order = await api(`/admin/api/orders/${id}`);
+  const target = document.getElementById("order-detail");
+  const statusSelect = document.getElementById("order-status-select");
+
+  if (!order) {
+    target.className = "empty-state";
+    target.textContent = "Pedido não encontrado.";
+    statusSelect.classList.add("hidden");
+    return;
+  }
+
+  statusSelect.classList.remove("hidden");
+  statusSelect.value = order.status;
+  target.className = "order-detail";
+  target.innerHTML = `
+    <div class="detail-block">
+      <h3>Cliente</h3>
+      <strong>${escapeHtml(order.customer.name || "Cliente WhatsApp")}</strong>
+      <div class="muted">${escapeHtml(order.customer.whatsappNumber)}</div>
+    </div>
+    <div class="detail-block">
+      <h3>Itens</h3>
+      ${renderOrderItems(order.notes?.items)}
+    </div>
+    <div class="detail-block">
+      <h3>Entrega</h3>
+      ${renderAddress(order.notes?.address)}
+    </div>
+    <div class="detail-block">
+      <h3>Pagamento</h3>
+      <div class="item-meta">
+        <span>Total: ${formatMoney(order.totalCents)}</span>
+        <span>Status: ${escapeHtml(order.status)}</span>
+      </div>
+      ${order.payments.length ? order.payments.map((payment) => `
+        <div class="list-item">
+          <div class="item-title">
+            <span>${escapeHtml(payment.provider || "sem provider")}</span>
+            ${statusBadge(payment.status, paymentStatusTone(payment.status))}
+          </div>
+          <div class="item-meta">
+            <span>${formatMoney(payment.amountCents)}</span>
+            ${payment.providerTransactionId ? `<span>${escapeHtml(payment.providerTransactionId)}</span>` : ""}
+            <span>${dateTime.format(new Date(payment.createdAt))}</span>
+          </div>
+        </div>
+      `).join("") : "<p class=\"muted\">Sem pagamento registrado.</p>"}
+    </div>
+  `;
+}
+
+async function updateSelectedOrderStatus() {
+  if (!state.selectedOrderId) return;
+  const status = document.getElementById("order-status-select").value;
+  await api(`/admin/api/orders/${state.selectedOrderId}/status`, {
+    method: "PATCH",
+    body: { status },
+  });
+  await loadOrders();
+  await selectOrder(state.selectedOrderId);
+  showToast("Status do pedido atualizado.");
+}
+
+function renderOrderItemPreview(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "Sem itens no resumo";
+  }
+
+  return items
+    .slice(0, 2)
+    .map((item) => `${item.quantity || 1}x ${item.name || item.description || "Item"}`)
+    .join(", ");
+}
+
+function renderOrderItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return "<p class=\"muted\">Sem itens registrados no pedido.</p>";
+  }
+
+  return items
+    .map((item, index) => `
+      <div class="list-item">
+        <div class="item-title">
+          <span>${index + 1}. ${escapeHtml(item.name || item.description || "Item")}</span>
+          <span>${formatMoney(Math.round((Number(item.total) || 0) * 100))}</span>
+        </div>
+        <div class="item-meta">
+          <span>${Number(item.quantity) || 1} un</span>
+          ${item.unitPrice ? `<span>${currency.format(Number(item.unitPrice))} cada</span>` : ""}
+          ${item.presentation ? `<span>${escapeHtml(item.presentation)}</span>` : ""}
+          ${item.source ? `<span>${escapeHtml(item.source)}</span>` : ""}
+        </div>
+      </div>
+    `)
+    .join("");
+}
+
+function renderAddress(address) {
+  if (!address || typeof address !== "object") {
+    return "<p class=\"muted\">Sem endereço registrado.</p>";
+  }
+
+  const street = address.logradouro || address.street || "";
+  const neighborhood = address.bairro || address.neighborhood || "";
+  const city = address.localidade || address.city || "";
+  const stateValue = address.uf || address.state || "";
+
+  return `
+    <p><strong>${escapeHtml(street)}, número ${escapeHtml(address.number || "")}</strong></p>
+    <div class="item-meta">
+      ${address.cep ? `<span>CEP ${escapeHtml(address.cep)}</span>` : ""}
+      ${neighborhood ? `<span>${escapeHtml(neighborhood)}</span>` : ""}
+      ${city || stateValue ? `<span>${escapeHtml(city)}/${escapeHtml(stateValue)}</span>` : ""}
+      ${address.complement ? `<span>${escapeHtml(address.complement)}</span>` : ""}
+    </div>
+  `;
 }
 
 function renderProviders(data) {
@@ -362,8 +602,15 @@ function renderFailedPayments(payments) {
 }
 
 async function api(path, options = {}) {
+  const headers = {
+    ...(state.token ? { "x-admin-token": state.token } : {}),
+    ...(options.body ? { "Content-Type": "application/json" } : {}),
+  };
+
   const response = await fetch(path, {
-    headers: state.token ? { "x-admin-token": state.token } : {},
+    method: options.method || "GET",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
 
   if (response.status === 403 && options.allowForbidden) {
@@ -375,6 +622,15 @@ async function api(path, options = {}) {
   }
 
   return response.json();
+}
+
+function debounce(callback, wait) {
+  let timer;
+
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => callback(...args), wait);
+  };
 }
 
 function metricCard(label, value) {

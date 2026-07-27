@@ -1,11 +1,15 @@
 import {
+  Body,
   Controller,
   ForbiddenException,
   Get,
   Headers,
   Param,
+  Patch,
+  Post,
   Query,
 } from "@nestjs/common";
+import { OrderStatus } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { sanitizeEnv } from "../config/env-sanitize";
 import { AdminService } from "./admin.service";
@@ -35,9 +39,25 @@ export class AdminController {
   conversations(
     @Headers("x-admin-token") token?: string,
     @Query("limit") limit?: string,
+    @Query("search") search?: string,
+    @Query("state") state?: string,
+    @Query("status") status?: string,
   ) {
     this.assertAuthorized(token);
-    return this.adminService.listConversations(Number(limit) || 20);
+    return this.adminService.listConversations(Number(limit) || 20, {
+      search,
+      state,
+      status,
+    });
+  }
+
+  @Get("attention")
+  attention(
+    @Headers("x-admin-token") token?: string,
+    @Query("limit") limit?: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.attentionQueue(Number(limit) || 30);
   }
 
   @Get("conversations/:id/messages")
@@ -57,6 +77,63 @@ export class AdminController {
   ) {
     this.assertAuthorized(token);
     return this.adminService.listOrders(Number(limit) || 20);
+  }
+
+  @Get("orders/:id")
+  orderDetails(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.orderDetails(id);
+  }
+
+  @Patch("orders/:id/status")
+  updateOrderStatus(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+    @Body("status") status: OrderStatus,
+  ) {
+    this.assertAuthorized(token);
+
+    if (!Object.values(OrderStatus).includes(status)) {
+      throw new ForbiddenException("Status de pedido inválido.");
+    }
+
+    return this.adminService.updateOrderStatus(id, status);
+  }
+
+  @Post("conversations/:id/messages")
+  sendManualMessage(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+    @Body("text") text: string,
+  ) {
+    this.assertAuthorized(token);
+
+    if (!text?.trim()) {
+      throw new ForbiddenException("Mensagem vazia.");
+    }
+
+    return this.adminService.sendManualMessage(id, text.trim());
+  }
+
+  @Post("conversations/:id/reset")
+  resetConversation(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.resetConversation(id);
+  }
+
+  @Post("conversations/:id/close")
+  closeConversation(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.closeConversation(id);
   }
 
   @Get("errors")

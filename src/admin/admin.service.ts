@@ -1,19 +1,25 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  ConversationStatus,
   ConversationState,
+  MessageDirection,
+  MessageRole,
   MessageStatus,
   OrderStatus,
   PaymentStatus,
+  Prisma,
 } from "@prisma/client";
 import { sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
+import { WhatsappService } from "../whatsapp/whatsapp.service";
 
 @Injectable()
 export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    private readonly whatsappService: WhatsappService,
   ) {}
 
   async overview() {
@@ -68,16 +74,22 @@ export class AdminService {
       },
       latestConversations,
       latestOrders,
+      attention: await this.attentionQueue(8),
       providers: this.providers(),
     };
   }
 
-  async listConversations(limit = 20) {
+  async listConversations(
+    limit = 20,
+    filters: { search?: string; state?: string; status?: string } = {},
+  ) {
     const take = this.clampLimit(limit);
+    const where = this.buildConversationWhere(filters);
     const conversations = await this.prisma.safePrismaCall(
       "admin.conversation.findMany",
       (prisma) =>
         prisma.conversation.findMany({
+          where,
           orderBy: { updatedAt: "desc" },
           take,
           include: {
@@ -102,6 +114,8 @@ export class AdminService {
       currentMedicineQuery: conversation.currentMedicineQuery,
       currentRetailCategory: conversation.currentRetailCategory,
       cartItems: Array.isArray(conversation.cart) ? conversation.cart.length : 0,
+      cart: this.asArray(conversation.cart),
+      pendingAddress: this.asObject(conversation.pendingAddress),
       updatedAt: conversation.updatedAt,
       lastMessage: conversation.messages[0]
         ? {
@@ -110,6 +124,44 @@ export class AdminService {
             content: this.truncate(conversation.messages[0].content, 180),
             createdAt: conversation.messages[0].createdAt,
           }
+        : null,
+    }));
+  }
+
+  async attentionQueue(limit = 30) {
+    const take = this.clampLimit(limit, 100);
+    const staleDate = new Date(Date.now() - 20 * 60 * 1000);
+    const conversations = await this.prisma.safePrismaCall(
+      "admin.conversation.findMany.attention",
+      (prisma) =>
+        prisma.conversation.findMany({
+          where: {
+            status: ConversationStatus.OPEN,
+            OR: [
+              { pendingAction: { not: ConversationState.IDLE } },
+              { updatedAt: { lt: staleDate } },
+              { messages: { some: { status: MessageStatus.FAILED } } },
+            ],
+          },
+          orderBy: { updatedAt: "asc" },
+          take,
+          include: {
+            customer: true,
+            messages: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
+        }),
+      [],
+    );
+
+    return conversations.map((conversation) => ({
+      id: conversation.id,
+      customerName: conversation.customer.name,
+      whatsappNumber: conversation.customer.whatsappNumber,
+      pendingAction: conversation.pendingAction,
+      updatedAt: conversation.updatedAt,
+      reason: this.resolveAttentionReason(conversation),
+      lastMessage: conversation.messages[0]
+        ? this.truncate(conversation.messages[0].content, 160)
         : null,
     }));
   }
@@ -160,6 +212,7 @@ export class AdminService {
       id: order.id,
       status: order.status,
       totalCents: order.totalCents,
+      notes: this.parseOrderNotes(order.notes),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: {
@@ -179,6 +232,150 @@ export class AdminService {
           }
         : null,
     }));
+  }
+
+  async orderDetails(orderId: string) {
+    const order = await this.prisma.safePrismaCall(
+      "admin.order.findUnique.details",
+      (prisma) =>
+        prisma.order.findUnique({
+          where: { id: orderId },
+          include: {
+            customer: true,
+            payments: { orderBy: { createdAt: "desc" } },
+          },
+        }),
+      null,
+    );
+
+    if (!order) {
+      return null;
+    }
+
+    return {
+      id: order.id,
+      status: order.status,
+      totalCents: order.totalCents,
+      notes: this.parseOrderNotes(order.notes),
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      customer: {
+        id: order.customerId,
+        name: order.customer.name,
+        whatsappNumber: order.customer.whatsappNumber,
+      },
+      payments: order.payments.map((payment) => ({
+        id: payment.id,
+        status: payment.status,
+        provider: payment.provider,
+        amountCents: payment.amountCents,
+        providerTransactionId: payment.providerTransactionId,
+        paymentUrl: payment.paymentUrl,
+        createdAt: payment.createdAt,
+        paidAt: payment.paidAt,
+      })),
+    };
+  }
+
+  async updateOrderStatus(orderId: string, status: OrderStatus) {
+    return this.prisma.safePrismaCall("admin.order.update.status", (prisma) =>
+      prisma.order.update({
+        where: { id: orderId },
+        data: { status },
+        select: { id: true, status: true, updatedAt: true },
+      }),
+    );
+  }
+
+  async sendManualMessage(conversationId: string, text: string) {
+    const conversation = await this.prisma.safePrismaCall(
+      "admin.conversation.findUnique.manual_message",
+      (prisma) =>
+        prisma.conversation.findUnique({
+          where: { id: conversationId },
+          include: { customer: true },
+        }),
+    );
+
+    if (!conversation) {
+      throw new Error("Conversa não encontrada.");
+    }
+
+    try {
+      const result = await this.whatsappService.sendTextMessage(
+        conversation.customer.whatsappNumber,
+        text,
+      );
+
+      await this.prisma.safePrismaCall(
+        "admin.message.create.manual_outbound_sent",
+        (prisma) =>
+          prisma.message.create({
+            data: {
+              conversationId,
+              whatsappId: result.whatsappMessageId,
+              direction: MessageDirection.OUTBOUND,
+              role: MessageRole.ASSISTANT,
+              status: MessageStatus.SENT,
+              content: text,
+              rawPayload: { manual: true },
+            },
+          }),
+      );
+
+      return { sent: true, whatsappMessageId: result.whatsappMessageId };
+    } catch (error) {
+      await this.prisma.safePrismaCall(
+        "admin.message.create.manual_outbound_failed",
+        (prisma) =>
+          prisma.message.create({
+            data: {
+              conversationId,
+              direction: MessageDirection.OUTBOUND,
+              role: MessageRole.ASSISTANT,
+              status: MessageStatus.FAILED,
+              content: text,
+              rawPayload: {
+                manual: true,
+                error: error instanceof Error ? error.message : "Erro desconhecido",
+              },
+            },
+          }),
+        undefined,
+      );
+
+      throw error;
+    }
+  }
+
+  async resetConversation(conversationId: string) {
+    return this.prisma.safePrismaCall("admin.conversation.update.reset", (prisma) =>
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          lastIntent: null,
+          pendingAction: ConversationState.IDLE,
+          lastMedicine: null,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+          cart: Prisma.JsonNull,
+          pendingAddress: Prisma.JsonNull,
+        },
+        select: { id: true, pendingAction: true, updatedAt: true },
+      }),
+    );
+  }
+
+  async closeConversation(conversationId: string) {
+    return this.prisma.safePrismaCall("admin.conversation.update.close", (prisma) =>
+      prisma.conversation.update({
+        where: { id: conversationId },
+        data: { status: ConversationStatus.CLOSED, pendingAction: ConversationState.IDLE },
+        select: { id: true, status: true, updatedAt: true },
+      }),
+    );
   }
 
   async errors(limit = 30) {
@@ -325,6 +522,97 @@ export class AdminService {
       (prisma) => prisma.payment.count({ where }),
       0,
     );
+  }
+
+  private buildConversationWhere(filters: {
+    search?: string;
+    state?: string;
+    status?: string;
+  }) {
+    const where: Prisma.ConversationWhereInput = {};
+    const status = filters.status?.trim();
+    const state = filters.state?.trim();
+    const search = filters.search?.trim();
+
+    if (status && this.isConversationStatus(status)) {
+      where.status = status;
+    }
+
+    if (state && this.isConversationState(state)) {
+      where.pendingAction = state;
+    }
+
+    if (search) {
+      where.OR = [
+        { customer: { whatsappNumber: { contains: search } } },
+        { customer: { name: { contains: search } } },
+        { currentMedicineQuery: { contains: search } },
+        { currentRetailCategory: { contains: search } },
+        { messages: { some: { content: { contains: search } } } },
+      ];
+    }
+
+    return where;
+  }
+
+  private isConversationStatus(value: string): value is ConversationStatus {
+    return Object.values(ConversationStatus).includes(value as ConversationStatus);
+  }
+
+  private isConversationState(value: string): value is ConversationState {
+    return Object.values(ConversationState).includes(value as ConversationState);
+  }
+
+  private parseOrderNotes(notes: string | null) {
+    if (!notes) {
+      return { items: [], address: null, conversationId: null };
+    }
+
+    try {
+      const parsed = JSON.parse(notes) as {
+        items?: unknown;
+        address?: unknown;
+        conversationId?: string;
+      };
+
+      return {
+        items: this.asArray(parsed.items),
+        address: this.asObject(parsed.address),
+        conversationId: parsed.conversationId || null,
+      };
+    } catch {
+      return { items: [], address: null, conversationId: null, raw: notes };
+    }
+  }
+
+  private resolveAttentionReason(conversation: {
+    pendingAction: ConversationState;
+    updatedAt: Date;
+    messages: Array<{ status: MessageStatus }>;
+  }) {
+    if (conversation.messages.some((message) => message.status === MessageStatus.FAILED)) {
+      return "Mensagem com falha";
+    }
+
+    if (conversation.pendingAction !== ConversationState.IDLE) {
+      return `Aguardando ${conversation.pendingAction}`;
+    }
+
+    if (conversation.updatedAt.getTime() < Date.now() - 20 * 60 * 1000) {
+      return "Sem resposta há mais de 20 minutos";
+    }
+
+    return "Revisar conversa";
+  }
+
+  private asArray(value: unknown) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  private asObject(value: unknown) {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : null;
   }
 
   private env(name: string) {
