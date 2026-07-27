@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { AdminModule } from "./admin/admin.module";
 import { AiModule } from "./ai/ai.module";
 import { HealthModule } from "./health/health.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
@@ -57,6 +58,7 @@ function shouldIgnoreEnvFile() {
     AiModule,
     IntegrationsModule,
     PaymentsModule,
+    AdminModule,
     WhatsappModule,
     WebhooksModule,
   ],

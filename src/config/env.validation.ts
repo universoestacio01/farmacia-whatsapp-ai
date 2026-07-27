@@ -32,6 +32,7 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(3000),
   APP_URL: z.string().trim().url().optional(),
   PUBLIC_APP_URL: z.string().trim().url().optional(),
+  ADMIN_TOKEN: sanitizedOptionalString,
   DATABASE_URL: z
     .string({
       required_error: "DATABASE_URL e obrigatoria",

@@ -27,6 +27,14 @@ async function bootstrap() {
     response.sendFile(join(publicPath, "index.html"));
   });
 
+  expressApp.get("/admin", (_request: Request, response: Response) => {
+    response.sendFile(join(publicPath, "admin", "index.html"));
+  });
+
+  expressApp.get("/admin/", (_request: Request, response: Response) => {
+    response.sendFile(join(publicPath, "admin", "index.html"));
+  });
+
   await app.listen(port, "0.0.0.0");
   logger.log("BOOT COMPLETED");
 }

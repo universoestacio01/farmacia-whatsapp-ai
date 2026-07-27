@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Painel Administrativo | Raia Delivery</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">RD</div>
+          <div>
+            <strong>Raia Delivery</strong>
+            <span>Painel administrativo</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Navegação principal">
+          <button class="nav-item active" data-section="overview">Visão geral</button>
+          <button class="nav-item" data-section="conversations">Conversas</button>
+          <button class="nav-item" data-section="orders">Pedidos</button>
+          <button class="nav-item" data-section="providers">APIs</button>
+          <button class="nav-item" data-section="errors">Erros</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span id="auth-state">Verificando acesso...</span>
+          <button id="logout-button" class="ghost-button" type="button">Sair</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Operação WhatsApp</p>
+            <h1 id="page-title">Visão geral</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="last-updated" class="muted">Ainda não atualizado</span>
+            <button id="refresh-button" class="primary-button" type="button">
+              <span aria-hidden="true">↻</span>
+              Atualizar
+            </button>
+          </div>
+        </header>
+
+        <section id="overview" class="section active" aria-labelledby="overview-title">
+          <div class="metrics-grid" id="metrics-grid"></div>
+
+          <div class="grid-two">
+            <article class="panel">
+              <div class="panel-header">
+                <h2 id="overview-title">Conversas recentes</h2>
+                <button class="link-button" data-section-target="conversations" type="button">Ver todas</button>
+              </div>
+              <div id="latest-conversations" class="list"></div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <h2>Pedidos recentes</h2>
+                <button class="link-button" data-section-target="orders" type="button">Ver pedidos</button>
+              </div>
+              <div id="latest-orders" class="list"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="conversations" class="section" aria-labelledby="conversations-title">
+          <div class="workspace">
+            <article class="panel list-panel">
+              <div class="panel-header">
+                <h2 id="conversations-title">Conversas</h2>
+                <span class="muted">Últimas atualizadas</span>
+              </div>
+              <div id="conversation-list" class="list selectable"></div>
+            </article>
+
+            <article class="panel detail-panel">
+              <div class="panel-header">
+                <h2>Histórico</h2>
+                <span id="conversation-context" class="muted">Selecione uma conversa</span>
+              </div>
+              <div id="message-thread" class="message-thread empty-state">
+                Selecione uma conversa para ver as mensagens.
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="orders" class="section" aria-labelledby="orders-title">
+          <article class="panel">
+            <div class="panel-header">
+              <h2 id="orders-title">Pedidos</h2>
+              <span class="muted">Status, pagamento e cliente</span>
+            </div>
+            <div id="orders-table" class="table"></div>
+          </article>
+        </section>
+
+        <section id="providers" class="section" aria-labelledby="providers-title">
+          <article class="panel">
+            <div class="panel-header">
+              <h2 id="providers-title">Status das APIs</h2>
+              <button id="database-check-button" class="secondary-button" type="button">
+                <span aria-hidden="true">✓</span>
+                Testar banco
+              </button>
+            </div>
+            <div id="providers-grid" class="providers-grid"></div>
+            <div id="database-result" class="database-result"></div>
+          </article>
+        </section>
+
+        <section id="errors" class="section" aria-labelledby="errors-title">
+          <article class="panel">
+            <div class="panel-header">
+              <h2 id="errors-title">Controle de erros</h2>
+              <span class="muted">Mensagens e pagamentos com falha</span>
+            </div>
+            <div id="errors-summary" class="metrics-grid compact"></div>
+            <div class="grid-two">
+              <div>
+                <h3>Mensagens com falha</h3>
+                <div id="failed-messages" class="list"></div>
+              </div>
+              <div>
+                <h3>Pagamentos com falha</h3>
+                <div id="failed-payments" class="list"></div>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true">
+      <form id="auth-form" class="auth-card">
+        <div class="brand-mark">RD</div>
+        <h2>Acesso ao painel</h2>
+        <p>Digite o token administrativo configurado na Hostinger.</p>
+        <label for="admin-token">Token administrativo</label>
+        <input id="admin-token" name="admin-token" type="password" autocomplete="current-password" />
+        <button class="primary-button" type="submit">Entrar</button>
+        <span id="auth-error" class="error-text"></span>
+      </form>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="/admin/app.js" defer></script>
+  </body>
+</html>
