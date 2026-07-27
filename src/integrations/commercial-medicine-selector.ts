@@ -447,14 +447,14 @@ export class CommercialMedicineSelector {
       );
       pick(
         (option) =>
-          this.isGenericOption(option, canonical) &&
-          this.isStrength(option, "500") &&
+          this.optionHasBrand(option, "novalgina") &&
+          this.isStrength(option, "1g") &&
           option.formGroup === "comprimido",
       );
       pick(
         (option) =>
-          this.optionHasBrand(option, "novalgina") &&
-          this.isStrength(option, "1") &&
+          this.isGenericOption(option, canonical) &&
+          this.isStrength(option, "500") &&
           option.formGroup === "comprimido",
       );
       pick((option) => ["gotas", "solucao oral"].includes(option.formGroup));
@@ -604,7 +604,13 @@ export class CommercialMedicineSelector {
   }
 
   private isStrength(option: SelectorOption, value: string) {
-    return this.normalize(option.strength || "").includes(value);
+    const normalized = this.normalize(option.strength || "");
+
+    if (value === "1g") {
+      return /\b1\s*g\b|\b1000\s*mg\b/.test(normalized);
+    }
+
+    return new RegExp(`\\b${value}\\s*(?:mg|g|mg/ml)?\\b`).test(normalized);
   }
 
   private isGenericOption(option: SelectorOption, canonical: string) {

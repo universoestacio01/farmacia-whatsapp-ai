@@ -16,7 +16,10 @@ export class PopularManualMedicineService implements MedicineProvider {
       this.selector.normalizeMedicineName(query) ||
       this.selector.getCanonicalMedicineName(query);
     const canonical = this.selector.getCanonicalMedicineName(normalized);
-    const options = this.catalog[canonical] || [];
+    const options = this.filterByRequestedBrand(
+      normalized,
+      this.catalog[canonical] || [],
+    );
 
     return options.map((option) => ({
       ...option,
@@ -94,6 +97,102 @@ export class PopularManualMedicineService implements MedicineProvider {
   }
 
   private readonly catalog: Record<string, NormalizedMedicineOption[]> = {
+    dipirona: [
+      this.option(
+        "Novalgina",
+        "Novalgina Comprimido 500mg",
+        "comprimido",
+        "dipirona",
+        14.9,
+        "500mg",
+        "500 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Dipirona",
+        "Dipirona genérica Comprimido 500mg",
+        "comprimido",
+        "dipirona",
+        8.9,
+        "500mg",
+        "500 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Novalgina",
+        "Novalgina Gotas / solução oral",
+        "gotas",
+        "dipirona",
+        13.9,
+        "500mg/ml",
+        "500 MG/ML SOL OR CT FR GOT X 20 ML",
+      ),
+    ],
+    ibuprofeno: [
+      this.option(
+        "Ibuprofeno",
+        "Ibuprofeno genérico Comprimido 400mg",
+        "comprimido",
+        "ibuprofeno",
+        9.9,
+        "400mg",
+        "400 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Ibuprofeno",
+        "Ibuprofeno genérico Comprimido 600mg",
+        "comprimido",
+        "ibuprofeno",
+        12.9,
+        "600mg",
+        "600 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Alivium",
+        "Alivium Gotas / suspensão oral",
+        "gotas",
+        "ibuprofeno",
+        13.9,
+        "50mg/ml",
+        "50 MG/ML SUS OR CT FR GOT X 30 ML",
+      ),
+      this.option(
+        "Advil",
+        "Advil Cápsula 400mg",
+        "capsula",
+        "ibuprofeno",
+        12.9,
+        "400mg",
+        "400 MG CAP CT BL X 8",
+      ),
+    ],
+    paracetamol: [
+      this.option(
+        "Paracetamol",
+        "Paracetamol genérico Comprimido 500mg",
+        "comprimido",
+        "paracetamol",
+        7.9,
+        "500mg",
+        "500 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Tylenol",
+        "Tylenol Comprimido 750mg",
+        "comprimido",
+        "paracetamol",
+        14.9,
+        "750mg",
+        "750 MG COM CT BL X 10",
+      ),
+      this.option(
+        "Paracetamol",
+        "Paracetamol Gotas / solução oral",
+        "gotas",
+        "paracetamol",
+        9.9,
+        "200mg/ml",
+        "200 MG/ML SOL OR CT FR GOT X 15 ML",
+      ),
+    ],
     dorflex: [
       this.option("Dorflex comprimido", "Dorflex Comprimido", "comprimido", "dorflex"),
       this.option("Dorflex gotas", "Dorflex Gotas", "gotas", "dorflex"),
@@ -159,6 +258,9 @@ export class PopularManualMedicineService implements MedicineProvider {
     displayName: string,
     form: string,
     substance: string,
+    priceConsumer?: number,
+    dosage?: string,
+    packageRaw?: string,
   ): NormalizedMedicineOption {
     return {
       source: "popular_manual",
@@ -169,7 +271,35 @@ export class PopularManualMedicineService implements MedicineProvider {
       activeIngredient: substance,
       form,
       presentation: displayName,
+      dosage,
+      priceConsumer,
+      packageInfo: packageRaw
+        ? {
+            raw: packageRaw,
+          }
+        : undefined,
     };
+  }
+
+  private filterByRequestedBrand(
+    normalizedQuery: string,
+    options: NormalizedMedicineOption[],
+  ) {
+    const requestedBrand = ["novalgina", "alivium", "advil", "tylenol"].find(
+      (brand) => normalizedQuery.includes(brand),
+    );
+
+    if (!requestedBrand) {
+      return options;
+    }
+
+    const brandedOptions = options.filter((option) =>
+      this.normalize([option.productName, option.displayName].join(" ")).includes(
+        requestedBrand,
+      ),
+    );
+
+    return brandedOptions.length > 0 ? brandedOptions : options;
   }
 
   private normalize(value: string) {

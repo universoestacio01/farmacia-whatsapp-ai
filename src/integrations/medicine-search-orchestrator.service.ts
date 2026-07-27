@@ -104,7 +104,15 @@ export class MedicineSearchOrchestratorService {
   }
 
   private async searchPharmaDb(query: string) {
-    const rawOptions = await this.pharmaDbService.search(query);
+    const queryTerms = this.getCommercialQueryTerms(query);
+    this.logger.log(`PHARMADB SEARCH TERMS: ${queryTerms.join(", ")}`);
+    const rawResults: NormalizedMedicineOption[] = [];
+
+    for (const term of queryTerms) {
+      rawResults.push(...(await this.pharmaDbService.search(term)));
+    }
+
+    const rawOptions = this.dedupeNormalizedOptions(rawResults);
 
     if (rawOptions.length === 0) {
       return null;
@@ -128,6 +136,80 @@ export class MedicineSearchOrchestratorService {
       products: [],
       options: selected,
     };
+  }
+
+  private getCommercialQueryTerms(query: string) {
+    const normalized =
+      this.selector.normalizeMedicineName(query) ||
+      this.selector.getCanonicalMedicineName(query);
+    const canonical = this.selector.getCanonicalMedicineName(query);
+
+    if (this.isBrandSpecificQuery(normalized)) {
+      return [normalized];
+    }
+
+    const terms = [normalized, canonical];
+    const expansions: Record<string, string[]> = {
+      dipirona: ["novalgina", "dipirona generico", "dipirona monoidratada"],
+      ibuprofeno: ["ibuprofeno generico", "alivium", "advil"],
+      paracetamol: ["paracetamol generico", "tylenol"],
+      nimesulida: ["neosulida"],
+      neosulida: ["nimesulida"],
+    };
+
+    return [
+      ...new Set(
+        [...terms, ...(expansions[canonical] || [])]
+          .map((term) => term.trim())
+          .filter(Boolean),
+      ),
+    ];
+  }
+
+  private isBrandSpecificQuery(query: string) {
+    const normalized = this.normalize(query);
+    return [
+      "novalgina",
+      "alivium",
+      "advil",
+      "tylenol",
+      "dorflex",
+      "neosoro",
+      "torsilax",
+      "cimegripe",
+      "neosulida",
+      "engov",
+      "buscopan",
+      "benegrip",
+      "luftal",
+      "neosaldina",
+      "venvanse",
+    ].some((brand) => normalized.includes(brand));
+  }
+
+  private dedupeNormalizedOptions(options: NormalizedMedicineOption[]) {
+    const deduped = new Map<string, NormalizedMedicineOption>();
+
+    for (const option of options) {
+      const key = this.normalize(
+        [
+          option.source,
+          option.sourceId,
+          option.ean,
+          option.productName,
+          option.presentation,
+          option.dosage,
+        ]
+          .filter(Boolean)
+          .join("|"),
+      );
+
+      if (!deduped.has(key)) {
+        deduped.set(key, option);
+      }
+    }
+
+    return [...deduped.values()];
   }
 
   private selectNormalized(

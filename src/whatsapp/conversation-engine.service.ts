@@ -74,6 +74,10 @@ export class ConversationEngineService {
       return WhatsappCopy.resetConversation();
     }
 
+    if (this.isGreetingOnly(text)) {
+      return this.handleGreeting(conversation);
+    }
+
     const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
     const extractedMedicine = this.bulaApiService.extractMedicineName(text);
     const retailProductQuery = this.productSearch.isRetailProductQuery(text);
@@ -1976,6 +1980,34 @@ export class ConversationEngineService {
     return "Como posso ajudar?";
   }
 
+  private async handleGreeting(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart);
+
+    if (conversation.pendingAction !== ConversationState.IDLE) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: cart.length > 0 ? conversation.lastIntent : null,
+          pendingAction: ConversationState.IDLE,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+    }
+
+    if (cart.length > 0) {
+      return [
+        "Olá! Seu carrinho continua salvo.",
+        "",
+        'Você pode me dizer outro produto, enviar "ver carrinho" ou "finalizar".',
+      ].join("\n");
+    }
+
+    return "Olá! O que você precisa hoje?";
+  }
+
   private async resetConversationContext(conversationId: string) {
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -2160,6 +2192,13 @@ export class ConversationEngineService {
       normalized === "reset" ||
       normalized === "/reset" ||
       normalized === "recomecar"
+    );
+  }
+
+  private isGreetingOnly(text: string) {
+    const normalized = this.normalize(text).trim();
+    return /^(oi|ola|olá|bom dia|boa tarde|boa noite|e ai|e aí|hello|hi)$/.test(
+      normalized,
     );
   }
 
