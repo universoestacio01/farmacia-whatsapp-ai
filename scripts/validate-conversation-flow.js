@@ -60,6 +60,11 @@ const medicines = {
   tylenol: [
     option(1, "medicine", "tylenol", "Tylenol 750mg", 21.9, "comprimido", "Tylenol"),
   ],
+  venvanse: [
+    option(1, "medicine", "venvanse", "Venvanse Cápsula 30mg", 243.32, "capsula", "Venvanse"),
+    option(2, "medicine", "venvanse", "Venvanse Cápsula 50mg", 243.32, "capsula", "Venvanse"),
+    option(3, "medicine", "venvanse", "Venvanse Cápsula 70mg", 243.32, "capsula", "Venvanse"),
+  ],
 };
 
 const retailProducts = {
@@ -162,11 +167,22 @@ function createEngine(conversation, options = {}) {
     priceSelectedOption: async (item) => item,
   };
   const medicineSearch = {
-    searchMedicine: async (name) => ({
-      medicineName: name,
-      products: [],
-      options: medicines[normalize(name)] || [],
-    }),
+    searchMedicine: async (name) => {
+      const normalizedName = normalize(name);
+      const key =
+        Object.keys(medicines).find((item) => normalizedName.includes(item)) ||
+        normalizedName;
+      const dosage = normalizedName.match(/\b(\d+)\s*mg\b/)?.[1];
+      const options = medicines[key] || [];
+
+      return {
+        medicineName: name,
+        products: [],
+        options: dosage
+          ? options.filter((item) => normalize(item.label).includes(`${dosage}mg`))
+          : options,
+      };
+    },
     findSymptomOptions: () => null,
     findSymptomSuggestion: (text) =>
       /dor de barriga|dor abdominal|colica|cólica/.test(normalize(text))
@@ -550,6 +566,7 @@ async function run() {
     "Tem Neosoro?",
     "Tem Ibuprofeno?",
     "Tem Tylenol?",
+    "Tem Venvanse?",
   ];
   for (const query of medicineQueries) {
     results.push(await runScenario(`medicamento ${query}`, [query], (result) => {
@@ -565,6 +582,29 @@ async function run() {
     assert.notEqual(result.conversation.candidateOptions, null);
     assert.match(lastReplyText(result), /Buscopan|Luftal/);
     assert.doesNotMatch(lastReplyText(result), /IA fallback/i);
+  }));
+
+  results.push(await runScenario("venvanse mostra tres dosagens", [
+    "Tem Venvanse?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
+    assert.notEqual(result.conversation.candidateOptions, null);
+    const options = result.conversation.candidateOptions;
+    assert.ok(Array.isArray(options));
+    assert.equal(options.length, 3);
+    assert.match(JSON.stringify(options), /30mg/);
+    assert.match(JSON.stringify(options), /50mg/);
+    assert.match(JSON.stringify(options), /70mg/);
+  }));
+
+  results.push(await runScenario("venvanse troca para 50mg no contexto", [
+    "Tem Venvanse?",
+    "1",
+    "Tem de 50mg?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_QUANTITY);
+    assert.match(lastReplyText(result), /50mg/);
+    assert.doesNotMatch(lastReplyText(result), /Não localizei|Nao localizei/);
   }));
 
   const retailQueries = [

@@ -60,8 +60,12 @@ export class MedicineSearchOrchestratorService {
         const summary = await this.safeSearchPharmaDb(parsedQuery);
 
         if (summary && summary.options.length > 0) {
-          this.setCache(`pharmadb:${normalizedQuery}`, summary, 300);
-          return summary;
+          const enhanced = await this.enhanceWithManualOptions(
+            canonicalQuery,
+            summary,
+          );
+          this.setCache(`pharmadb:${normalizedQuery}`, enhanced, 300);
+          return enhanced;
         }
       }
 
@@ -69,8 +73,12 @@ export class MedicineSearchOrchestratorService {
         const summary = await this.safeSearchBulaApi(canonicalQuery);
 
         if (summary && summary.options.length > 0) {
-          this.setCache(`bulapi:${normalizedQuery}`, summary, 300);
-          return summary;
+          const enhanced = await this.enhanceWithManualOptions(
+            canonicalQuery,
+            summary,
+          );
+          this.setCache(`bulapi:${normalizedQuery}`, enhanced, 300);
+          return enhanced;
         }
       }
     }
@@ -156,6 +164,74 @@ export class MedicineSearchOrchestratorService {
     };
   }
 
+  private async enhanceWithManualOptions(
+    canonicalQuery: string,
+    summary: MedicineLookupSummary,
+  ) {
+    if (summary.options.length >= 3) {
+      return summary;
+    }
+
+    const manualOptions = await this.popularManualService.search(canonicalQuery);
+
+    if (manualOptions.length === 0) {
+      return summary;
+    }
+
+    const manualSelected = await this.selectNormalized(
+      this.selector.parseMedicineQuery(canonicalQuery),
+      manualOptions,
+    );
+    const merged = this.dedupeCommercialOptions([
+      ...summary.options,
+      ...manualSelected,
+    ]);
+    const priorityRules =
+      await this.priorityRulesService.getRulesForPrinciple(canonicalQuery);
+    const ranking = this.selector.rankCommercialOptions(
+      canonicalQuery,
+      merged,
+      priorityRules,
+    );
+
+    this.logger.log(
+      `BACKFILL CATÁLOGO MANUAL: medicamento=${canonicalQuery} antes=${summary.options.length} depois=${ranking.selected.length}`,
+    );
+
+    return {
+      ...summary,
+      options: ranking.selected.map((option, index) => ({
+        ...option,
+        optionId: index + 1,
+      })),
+    };
+  }
+
+  private dedupeCommercialOptions(options: CommercialMedicineOption[]) {
+    const deduped = new Map<string, CommercialMedicineOption>();
+
+    for (const option of options) {
+      const key = this.normalize(
+        [
+          option.productName,
+          option.label,
+          option.formGroup,
+          option.strength,
+          option.packageInfo?.unitCount,
+          option.packageInfo?.volumeMl,
+        ]
+          .filter(Boolean)
+          .join("|"),
+      );
+
+      if (!deduped.has(key)) {
+        deduped.set(key, option);
+      }
+    }
+
+    return [...deduped.values()];
+  }
+
   private getCommercialQueryTerms(query: ParsedMedicineQuery) {
     const normalized =
       query.medicineName ||
@@ -177,6 +253,13 @@ export class MedicineSearchOrchestratorService {
       ciprofloxacino: ["ciprofloxacina", "cloridrato de ciprofloxacina"],
       clonazepam: ["rivotril"],
       hidroclorotiazida: ["diurix"],
+      venvanse: [
+        "venvanse 30mg",
+        "venvanse 50mg",
+        "venvanse 70mg",
+        "lisdexanfetamina",
+        "lisdexamfetamina",
+      ],
     };
 
     return [

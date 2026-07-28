@@ -166,6 +166,13 @@ export class ConversationEngineService {
     }
 
     const selectedOption = this.getSelectedOption(conversation);
+    const dosageChangeReply = selectedOption
+      ? await this.handleDosageChangeFromContext(conversation, text, selectedOption)
+      : null;
+
+    if (dosageChangeReply) {
+      return dosageChangeReply;
+    }
 
     if (selectedOption && this.isCurrentItemQuestion(text)) {
       this.logger.log(
@@ -1779,6 +1786,64 @@ export class ConversationEngineService {
     return this.formatSelectedOptionReply(selectedOption);
   }
 
+  private async handleDosageChangeFromContext(
+    conversation: Conversation,
+    text: string,
+    selectedOption: CommercialMedicineOption,
+  ) {
+    const dosage = this.extractDosageChange(text);
+
+    if (!dosage) {
+      return null;
+    }
+
+    const baseMedicine =
+      conversation.currentMedicineQuery ||
+      conversation.lastMedicine ||
+      selectedOption.medicineName ||
+      selectedOption.productName;
+
+    if (!baseMedicine) {
+      return null;
+    }
+
+    this.logger.log(
+      `TROCA DE DOSAGEM DETECTADA: medicamento=${baseMedicine} dosagem=${dosage.label}`,
+    );
+    const summary = await this.medicineSearch.searchMedicine(
+      `${baseMedicine} ${dosage.label}`,
+    );
+    const matchingOptions = (summary?.options || []).filter((option) =>
+      this.optionMatchesDosage(option, dosage.mg),
+    );
+    const options = matchingOptions.length > 0 ? matchingOptions : summary?.options || [];
+
+    if (options.length === 0) {
+      return [
+        `Não encontrei ${formatProductDisplayName(baseMedicine)} ${dosage.label} agora.`,
+        "",
+        "Pode conferir a dosagem ou enviar uma foto da embalagem?",
+      ].join("\n");
+    }
+
+    const selected = await this.ensureSelectedOptionPrice(options[0]);
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: "DOSAGE_CHANGE",
+        pendingAction: ConversationState.WAITING_QUANTITY,
+        lastMedicine: baseMedicine,
+        currentMedicineQuery: baseMedicine,
+        currentRetailCategory: null,
+        candidateOptions: this.toJson(options),
+        selectedPresentation: this.toJson(selected),
+      },
+    });
+
+    return this.formatSelectedOptionReply(selected);
+  }
+
   private async selectCandidateOption(conversation: Conversation, text: string) {
     const currentMedicineQuery =
       conversation.currentMedicineQuery || conversation.lastMedicine;
@@ -2091,6 +2156,50 @@ export class ConversationEngineService {
     }
 
     return null;
+  }
+
+  private extractDosageChange(text: string) {
+    const normalized = this.normalize(text);
+    const explicit = normalized.match(/\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/);
+    const inferred = normalized.match(/\b(?:de|com)\s*(\d{1,4})\b/);
+    const match = explicit || inferred;
+
+    if (!match) {
+      return null;
+    }
+
+    const value = Number(match[1].replace(",", "."));
+    const unit = explicit?.[2] || "mg";
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return null;
+    }
+
+    const mg = unit === "g" ? value * 1000 : value;
+    return {
+      mg,
+      label: unit === "g" ? `${this.formatDose(value)}g` : `${this.formatDose(value)}mg`,
+    };
+  }
+
+  private optionMatchesDosage(option: CommercialMedicineOption, requestedMg: number) {
+    const text = this.normalize(
+      [option.label, option.strength, option.packageDescription]
+        .filter(Boolean)
+        .join(" "),
+    );
+    const matches = [...text.matchAll(/\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/g)];
+
+    return matches.some((match) => {
+      const value = Number(match[1].replace(",", "."));
+      const unit = match[2];
+      const mg = unit === "g" ? value * 1000 : value;
+      return Math.abs(mg - requestedMg) < 0.01;
+    });
+  }
+
+  private formatDose(value: number) {
+    return Number.isInteger(value) ? String(value) : String(value).replace(".", ",");
   }
 
   private extractCep(text: string) {

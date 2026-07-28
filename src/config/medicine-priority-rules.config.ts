@@ -192,4 +192,28 @@ export const DEFAULT_MEDICINE_PRIORITY_RULES: MedicinePriorityRuleConfig[] = [
     brand: "Neopiridin",
     priority: 1000,
   },
+  {
+    principleActive: "venvanse",
+    brand: "Venvanse",
+    dosageMg: 30,
+    quantity: 28,
+    formGroup: "capsula",
+    priority: 1000,
+  },
+  {
+    principleActive: "venvanse",
+    brand: "Venvanse",
+    dosageMg: 50,
+    quantity: 28,
+    formGroup: "capsula",
+    priority: 990,
+  },
+  {
+    principleActive: "venvanse",
+    brand: "Venvanse",
+    dosageMg: 70,
+    quantity: 28,
+    formGroup: "capsula",
+    priority: 980,
+  },
 ];

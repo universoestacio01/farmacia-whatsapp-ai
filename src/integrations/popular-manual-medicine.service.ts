@@ -311,6 +311,35 @@ export class PopularManualMedicineService implements MedicineProvider {
         "neosaldina",
       ),
     ],
+    venvanse: [
+      this.option(
+        "Venvanse",
+        "Venvanse Cápsula 30mg",
+        "cápsula",
+        "venvanse",
+        243.32,
+        "30mg",
+        "30 MG CAP CT FR X 28",
+      ),
+      this.option(
+        "Venvanse",
+        "Venvanse Cápsula 50mg",
+        "cápsula",
+        "venvanse",
+        243.32,
+        "50mg",
+        "50 MG CAP CT FR X 28",
+      ),
+      this.option(
+        "Venvanse",
+        "Venvanse Cápsula 70mg",
+        "cápsula",
+        "venvanse",
+        243.32,
+        "70mg",
+        "70 MG CAP CT FR X 28",
+      ),
+    ],
   };
 
   private option(
