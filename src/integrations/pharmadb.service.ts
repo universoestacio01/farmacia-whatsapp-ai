@@ -17,6 +17,7 @@ export class PharmaDbService implements MedicineProvider {
   readonly name = "pharmadb" as const;
   private readonly logger = new Logger(PharmaDbService.name);
   private readonly cache = new Map<string, CacheEntry>();
+  private unavailableUntil = 0;
 
   constructor(
     private readonly configService: ConfigService,
@@ -27,6 +28,11 @@ export class PharmaDbService implements MedicineProvider {
   async search(query: string): Promise<NormalizedMedicineOption[]> {
     if (!this.authService.hasApiKey()) {
       this.logger.warn("PHARMADB_API_KEY ausente, pulando PharmaDB");
+      return [];
+    }
+
+    if (this.isTemporarilyUnavailable()) {
+      this.logger.warn("PharmaDB temporariamente indisponível, pulando chamada");
       return [];
     }
 
@@ -68,7 +74,20 @@ export class PharmaDbService implements MedicineProvider {
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      this.markTemporarilyUnavailable(error);
       return [];
+    }
+  }
+
+  private isTemporarilyUnavailable() {
+    return Date.now() < this.unavailableUntil;
+  }
+
+  private markTemporarilyUnavailable(error: unknown) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (/PharmaDB respondeu (403|429|500|503)/.test(message)) {
+      this.unavailableUntil = Date.now() + 60_000;
     }
   }
 
@@ -318,6 +337,7 @@ export class PharmaDbService implements MedicineProvider {
       .filter(Boolean)
       .join(":");
     const dosage =
+      this.extractDosageFromText(description) ||
       this.firstString(presentation, ["dosagem", "concentracao", "dose"]) ||
       this.extractDosageText(product);
 
@@ -579,6 +599,26 @@ export class PharmaDbService implements MedicineProvider {
       .filter(Boolean);
 
     return dosages.length > 0 ? dosages.join(" + ") : undefined;
+  }
+
+  private extractDosageFromText(value?: string) {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toUpperCase();
+    const match = normalized.match(
+      /\b(\d+(?:[,.]\d+)?)\s*(MG\/ML|MG|MCG|G|ML)\b/,
+    );
+
+    if (!match) {
+      return undefined;
+    }
+
+    return `${match[1].replace(".", ",")} ${match[2]}`;
   }
 
   private resolveAvailabilityStatus(record: Record<string, unknown>) {

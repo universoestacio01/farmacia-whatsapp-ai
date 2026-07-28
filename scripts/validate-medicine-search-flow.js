@@ -60,7 +60,7 @@ async function testParser() {
     ["Cloridrato de ciprofloxacina", "ciprofloxacina", "ciprofloxacino", undefined, undefined],
     ["Cloridrato de fexofenadina", "fexofenadina", "fexofenadina", undefined, undefined],
     ["Allegra", "allegra", "fexofenadina", undefined, undefined],
-    ["Plenance de 10 mg", "plenance", "plenance", 10, undefined],
+    ["Plenance de 10 mg", "plenance", "tadalafila", 10, undefined],
     ["Viagra", "viagra", "sildenafila", undefined, undefined],
     ["Dipirona 1g", "dipirona", "dipirona", 1000, undefined],
     ["Dipirona 0,5g", "dipirona", "dipirona", 500, undefined],
@@ -255,6 +255,44 @@ async function testConfigurableCommercialRanking() {
   );
 }
 
+async function testVenvanseDosageDiversity() {
+  const { orchestrator } = createOrchestrator(async (term) => {
+    if (term === "venvanse" || term === "venvanse 30mg") {
+      return [
+        option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR X 28"),
+        option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR PLAS X 28"),
+      ];
+    }
+
+    if (term === "venvanse 50mg") {
+      return [
+        option("Venvanse", "Venvanse Cápsula 50mg", "venvanse", "50mg", "50 MG CAP CT FR X 28"),
+      ];
+    }
+
+    return [];
+  });
+
+  orchestrator.popularManualService = {
+    search: async () => [
+      option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR X 28"),
+      option("Venvanse", "Venvanse Cápsula 50mg", "venvanse", "50mg", "50 MG CAP CT FR X 28"),
+      option("Venvanse", "Venvanse Cápsula 70mg", "venvanse", "70mg", "70 MG CAP CT FR X 28"),
+    ],
+  };
+
+  const summary = await orchestrator.searchMedicine("Tem venvanse de 70mg?");
+  const labels = summary.options.map((item) => item.label).join(" | ");
+
+  assert.match(labels, /30mg/i);
+  assert.match(labels, /50mg/i);
+  assert.match(labels, /70mg/i);
+  assert.equal(
+    new Set(summary.options.map((item) => item.strength?.toLowerCase())).size,
+    3,
+  );
+}
+
 function response(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -268,6 +306,7 @@ async function run() {
   await testSearchFallbacksAndRanking();
   await testPharmaDbPagination();
   await testConfigurableCommercialRanking();
+  await testVenvanseDosageDiversity();
   console.log("Medicine search regression tests passed.");
 }
 

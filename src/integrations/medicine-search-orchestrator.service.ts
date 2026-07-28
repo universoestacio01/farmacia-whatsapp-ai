@@ -65,6 +65,7 @@ export class MedicineSearchOrchestratorService {
         if (summary && summary.options.length > 0) {
           const enhanced = await this.enhanceWithManualOptions(
             canonicalQuery,
+            normalizedQuery,
             summary,
           );
           this.setCache(`pharmadb:${normalizedQuery}`, enhanced, 300);
@@ -78,6 +79,7 @@ export class MedicineSearchOrchestratorService {
         if (summary && summary.options.length > 0) {
           const enhanced = await this.enhanceWithManualOptions(
             canonicalQuery,
+            normalizedQuery,
             summary,
           );
           this.setCache(`bulapi:${normalizedQuery}`, enhanced, 300);
@@ -86,7 +88,7 @@ export class MedicineSearchOrchestratorService {
       }
     }
 
-    const manualSummary = await this.searchManual(canonicalQuery);
+    const manualSummary = await this.searchManual(normalizedQuery, canonicalQuery);
     this.setCache(
       `popular_manual:${normalizedQuery}`,
       manualSummary,
@@ -195,7 +197,10 @@ export class MedicineSearchOrchestratorService {
     };
   }
 
-  private async searchManual(query: string): Promise<MedicineLookupSummary> {
+  private async searchManual(
+    query: string,
+    medicineName = query,
+  ): Promise<MedicineLookupSummary> {
     const rawOptions = await this.popularManualService.search(query);
     const selected = await this.selectNormalized(
       this.selector.parseMedicineQuery(query),
@@ -203,7 +208,7 @@ export class MedicineSearchOrchestratorService {
     );
 
     return {
-      medicineName: query,
+      medicineName,
       products: [],
       options: selected,
     };
@@ -211,20 +216,21 @@ export class MedicineSearchOrchestratorService {
 
   private async enhanceWithManualOptions(
     canonicalQuery: string,
+    manualQuery: string,
     summary: MedicineLookupSummary,
   ) {
-    if (summary.options.length >= 3) {
+    if (this.hasEnoughDistinctOptions(summary.options)) {
       return summary;
     }
 
-    const manualOptions = await this.popularManualService.search(canonicalQuery);
+    const manualOptions = await this.popularManualService.search(manualQuery);
 
     if (manualOptions.length === 0) {
       return summary;
     }
 
     const manualSelected = await this.selectNormalized(
-      this.selector.parseMedicineQuery(canonicalQuery),
+      this.selector.parseMedicineQuery(manualQuery),
       manualOptions,
     );
     const merged = this.dedupeCommercialOptions([
@@ -234,7 +240,7 @@ export class MedicineSearchOrchestratorService {
     const priorityRules =
       await this.priorityRulesService.getRulesForPrinciple(canonicalQuery);
     const ranking = this.selector.rankCommercialOptions(
-      canonicalQuery,
+      manualQuery,
       merged,
       priorityRules,
     );
@@ -250,6 +256,31 @@ export class MedicineSearchOrchestratorService {
         optionId: index + 1,
       })),
     };
+  }
+
+  private hasEnoughDistinctOptions(options: CommercialMedicineOption[]) {
+    if (options.length < 3) {
+      return false;
+    }
+
+    return this.distinctOptionSignatures(options).size >= 3;
+  }
+
+  private distinctOptionSignatures(options: CommercialMedicineOption[]) {
+    return new Set(
+      options.map((option) =>
+        this.normalize(
+          [
+            option.formGroup,
+            option.strength,
+            option.packageInfo?.unitCount,
+            option.packageInfo?.volumeMl,
+          ]
+            .filter(Boolean)
+            .join("|"),
+        ).replace(/\s+/g, ""),
+      ),
+    );
   }
 
   private dedupeCommercialOptions(options: CommercialMedicineOption[]) {
@@ -307,13 +338,34 @@ export class MedicineSearchOrchestratorService {
       ],
     };
 
-    return [
-      ...new Set(
-        [...terms, ...(expansions[canonical] || [])]
-          .map((term) => term.trim())
-          .filter(Boolean),
-      ),
-    ];
+    return this.dedupeQueryTermsForProvider([
+      ...terms,
+      ...(expansions[canonical] || []),
+    ]);
+  }
+
+  private dedupeQueryTermsForProvider(terms: string[]) {
+    const uniqueTerms = new Map<string, string>();
+
+    for (const term of terms) {
+      const cleanTerm = term.trim();
+
+      if (!cleanTerm) {
+        continue;
+      }
+
+      const providerQuery =
+        this.selector.normalizeMedicineName(cleanTerm) ||
+        this.selector.getCanonicalMedicineName(cleanTerm) ||
+        cleanTerm;
+      const key = this.normalize(providerQuery).replace(/\s+/g, "");
+
+      if (!uniqueTerms.has(key)) {
+        uniqueTerms.set(key, cleanTerm);
+      }
+    }
+
+    return [...uniqueTerms.values()];
   }
 
   private dedupeNormalizedOptions(options: NormalizedMedicineOption[]) {

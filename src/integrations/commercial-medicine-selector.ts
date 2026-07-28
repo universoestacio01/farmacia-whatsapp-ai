@@ -126,7 +126,7 @@ export class CommercialMedicineSelector {
     diurix: "hidroclorotiazida",
     hidroclorotiazida: "hidroclorotiazida",
     tamarine: "tamarine",
-    plenance: "plenance",
+    plenance: "tadalafila",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
@@ -147,14 +147,13 @@ export class CommercialMedicineSelector {
     omeprazol: [],
     neopiridin: ["neopiridin"],
     venvanse: ["venvanse"],
-    tadalafila: ["cialis", "tadala"],
+    tadalafila: ["cialis", "tadala", "plenance"],
     sildenafila: ["viagra"],
     fexofenadina: ["allegra"],
     ciprofloxacino: [],
     clonazepam: ["rivotril"],
     hidroclorotiazida: ["diurix"],
     tamarine: ["tamarine"],
-    plenance: ["plenance"],
   };
 
   normalizeMedicineName(text: string) {
@@ -452,7 +451,7 @@ export class CommercialMedicineSelector {
       parsedQuery.dosageMg !== undefined ||
       parsedQuery.formGroup ||
       parsedQuery.packageQuantity !== undefined
-        ? scored.slice(0, 3)
+        ? this.selectRequestedQueryOptions(scored, parsedQuery)
         : this.selectBalancedOptions(scored, priorityRules.length > 0);
 
     return {
@@ -518,6 +517,78 @@ export class CommercialMedicineSelector {
     }
 
     return selected.slice(0, 3);
+  }
+
+  private selectRequestedQueryOptions<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    parsedQuery: ParsedMedicineQuery,
+  ) {
+    const selected: Array<RankedOption<T>> = [];
+    const pick = (item: RankedOption<T> | undefined, category: string, reason: string) => {
+      if (!item || this.isAlreadyPicked(selected, item)) {
+        return;
+      }
+
+      selected.push({ ...item, category, reason });
+    };
+
+    if (parsedQuery.dosageMg !== undefined) {
+      pick(
+        scored.find((item) =>
+          this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number),
+        ),
+        "dosagem_solicitada",
+        "dosagem pedida pelo cliente",
+      );
+    }
+
+    if (parsedQuery.formGroup) {
+      pick(
+        scored.find((item) => item.option.formGroup === parsedQuery.formGroup),
+        "forma_solicitada",
+        "forma farmacêutica pedida pelo cliente",
+      );
+    }
+
+    if (parsedQuery.packageQuantity !== undefined) {
+      pick(
+        scored.find(
+          (item) =>
+            item.option.packageInfo?.unitCount === parsedQuery.packageQuantity,
+        ),
+        "quantidade_solicitada",
+        "quantidade de embalagem pedida pelo cliente",
+      );
+    }
+
+    for (const item of this.sortByDistinctDosage(scored, selected)) {
+      if (selected.length >= 3) break;
+      pick(item, "variacao_relevante", "outra dosagem ou apresentação relevante");
+    }
+
+    return selected.slice(0, 3);
+  }
+
+  private sortByDistinctDosage<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    const selectedDosages = new Set(
+      selected.map((item) => this.extractDosageSignature(item.option)),
+    );
+
+    return [...scored].sort((a, b) => {
+      const aDosage = this.extractDosageSignature(a.option);
+      const bDosage = this.extractDosageSignature(b.option);
+      const aIsNewDosage = aDosage && !selectedDosages.has(aDosage);
+      const bIsNewDosage = bDosage && !selectedDosages.has(bDosage);
+
+      if (aIsNewDosage !== bIsNewDosage) {
+        return aIsNewDosage ? -1 : 1;
+      }
+
+      return b.score - a.score;
+    });
   }
 
   private scoreRankedOption<T extends SelectorOption>(
@@ -677,13 +748,25 @@ export class CommercialMedicineSelector {
       return true;
     }
 
-    if (selected.length < 2) {
-      return selected.some((picked) => picked.signature === item.signature);
+    const sameSignature = selected.filter(
+      (picked) => picked.signature === item.signature,
+    );
+
+    if (!sameSignature.length) {
+      return false;
     }
 
-    return (
-      selected.filter((picked) => picked.signature === item.signature).length >= 1
+    const sameCommercialName = sameSignature.some(
+      (picked) =>
+        this.normalize(picked.option.productName) ===
+        this.normalize(item.option.productName),
     );
+
+    if (sameCommercialName) {
+      return true;
+    }
+
+    return sameSignature.length >= 2;
   }
 
   private unitPrice(option: SelectorOption) {
