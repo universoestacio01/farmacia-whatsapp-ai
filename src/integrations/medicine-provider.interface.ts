@@ -40,6 +40,7 @@ export interface NormalizedMedicineOption {
   priceFactory?: number;
   priceConsumer?: number;
   pmcWithIcms?: number;
+  availabilityStatus?: "active" | "inactive" | "out_of_stock" | "unknown";
 
   bulaPacienteUrl?: string;
   bulaProfissionalUrl?: string;

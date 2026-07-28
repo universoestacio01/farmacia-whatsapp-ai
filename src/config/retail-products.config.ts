@@ -266,6 +266,54 @@ export const RETAIL_PRODUCTS: Record<string, RetailProductConfig> = {
       },
     ],
   },
+  preservativo: {
+    aliases: ["camisinha", "preservativo", "condom", "jontex", "prudence", "olla"],
+    popularBrands: ["Jontex", "Prudence", "Olla"],
+    options: [
+      {
+        productName: "Preservativo Jontex",
+        displayName: "Preservativo Jontex",
+        brand: "Jontex",
+        category: "preservativo",
+      },
+      {
+        productName: "Preservativo Prudence",
+        displayName: "Preservativo Prudence",
+        brand: "Prudence",
+        category: "preservativo",
+      },
+      {
+        productName: "Preservativo Olla",
+        displayName: "Preservativo Olla",
+        brand: "Olla",
+        category: "preservativo",
+      },
+    ],
+  },
+  lubrificante: {
+    aliases: ["ky", "k-y", "lubrificante", "gel lubrificante"],
+    popularBrands: ["K-Y"],
+    options: [
+      {
+        productName: "Gel lubrificante K-Y",
+        displayName: "Gel lubrificante K-Y",
+        brand: "K-Y",
+        category: "lubrificante",
+      },
+    ],
+  },
+  minancora: {
+    aliases: ["minancora", "pomada minancora", "creme minancora"],
+    popularBrands: ["Minancora"],
+    options: [
+      {
+        productName: "Minancora",
+        displayName: "Minancora",
+        brand: "Minancora",
+        category: "cosmetico",
+      },
+    ],
+  },
   fralda: {
     aliases: ["fralda", "pampers", "huggies", "mamy poko", "turma da monica"],
     popularBrands: ["Pampers", "Huggies", "MamyPoko", "Turma da Monica"],

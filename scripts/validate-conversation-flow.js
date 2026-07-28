@@ -343,7 +343,7 @@ function assertPixMessageSet(reply) {
   assert.doesNotMatch(reply[1], /\s/);
   assert.match(reply[2], /checkout\.example/);
   assert.match(reply[2], /Entrega gr/i);
-  assert.match(reply[2], /Após a confirmação do pagamento/);
+  assert.match(reply[2], /Prazo estimado: até 30 minutos após a confirmação/);
 }
 
 async function runScenario(name, inputs, assertFn, options = {}) {
@@ -366,7 +366,7 @@ async function run() {
   ], (result) => {
     assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
     assert.match(replyText(result.replies.at(-2)), /Entrega: gr/i);
-    assert.match(replyText(result.replies.at(-2)), /Prazo: até 30 minutos após a confirmação do pagamento/);
+    assert.match(replyText(result.replies.at(-2)), /Prazo estimado: até 30 minutos após a confirmação/);
     assert.doesNotMatch(replyText(result.replies.at(-2)), /frete|calcular/i);
     assertPixMessageSet(result.replies.at(-1));
   }));

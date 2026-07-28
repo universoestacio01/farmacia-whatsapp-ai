@@ -32,6 +32,8 @@ export const RETAIL_DEFAULT_PRICES: Record<string, number> = {
   protetor_solar: 39.9,
   hidratante: 24.9,
   cosmetico: 29.9,
+  preservativo: 12.9,
+  lubrificante: 24.9,
   default: 14.9,
 };
 
@@ -141,6 +143,12 @@ export function inferRetailCategoryKey(
   if (/\b(fio dental)\b/.test(text)) return "fio_dental";
   if (/\b(enxaguante|antisseptico bucal)\b/.test(text)) return "enxaguante_bucal";
   if (/\b(absorvente|always|intimus|carefree)\b/.test(text)) return "absorvente";
+  if (/\b(preservativo|camisinha|condom|jontex|prudence|olla)\b/.test(text)) {
+    return "preservativo";
+  }
+  if (/\b(lubrificante|gel lubrificante|ky|k y)\b/.test(text)) {
+    return "lubrificante";
+  }
   if (/\b(fralda|pampers|huggies|mamy poko)\b/.test(text)) return "fralda";
   if (/\b(lenco umedecido|toalha umedecida|umedecido)\b/.test(text)) {
     return "lenco_umedecido";

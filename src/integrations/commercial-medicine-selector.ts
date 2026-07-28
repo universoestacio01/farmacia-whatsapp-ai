@@ -47,6 +47,19 @@ export interface PackageInfo {
   formGroup: string;
 }
 
+export interface ParsedMedicineQuery {
+  received: string;
+  normalized: string;
+  medicineName: string | null;
+  canonicalName: string | null;
+  dosage?: string;
+  dosageMg?: number;
+  formGroup?: string;
+  quantity?: number;
+  packageQuantity?: number;
+  fallbackTerms: string[];
+}
+
 @Injectable()
 export class CommercialMedicineSelector {
   private readonly knownSynonyms: Record<string, string> = {
@@ -77,6 +90,27 @@ export class CommercialMedicineSelector {
     simeticona: "luftal",
     neosaldina: "neosaldina",
     venvanse: "venvanse",
+    tadalafila: "tadalafila",
+    tadalafil: "tadalafila",
+    tadala: "tadalafila",
+    "cloridrato de tadalafila": "tadalafila",
+    sildenafila: "sildenafila",
+    sildenafil: "sildenafila",
+    viagra: "sildenafila",
+    "citrato de sildenafila": "sildenafila",
+    fexofenadina: "fexofenadina",
+    allegra: "fexofenadina",
+    "cloridrato de fexofenadina": "fexofenadina",
+    ciprofloxacina: "ciprofloxacino",
+    ciprofloxacino: "ciprofloxacino",
+    "cloridrato de ciprofloxacina": "ciprofloxacino",
+    "cloridrato de ciprofloxacino": "ciprofloxacino",
+    clonazepam: "clonazepam",
+    rivotril: "clonazepam",
+    diurix: "hidroclorotiazida",
+    hidroclorotiazida: "hidroclorotiazida",
+    tamarine: "tamarine",
+    plenance: "plenance",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
@@ -94,14 +128,37 @@ export class CommercialMedicineSelector {
     luftal: ["luftal", "simeticona"],
     neosaldina: ["neosaldina"],
     venvanse: ["venvanse"],
+    tadalafila: ["cialis", "tadala"],
+    sildenafila: ["viagra"],
+    fexofenadina: ["allegra"],
+    ciprofloxacino: [],
+    clonazepam: ["rivotril"],
+    hidroclorotiazida: ["diurix"],
+    tamarine: ["tamarine"],
+    plenance: ["plenance"],
   };
 
   normalizeMedicineName(text: string) {
-    let cleaned = this.normalize(text)
-      .replace(/[?!.:,;]/g, " ")
+    return this.parseMedicineQuery(text).medicineName;
+  }
+
+  parseMedicineQuery(text: string): ParsedMedicineQuery {
+    const normalized = this.normalize(text)
+      .replace(/[?!:;]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const quantity = this.extractRequestedQuantity(normalized);
+    const dosageInfo = this.extractRequestedDosage(normalized);
+    const formGroup = this.getPresentationGroupFromText(normalized);
+    let cleaned = normalized
+      .replace(/[?!:;]/g, " ")
+      .replace(/\bnao\s+tem\b/g, " ")
+      .replace(/\bnao\s+teria\b/g, " ")
+      .replace(/\b(?:pro|para)\s+(?:o\s+|a\s+)?(?:meu|minha)?\s*(?:amigo|amiga|mae|pai|filho|filha|esposa|marido|cliente)\b.*$/g, " ")
       .replace(/\bvoces?\s+(?:tem|teriam|vendem)\b/g, " ")
       .replace(/\bgostaria\s+(?:de|da|do)?\b/g, " ")
       .replace(/\badicionar\b/g, " ")
+      .replace(/\bcomprar\b/g, " ")
       .replace(/\bmais\b/g, " ")
       .replace(/\bqual\s+(?:o\s+)?(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
       .replace(/\b(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
@@ -114,19 +171,63 @@ export class CommercialMedicineSelector {
       .replace(/\b(?:qual|preco|valor)\b/g, " ")
       .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
       .replace(/\b(?:remedios|remedio|medicamentos|medicamento|produto)\b/g, " ")
+      .replace(/\b(?:comprimidos?|capsulas?|caixas?|cartelas?|unidades?|unid|frascos?)\b/g, " ")
+      .replace(/\b(?:comprimido|capsula|gotas|xarope|solucao|suspensao|pomada|creme|gel|spray|dragea|nasal|oral)\b/g, " ")
       .replace(/\b(?:da|do|de)\b/g, " ")
       .replace(/\b(?:tem|teria|vende|vendem)$/g, " ")
+      .replace(/\b(?:cloridrato|citrato|maleato|sulfato|bromidrato|fosfato|monoidratada|monoidratado|sodica|sodico)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (quantity !== undefined) {
+      cleaned = cleaned.replace(new RegExp(`^${quantity}\\b`), " ").trim();
+    }
+
+    if (dosageInfo.raw) {
+      cleaned = cleaned.replace(this.escapeRegExp(dosageInfo.raw), " ").trim();
+    }
+
+    cleaned = cleaned
+      .replace(/\b\d+(?:[,.]\d+)?\s*(?:mg|g|mcg|ml|mg\/ml)?\b/g, " ")
       .replace(/\s+/g, " ")
       .trim();
 
     cleaned = cleaned.replace(/^(?:a|o|um|uma)\s+/g, "").trim();
-    return cleaned.length >= 3 ? cleaned : null;
+    const medicineName = cleaned.length >= 2 ? cleaned : null;
+    const canonicalName = medicineName
+      ? this.resolveCanonicalMedicineName(medicineName)
+      : null;
+    const fallbackTerms = [
+      medicineName,
+      canonicalName,
+    ]
+      .filter((value): value is string => Boolean(value && value.length >= 2))
+      .map((value) => this.normalize(value).trim())
+      .filter(Boolean);
+
+    return {
+      received: text,
+      normalized,
+      medicineName,
+      canonicalName,
+      dosage: dosageInfo.normalized,
+      dosageMg: dosageInfo.mg,
+      formGroup: formGroup === "outro" ? undefined : formGroup,
+      quantity,
+      packageQuantity: this.extractPackageQuantity(normalized),
+      fallbackTerms: [...new Set(fallbackTerms)],
+    };
   }
 
   getCanonicalMedicineName(medicineName: string) {
-    const normalized =
-      this.normalizeMedicineName(medicineName) || this.normalize(medicineName);
+    const parsed = this.parseMedicineQuery(medicineName);
+    const normalized = parsed.medicineName || this.normalize(medicineName);
 
+    return this.resolveCanonicalMedicineName(normalized);
+  }
+
+  private resolveCanonicalMedicineName(normalizedMedicineName: string) {
+    const normalized = this.normalize(normalizedMedicineName);
     for (const [alias, canonical] of Object.entries(this.knownSynonyms)) {
       if (this.hasWordOrPhrase(normalized, alias)) {
         return canonical;
@@ -313,6 +414,15 @@ export class CommercialMedicineSelector {
         this.optionScore(medicineName, b) -
         this.optionScore(medicineName, a),
     );
+    const parsedQuery = this.parseMedicineQuery(medicineName);
+
+    if (
+      parsedQuery.dosageMg !== undefined ||
+      parsedQuery.formGroup ||
+      parsedQuery.packageQuantity !== undefined
+    ) {
+      return ranked.slice(0, 3);
+    }
 
     return this.diversifyOptions(medicineName, ranked).slice(0, 3);
   }
@@ -509,6 +619,7 @@ export class CommercialMedicineSelector {
   }
 
   private optionScore(optionMedicineName: string, option: SelectorOption) {
+    const parsedQuery = this.parseMedicineQuery(optionMedicineName);
     const priority: Record<string, number> = {
       comprimido: 100,
       capsula: 98,
@@ -552,6 +663,25 @@ export class CommercialMedicineSelector {
 
     score += this.strengthScore(canonical, option.strength);
     score += this.packageScore(canonical, option.packageInfo);
+
+    if (
+      parsedQuery.dosageMg !== undefined &&
+      this.optionMatchesDosageMg(option, parsedQuery.dosageMg)
+    ) {
+      score += 260;
+    }
+
+    if (parsedQuery.formGroup && option.formGroup === parsedQuery.formGroup) {
+      score += 130;
+    }
+
+    if (
+      parsedQuery.packageQuantity !== undefined &&
+      option.packageInfo?.unitCount === parsedQuery.packageQuantity
+    ) {
+      score += 120;
+    }
+
     return score;
   }
 
@@ -611,6 +741,16 @@ export class CommercialMedicineSelector {
     }
 
     return new RegExp(`\\b${value}\\s*(?:mg|g|mg/ml)?\\b`).test(normalized);
+  }
+
+  private optionMatchesDosageMg(option: SelectorOption, requestedMg: number) {
+    const text = this.normalize([option.strength, option.packageInfo?.formGroup].join(" "));
+    const explicit = text.match(/\b(\d+(?:[,.]\d+)?)\s*(mg\/ml|mg|g)\b/g) || [];
+
+    return explicit.some((match) => {
+      const parsed = this.extractRequestedDosage(match);
+      return parsed.mg !== undefined && Math.abs(parsed.mg - requestedMg) < 0.01;
+    });
   }
 
   private isGenericOption(option: SelectorOption, canonical: string) {
@@ -685,6 +825,79 @@ export class CommercialMedicineSelector {
 
   private normalizeFormForConfig(formGroup: string) {
     return this.normalize(formGroup).toUpperCase();
+  }
+
+  private extractRequestedQuantity(normalizedText: string) {
+    const explicitMatch = normalizedText.match(
+      /^\s*(\d{1,3})\s*(?:unidades?|unid|caixas?|cartelas?|comprimidos?|capsulas?)\b/,
+    );
+
+    if (explicitMatch) {
+      return Number(explicitMatch[1]);
+    }
+
+    const leadingMatch = normalizedText.match(/^\s*(\d{1,2})\s+[a-z]/);
+
+    if (leadingMatch) {
+      return Number(leadingMatch[1]);
+    }
+
+    return undefined;
+  }
+
+  private extractRequestedDosage(normalizedText: string) {
+    const explicit = normalizedText.match(
+      /\b(\d+(?:[,.]\d+)?)\s*(mg\/ml|mg|mcg|g|ml)\b/,
+    );
+
+    if (explicit) {
+      const value = Number(explicit[1].replace(",", "."));
+      const unit = explicit[2];
+      const mg =
+        unit === "g"
+          ? value * 1000
+          : unit === "mg" || unit === "mg/ml"
+            ? value
+            : undefined;
+
+      return {
+        raw: explicit[0],
+        normalized: `${this.formatDoseNumber(value)}${unit}`,
+        mg,
+      };
+    }
+
+    const inferredMg = normalizedText.match(/\b(?:de|com)\s*(\d{1,4})\b/);
+
+    if (inferredMg) {
+      const value = Number(inferredMg[1]);
+
+      if ([2, 5, 10, 20, 25, 30, 40, 50, 70, 100, 250, 400, 500, 600, 750, 850, 1000].includes(value)) {
+        return {
+          raw: inferredMg[0],
+          normalized: `${value}mg`,
+          mg: value,
+        };
+      }
+    }
+
+    return {};
+  }
+
+  private extractPackageQuantity(normalizedText: string) {
+    const match = normalizedText.match(
+      /\b(?:caixa|cx|cartela|ct|bl)\s*(?:com|x)?\s*(\d{1,3})\b/,
+    );
+
+    return match ? Number(match[1]) : undefined;
+  }
+
+  private formatDoseNumber(value: number) {
+    return Number.isInteger(value) ? String(value) : String(value).replace(".", ",");
+  }
+
+  private escapeRegExp(value: string) {
+    return new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g");
   }
 
   private normalize(value: string) {

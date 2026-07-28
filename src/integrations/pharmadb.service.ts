@@ -56,6 +56,9 @@ export class PharmaDbService implements MedicineProvider {
           normalized.filter((item) => item.priceFactory !== undefined).length
         } itens`,
       );
+      this.logger.log(
+        `PHARMADB RESULT STATUS: active=${normalized.filter((item) => item.availabilityStatus === "active").length} inactive=${normalized.filter((item) => item.availabilityStatus === "inactive").length} out_of_stock=${normalized.filter((item) => item.availabilityStatus === "out_of_stock").length} no_price=${normalized.filter((item) => item.priceFactory === undefined && item.priceConsumer === undefined && item.pmcWithIcms === undefined).length}`,
+      );
 
       this.setCache(cacheKey, normalized, normalized.length > 0 ? 300 : 60);
       return normalized;
@@ -70,10 +73,23 @@ export class PharmaDbService implements MedicineProvider {
   }
 
   private async fetchSearchResults(query: string) {
-    const data = await this.fetchProtected(
-      `/produtos/busca?q=${encodeURIComponent(query)}&page=1&per_page=20`,
-    );
-    const items = this.extractItems(data);
+    const perPage = 20;
+    const maxPages = 3;
+    const items: unknown[] = [];
+
+    for (let page = 1; page <= maxPages; page += 1) {
+      const endpoint = `/produtos/busca?q=${encodeURIComponent(query)}&page=${page}&per_page=${perPage}`;
+      const data = await this.fetchProtected(endpoint);
+      const pageItems = this.extractItems(data);
+      this.logger.log(
+        `PHARMADB PAGE RESULTS: endpoint=${endpoint} page=${page} count=${pageItems.length}`,
+      );
+      items.push(...pageItems);
+
+      if (pageItems.length === 0 || !this.hasNextPage(data, page)) {
+        break;
+      }
+    }
 
     if (items.length === 0) {
       return [];
@@ -122,6 +138,9 @@ export class PharmaDbService implements MedicineProvider {
         },
         signal: controller.signal,
       });
+      this.logger.log(
+        `PHARMADB HTTP: endpoint=${endpoint} status=${response.status}`,
+      );
 
       if (response.status === 401 && !retried) {
         this.authService.clearToken();
@@ -262,6 +281,7 @@ export class PharmaDbService implements MedicineProvider {
         "pmc_centavos",
       ]),
       pmcWithIcms: this.firstNumber(item, ["pmcComIcms", "pmc_com_icms"]),
+      availabilityStatus: this.resolveAvailabilityStatus(item),
       bulaPacienteUrl: this.firstString(item, [
         "bulaPacienteUrl",
         "bula_paciente",
@@ -344,6 +364,9 @@ export class PharmaDbService implements MedicineProvider {
         ["pmcComIcms", "pmc_com_icms"],
         ["pmc_0", "pmc_12", "pmc_17", "pmc_centavos"],
       ),
+      availabilityStatus:
+        this.resolveAvailabilityStatus(presentation) ||
+        baseOption.availabilityStatus,
       raw: { product, presentation },
     };
   }
@@ -368,6 +391,35 @@ export class PharmaDbService implements MedicineProvider {
     }
 
     return [];
+  }
+
+  private hasNextPage(data: unknown, currentPage: number) {
+    if (!data || typeof data !== "object") {
+      return true;
+    }
+
+    const record = data as Record<string, unknown>;
+    const meta =
+      record.meta && typeof record.meta === "object"
+        ? (record.meta as Record<string, unknown>)
+        : record;
+    const current =
+      this.firstNumber(meta, ["current_page", "currentPage", "page"]) ||
+      currentPage;
+    const last = this.firstNumber(meta, ["last_page", "lastPage", "totalPages"]);
+    const total = this.firstNumber(meta, ["total", "total_count", "totalCount"]);
+    const perPage =
+      this.firstNumber(meta, ["per_page", "perPage", "limit"]) || 20;
+
+    if (last !== undefined) {
+      return current < last;
+    }
+
+    if (total !== undefined) {
+      return current * perPage < total;
+    }
+
+    return true;
   }
 
   private getPresentations(record: Record<string, unknown>) {
@@ -527,6 +579,34 @@ export class PharmaDbService implements MedicineProvider {
       .filter(Boolean);
 
     return dosages.length > 0 ? dosages.join(" + ") : undefined;
+  }
+
+  private resolveAvailabilityStatus(record: Record<string, unknown>) {
+    const status = this.firstString(record, [
+      "status",
+      "situacao",
+      "ativo",
+      "active",
+      "disponivel",
+      "available",
+      "estoque",
+      "stock",
+    ]);
+    const normalized = status ? status.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
+
+    if (!normalized) {
+      return "unknown" as const;
+    }
+
+    if (["false", "0", "inativo", "inactive"].includes(normalized)) {
+      return "inactive" as const;
+    }
+
+    if (["sem estoque", "out of stock", "indisponivel"].includes(normalized)) {
+      return "out_of_stock" as const;
+    }
+
+    return "active" as const;
   }
 
   private getFromCache(key: string) {

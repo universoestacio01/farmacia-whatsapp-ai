@@ -5,7 +5,10 @@ import {
   CommercialMedicineOption,
   MedicineLookupSummary,
 } from "./bula-api.service";
-import { CommercialMedicineSelector } from "./commercial-medicine-selector";
+import {
+  CommercialMedicineSelector,
+  ParsedMedicineQuery,
+} from "./commercial-medicine-selector";
 import { NormalizedMedicineOption } from "./medicine-provider.interface";
 import { PharmaDbService } from "./pharmadb.service";
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
@@ -29,9 +32,14 @@ export class MedicineSearchOrchestratorService {
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
+    const parsedQuery = this.selector.parseMedicineQuery(query);
     const normalizedQuery =
-      this.selector.normalizeMedicineName(query) ||
+      parsedQuery.medicineName ||
+      parsedQuery.canonicalName ||
       this.selector.getCanonicalMedicineName(query);
+    const canonicalQuery =
+      parsedQuery.canonicalName ||
+      this.selector.getCanonicalMedicineName(normalizedQuery);
     const provider =
       this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") ||
       "pharmadb";
@@ -46,7 +54,7 @@ export class MedicineSearchOrchestratorService {
       }
 
       if (providerName === "pharmadb") {
-        const summary = await this.safeSearchPharmaDb(normalizedQuery);
+        const summary = await this.safeSearchPharmaDb(parsedQuery);
 
         if (summary && summary.options.length > 0) {
           this.setCache(`pharmadb:${normalizedQuery}`, summary, 300);
@@ -55,7 +63,7 @@ export class MedicineSearchOrchestratorService {
       }
 
       if (providerName === "bulapi") {
-        const summary = await this.safeSearchBulaApi(normalizedQuery);
+        const summary = await this.safeSearchBulaApi(canonicalQuery);
 
         if (summary && summary.options.length > 0) {
           this.setCache(`bulapi:${normalizedQuery}`, summary, 300);
@@ -64,7 +72,7 @@ export class MedicineSearchOrchestratorService {
       }
     }
 
-    const manualSummary = await this.searchManual(normalizedQuery);
+    const manualSummary = await this.searchManual(canonicalQuery);
     this.setCache(
       `popular_manual:${normalizedQuery}`,
       manualSummary,
@@ -77,7 +85,7 @@ export class MedicineSearchOrchestratorService {
     return this.popularManualService.findSymptomOptions(message);
   }
 
-  private async safeSearchPharmaDb(query: string) {
+  private async safeSearchPharmaDb(query: ParsedMedicineQuery) {
     try {
       return await this.searchPharmaDb(query);
     } catch (error) {
@@ -103,7 +111,7 @@ export class MedicineSearchOrchestratorService {
     }
   }
 
-  private async searchPharmaDb(query: string) {
+  private async searchPharmaDb(query: ParsedMedicineQuery) {
     const queryTerms = this.getCommercialQueryTerms(query);
     this.logger.log(`PHARMADB SEARCH TERMS: ${queryTerms.join(", ")}`);
     const rawResults: NormalizedMedicineOption[] = [];
@@ -121,7 +129,7 @@ export class MedicineSearchOrchestratorService {
     const selected = this.selectNormalized(query, rawOptions);
 
     return {
-      medicineName: query,
+      medicineName: query.canonicalName || query.medicineName || query.received,
       products: [],
       options: selected,
     };
@@ -129,7 +137,10 @@ export class MedicineSearchOrchestratorService {
 
   private async searchManual(query: string): Promise<MedicineLookupSummary> {
     const rawOptions = await this.popularManualService.search(query);
-    const selected = this.selectNormalized(query, rawOptions);
+    const selected = this.selectNormalized(
+      this.selector.parseMedicineQuery(query),
+      rawOptions,
+    );
 
     return {
       medicineName: query,
@@ -138,23 +149,27 @@ export class MedicineSearchOrchestratorService {
     };
   }
 
-  private getCommercialQueryTerms(query: string) {
+  private getCommercialQueryTerms(query: ParsedMedicineQuery) {
     const normalized =
-      this.selector.normalizeMedicineName(query) ||
-      this.selector.getCanonicalMedicineName(query);
-    const canonical = this.selector.getCanonicalMedicineName(query);
+      query.medicineName ||
+      query.canonicalName ||
+      this.selector.getCanonicalMedicineName(query.received);
+    const canonical =
+      query.canonicalName || this.selector.getCanonicalMedicineName(normalized);
 
-    if (this.isBrandSpecificQuery(normalized)) {
-      return [normalized];
-    }
-
-    const terms = [normalized, canonical];
+    const terms = [...query.fallbackTerms, normalized, canonical];
     const expansions: Record<string, string[]> = {
       dipirona: ["novalgina", "dipirona generico", "dipirona monoidratada"],
       ibuprofeno: ["ibuprofeno generico", "alivium", "advil"],
       paracetamol: ["paracetamol generico", "tylenol"],
       nimesulida: ["neosulida"],
       neosulida: ["nimesulida"],
+      tadalafila: ["tadala", "cialis"],
+      sildenafila: ["viagra", "sildenafil"],
+      fexofenadina: ["allegra", "cloridrato de fexofenadina"],
+      ciprofloxacino: ["ciprofloxacina", "cloridrato de ciprofloxacina"],
+      clonazepam: ["rivotril"],
+      hidroclorotiazida: ["diurix"],
     };
 
     return [
@@ -164,27 +179,6 @@ export class MedicineSearchOrchestratorService {
           .filter(Boolean),
       ),
     ];
-  }
-
-  private isBrandSpecificQuery(query: string) {
-    const normalized = this.normalize(query);
-    return [
-      "novalgina",
-      "alivium",
-      "advil",
-      "tylenol",
-      "dorflex",
-      "neosoro",
-      "torsilax",
-      "cimegripe",
-      "neosulida",
-      "engov",
-      "buscopan",
-      "benegrip",
-      "luftal",
-      "neosaldina",
-      "venvanse",
-    ].some((brand) => normalized.includes(brand));
   }
 
   private dedupeNormalizedOptions(options: NormalizedMedicineOption[]) {
@@ -213,13 +207,15 @@ export class MedicineSearchOrchestratorService {
   }
 
   private selectNormalized(
-    query: string,
+    query: ParsedMedicineQuery,
     options: NormalizedMedicineOption[],
   ): CommercialMedicineOption[] {
-    this.logger.log(`SEARCH TERM: ${query}`);
+    const filterTerm = query.canonicalName || query.medicineName || query.received;
+    this.logger.log(`SEARCH TERM: ${query.received}`);
+    this.logger.log(`TERM CONSULTADO/FILTRO: ${filterTerm}`);
     this.logger.log(`RESULTS FOUND: ${options.length}`);
     const validOptions = options.filter((option) =>
-      this.selector.isSameMedicine(query, {
+      this.selector.isSameMedicine(filterTerm, {
         id: this.toNumericId(option.sourceId, 0),
         name: option.productName,
         regulatory_category: option.regulatoryCategory,
@@ -232,6 +228,9 @@ export class MedicineSearchOrchestratorService {
     const discardedCount = options.length - validOptions.length;
 
     if (discardedCount > 0) {
+      this.logger.log(
+        `FILTER FAILURE REASON: itens descartados quando "${filterTerm}" nao aparece no nome, principio ativo ou substancia normalizados`,
+      );
       this.logger.log(
         `Produtos descartados por não pertencerem ao medicamento: ${discardedCount}`,
       );
@@ -273,7 +272,7 @@ export class MedicineSearchOrchestratorService {
     });
 
     return this.selector
-      .selectCommercialOptions(query, mapped)
+      .selectCommercialOptions(query.received, mapped)
       .map((option, index) => ({ ...option, optionId: index + 1 }));
   }
 
