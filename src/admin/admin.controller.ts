@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Put,
 } from "@nestjs/common";
 import { OrderStatus } from "@prisma/client";
 import { ConfigService } from "@nestjs/config";
 import { sanitizeEnv } from "../config/env-sanitize";
+import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 import { AdminService } from "./admin.service";
 
 @Controller("admin/api")
@@ -155,6 +157,26 @@ export class AdminController {
   database(@Headers("x-admin-token") token?: string) {
     this.assertAuthorized(token);
     return this.adminService.database();
+  }
+
+  @Get("medicine-priorities")
+  medicinePriorities(@Headers("x-admin-token") token?: string) {
+    this.assertAuthorized(token);
+    return this.adminService.medicinePriorities();
+  }
+
+  @Put("medicine-priorities")
+  replaceMedicinePriorities(
+    @Headers("x-admin-token") token: string | undefined,
+    @Body("rules") rules: MedicinePriorityRuleConfig[],
+  ) {
+    this.assertAuthorized(token);
+
+    if (!Array.isArray(rules)) {
+      throw new ForbiddenException("Lista de prioridades inválida.");
+    }
+
+    return this.adminService.replaceMedicinePriorities(rules);
   }
 
   private assertAuthorized(token?: string) {

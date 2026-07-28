@@ -4,6 +4,7 @@ const state = {
   conversations: [],
   selectedConversationId: null,
   selectedOrderId: null,
+  medicinePriorityRules: [],
 };
 
 const pageTitleBySection = {
@@ -11,6 +12,7 @@ const pageTitleBySection = {
   attention: "Fila de atenção",
   conversations: "Conversas",
   orders: "Pedidos",
+  "medicine-priorities": "Prioridades",
   providers: "APIs",
   errors: "Erros",
 };
@@ -88,6 +90,9 @@ function bindActions() {
   document.getElementById("reset-conversation-button").addEventListener("click", resetSelectedConversation);
   document.getElementById("close-conversation-button").addEventListener("click", closeSelectedConversation);
   document.getElementById("order-status-select").addEventListener("change", updateSelectedOrderStatus);
+  document
+    .getElementById("save-medicine-priorities-button")
+    .addEventListener("click", saveMedicinePriorities);
   document.getElementById("logout-button").addEventListener("click", () => {
     localStorage.removeItem("raia_admin_token");
     state.token = "";
@@ -118,6 +123,8 @@ async function refresh() {
       await loadConversations();
     } else if (state.section === "orders") {
       await loadOrders();
+    } else if (state.section === "medicine-priorities") {
+      await loadMedicinePriorities();
     } else if (state.section === "providers") {
       await loadProviders();
     } else if (state.section === "errors") {
@@ -162,6 +169,50 @@ async function loadOrders() {
 async function loadProviders() {
   const providers = await api("/admin/api/providers");
   renderProviders(providers);
+}
+
+async function loadMedicinePriorities() {
+  const data = await api("/admin/api/medicine-priorities");
+  state.medicinePriorityRules = data.rules || [];
+  document.getElementById("medicine-priorities-meta").innerHTML = `
+    <span>Fonte: ${escapeHtml(data.source === "database" ? "banco de dados" : "padrão do sistema")}</span>
+    <span>${state.medicinePriorityRules.length} regra(s)</span>
+  `;
+  document.getElementById("medicine-priorities-editor").value = JSON.stringify(
+    state.medicinePriorityRules,
+    null,
+    2,
+  );
+}
+
+async function saveMedicinePriorities() {
+  const editor = document.getElementById("medicine-priorities-editor");
+  let rules;
+
+  try {
+    rules = JSON.parse(editor.value);
+  } catch (error) {
+    showToast("O JSON das prioridades está inválido.");
+    return;
+  }
+
+  if (!Array.isArray(rules)) {
+    showToast("As prioridades precisam estar em uma lista.");
+    return;
+  }
+
+  const result = await api("/admin/api/medicine-priorities", {
+    method: "PUT",
+    body: { rules },
+  });
+
+  state.medicinePriorityRules = result.rules || [];
+  editor.value = JSON.stringify(state.medicinePriorityRules, null, 2);
+  document.getElementById("medicine-priorities-meta").innerHTML = `
+    <span>Fonte: banco de dados</span>
+    <span>${state.medicinePriorityRules.length} regra(s)</span>
+  `;
+  showToast("Prioridades salvas.");
 }
 
 async function loadErrors() {

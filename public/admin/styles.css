@@ -28,7 +28,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -195,6 +196,21 @@ h3 {
   border: 1px solid var(--line);
   background: #ffffff;
   color: var(--text);
+}
+
+.json-editor {
+  width: 100%;
+  min-height: 520px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdfb;
+  color: var(--text);
+  font-family: "Cascadia Code", "Consolas", monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  resize: vertical;
 }
 
 .link-button {

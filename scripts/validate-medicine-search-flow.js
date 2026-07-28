@@ -7,6 +7,9 @@ const {
   MedicineSearchOrchestratorService,
 } = require("../dist/integrations/medicine-search-orchestrator.service");
 const { PharmaDbService } = require("../dist/integrations/pharmadb.service");
+const {
+  DEFAULT_MEDICINE_PRIORITY_RULES,
+} = require("../dist/config/medicine-priority-rules.config");
 
 function option(productName, displayName, substance, dosage, presentation) {
   return {
@@ -29,6 +32,12 @@ function createOrchestrator(pharmaSearch) {
   const pharmaDb = { search: pharmaSearch };
   const bulaApi = { lookupMedicine: async () => null };
   const manual = { search: async () => [], findSymptomOptions: () => null };
+  const priorityRules = {
+    getRulesForPrinciple: async (principle) =>
+      DEFAULT_MEDICINE_PRIORITY_RULES.filter(
+        (rule) => rule.principleActive === principle,
+      ),
+  };
 
   return {
     selector,
@@ -38,6 +47,7 @@ function createOrchestrator(pharmaSearch) {
       pharmaDb,
       bulaApi,
       manual,
+      priorityRules,
     ),
   };
 }
@@ -177,6 +187,74 @@ async function testPharmaDbPagination() {
   }
 }
 
+async function testConfigurableCommercialRanking() {
+  const selector = new CommercialMedicineSelector();
+  const rules = [
+    {
+      principleActive: "dipirona",
+      brand: "Novalgina",
+      dosageMg: 500,
+      quantity: 10,
+      formGroup: "comprimido",
+      priority: 1000,
+    },
+  ];
+  const options = [
+    {
+      productName: "Dipirona Sodica",
+      medicineName: "dipirona",
+      label: "Dipirona Sodica Comprimido 500mg - caixa com 30 unidades",
+      formGroup: "comprimido",
+      strength: "500mg",
+      presentationId: 1,
+      packageInfo: selector.extractPackageInfo("comprimido 500mg caixa com 30 comprimidos"),
+      pricePf: 9.9,
+    },
+    {
+      productName: "Novalgina",
+      medicineName: "dipirona",
+      label: "Novalgina Comprimido 500mg - caixa com 10 unidades",
+      formGroup: "comprimido",
+      strength: "500mg",
+      presentationId: 2,
+      packageInfo: selector.extractPackageInfo("comprimido 500mg caixa com 10 comprimidos"),
+      pricePf: 14.9,
+    },
+    {
+      productName: "Dipirona Sodica",
+      medicineName: "dipirona",
+      label: "Dipirona Sodica Gotas 500mg/ml - frasco com 20ml",
+      formGroup: "gotas",
+      strength: "500mg/ml",
+      presentationId: 3,
+      packageInfo: selector.extractPackageInfo("gotas 500mg/ml frasco com 20ml"),
+      pricePf: 7.9,
+    },
+    {
+      productName: "Dipirona Sodica",
+      medicineName: "dipirona",
+      label: "Dipirona Sodica Comprimido 500mg - caixa com 10 unidades",
+      formGroup: "comprimido",
+      strength: "500mg",
+      presentationId: 4,
+      packageInfo: selector.extractPackageInfo("comprimido 500mg caixa com 10 comprimidos"),
+      pricePf: 6.9,
+    },
+  ];
+
+  const ranked = selector.rankCommercialOptions("dipirona", options, rules);
+  assert.equal(ranked.selected.length, 3);
+  assert.match(ranked.selected[0].label, /Novalgina/i);
+  assert.ok(ranked.scored.some((item) => item.quantity === 30));
+  assert.ok(
+    new Set(
+      ranked.selected.map((item) =>
+        [item.formGroup, item.strength, item.packageInfo?.unitCount, item.packageInfo?.volumeMl].join("|"),
+      ),
+    ).size >= 2,
+  );
+}
+
 function response(body, status = 200) {
   return {
     ok: status >= 200 && status < 300,
@@ -189,6 +267,7 @@ async function run() {
   await testParser();
   await testSearchFallbacksAndRanking();
   await testPharmaDbPagination();
+  await testConfigurableCommercialRanking();
   console.log("Medicine search regression tests passed.");
 }
 

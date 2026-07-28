@@ -22,6 +22,7 @@
           <button class="nav-item" data-section="attention">Atenção</button>
           <button class="nav-item" data-section="conversations">Conversas</button>
           <button class="nav-item" data-section="orders">Pedidos</button>
+          <button class="nav-item" data-section="medicine-priorities">Prioridades</button>
           <button class="nav-item" data-section="providers">APIs</button>
           <button class="nav-item" data-section="errors">Erros</button>
         </nav>
@@ -158,6 +159,26 @@
               <div id="order-detail" class="empty-state">Selecione um pedido.</div>
             </article>
           </div>
+        </section>
+
+        <section id="medicine-priorities" class="section" aria-labelledby="medicine-priorities-title">
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <h2 id="medicine-priorities-title">Prioridades de medicamentos</h2>
+                <p class="muted">Edite a ordem comercial por princípio ativo. Prioridade maior aparece antes.</p>
+              </div>
+              <button id="save-medicine-priorities-button" class="primary-button" type="button">Salvar prioridades</button>
+            </div>
+            <div id="medicine-priorities-meta" class="item-meta"></div>
+            <textarea
+              id="medicine-priorities-editor"
+              class="json-editor"
+              rows="18"
+              spellcheck="false"
+              aria-label="Regras de prioridade em JSON"
+            ></textarea>
+          </article>
         </section>
 
         <section id="providers" class="section" aria-labelledby="providers-title">

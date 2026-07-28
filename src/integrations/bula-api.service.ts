@@ -11,6 +11,7 @@ import {
   SelectorPresentation,
   SelectorProduct,
 } from "./commercial-medicine-selector";
+import { MedicinePriorityRulesService } from "./medicine-priority-rules.service";
 
 export type MedicineIntent =
   | "leaflet"
@@ -113,6 +114,7 @@ export class BulaApiService {
   constructor(
     private readonly configService: ConfigService,
     private readonly selector: CommercialMedicineSelector,
+    private readonly priorityRulesService: MedicinePriorityRulesService,
   ) {}
 
   isPriceQuestionWithoutMedicine(message: string) {
@@ -634,7 +636,7 @@ export class BulaApiService {
       `Produtos descartados por embalagem grande/hospitalar: ${discardedPresentations.join(", ") || "nenhum"}`,
     );
 
-    return this.rankOptions(options, medicineName).map((option, index) => ({
+    return (await this.rankOptions(options, medicineName)).map((option, index) => ({
       ...option,
       optionId: index + 1,
     }));
@@ -644,11 +646,33 @@ export class BulaApiService {
     return this.selector.isRetailPresentation(presentation);
   }
 
-  private rankOptions(
+  private async rankOptions(
     options: CommercialMedicineOption[],
     medicineName: string,
   ) {
-    return this.selector.selectCommercialOptions(medicineName, options);
+    const principleActive = this.selector.getCanonicalMedicineName(medicineName);
+    const priorityRules =
+      await this.priorityRulesService.getRulesForPrinciple(principleActive);
+    const ranking = this.selector.rankCommercialOptions(
+      medicineName,
+      options,
+      priorityRules,
+    );
+
+    this.logger.log(
+      `PONTUAÇÃO MEDICAMENTOS BULAPI: ${JSON.stringify(ranking.scored.slice(0, 20))}`,
+    );
+    this.logger.log(
+      `SELEÇÃO FINAL MEDICAMENTOS BULAPI: ${JSON.stringify(
+        ranking.selected.map((option) => ({
+          label: option.label,
+          categoria: option.selectionReason?.split(":")[0],
+          motivo: option.selectionReason,
+        })),
+      )}`,
+    );
+
+    return ranking.selected;
   }
 
   private diversifyDipironaOptions(options: CommercialMedicineOption[]) {

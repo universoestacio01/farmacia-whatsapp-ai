@@ -177,3 +177,20 @@ model Payment {
   @@index([provider])
   @@map("payments")
 }
+
+model MedicinePriorityRule {
+  id              String   @id @default(cuid())
+  principleActive String   @map("principle_active")
+  dosageMg        Int?     @map("dosage_mg")
+  dosageText      String?  @map("dosage_text")
+  quantity        Int?
+  formGroup       String?  @map("form_group")
+  brand           String?
+  priority        Int      @default(100)
+  enabled         Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([principleActive, enabled])
+  @@map("medicine_priority_rules")
+}

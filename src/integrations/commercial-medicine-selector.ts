@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
+import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 
 export interface SelectorProduct {
   id: number;
@@ -36,6 +37,9 @@ export interface SelectorOption {
   strength?: string;
   presentationId: number;
   packageInfo?: PackageInfo;
+  label?: string;
+  pricePf?: number;
+  selectionReason?: string;
 }
 
 export interface PackageInfo {
@@ -60,6 +64,17 @@ export interface ParsedMedicineQuery {
   fallbackTerms: string[];
 }
 
+interface RankedOption<T extends SelectorOption> {
+  option: T;
+  score: number;
+  category: string;
+  reason: string;
+  configPriority: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  signature: string;
+}
+
 @Injectable()
 export class CommercialMedicineSelector {
   private readonly knownSynonyms: Record<string, string> = {
@@ -74,6 +89,7 @@ export class CommercialMedicineSelector {
     paracetamol: "paracetamol",
     loratadina: "loratadina",
     omeprazol: "omeprazol",
+    neopiridin: "neopiridin",
     nimesulida: "nimesulida",
     neosulida: "neosulida",
     amoxicilina: "amoxicilina",
@@ -127,6 +143,9 @@ export class CommercialMedicineSelector {
     engov: ["engov"],
     luftal: ["luftal", "simeticona"],
     neosaldina: ["neosaldina"],
+    loratadina: [],
+    omeprazol: [],
+    neopiridin: ["neopiridin"],
     venvanse: ["venvanse"],
     tadalafila: ["cialis", "tadala"],
     sildenafila: ["viagra"],
@@ -377,12 +396,326 @@ export class CommercialMedicineSelector {
     if (/\bcreme\b/.test(text)) return "creme";
     if (/\bgel\b/.test(text)) return "gel";
     if (/\bspray\b/.test(text)) return "spray";
+    if (/\bpastilha\b/.test(text)) return "pastilha";
     if (/\bdragea\b|\bdrg\b/.test(text)) return "dragea";
 
     return "outro";
   }
 
   selectCommercialOptions<T extends SelectorOption>(
+    medicineName: string,
+    options: T[],
+    priorityRules: MedicinePriorityRuleConfig[] = [],
+  ) {
+    return this.rankCommercialOptions(medicineName, options, priorityRules).selected;
+  }
+
+  rankCommercialOptions<T extends SelectorOption>(
+    medicineName: string,
+    options: T[],
+    priorityRules: MedicinePriorityRuleConfig[] = [],
+  ) {
+    const deduped = new Map<string, T>();
+
+    for (const option of options) {
+      const key = this.normalize(
+        [
+          option.productName,
+          option.formGroup,
+          option.strength,
+          option.packageInfo?.unitCount,
+          option.packageInfo?.volumeMl,
+        ].join("-"),
+      );
+      const current = deduped.get(key);
+
+      if (
+        !current ||
+        this.optionScore(medicineName, option) >
+          this.optionScore(medicineName, current)
+      ) {
+        deduped.set(key, option);
+      }
+    }
+
+    const parsedQuery = this.parseMedicineQuery(medicineName);
+    const scored = [...deduped.values()]
+      .map((option) => this.scoreRankedOption(medicineName, option, priorityRules))
+      .sort((a, b) => b.score - a.score);
+    const ranked = scored.map((item) => item.option);
+
+    if (!ranked.length) {
+      return { selected: [] as T[], scored: [] };
+    }
+
+    const selectedScored =
+      parsedQuery.dosageMg !== undefined ||
+      parsedQuery.formGroup ||
+      parsedQuery.packageQuantity !== undefined
+        ? scored.slice(0, 3)
+        : this.selectBalancedOptions(scored, priorityRules.length > 0);
+
+    return {
+      selected: selectedScored.map(
+        (item, index) =>
+          ({
+            ...item.option,
+            selectionReason: `${item.category}: ${item.reason}`,
+            optionId: index + 1,
+          }) as T,
+      ),
+      scored: scored.map((item) => ({
+        productName: item.option.productName,
+        label: item.option.label,
+        formGroup: item.option.formGroup,
+        strength: item.option.strength,
+        quantity: item.option.packageInfo?.unitCount,
+        price: item.option.pricePf,
+        score: item.score,
+        category: item.category,
+        reason: item.reason,
+      })),
+    };
+  }
+
+  private selectBalancedOptions<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    hasConfiguredRules: boolean,
+  ) {
+    const selected: Array<RankedOption<T>> = [];
+    const pick = (item: RankedOption<T> | undefined, category: string, reason: string) => {
+      if (!item || this.isAlreadyPicked(selected, item)) {
+        return;
+      }
+
+      selected.push({ ...item, category, reason });
+    };
+
+    const configuredPrimary = scored.find((item) => item.configPriority > 0);
+    pick(
+      hasConfiguredRules ? configuredPrimary || scored[0] : scored[0],
+      hasConfiguredRules ? "prioridade_comercial" : "melhor_relevancia",
+      hasConfiguredRules
+        ? "apresentação priorizada na configuração comercial"
+        : "maior aderência ao produto pesquisado",
+    );
+
+    pick(
+      this.findCheapest(scored, selected),
+      "menor_preco",
+      "menor preço total entre as opções comerciais",
+    );
+
+    pick(
+      this.findBestUnitPrice(scored, selected) || this.findDistinct(scored, selected),
+      "melhor_custo_ou_variacao",
+      "melhor custo por unidade ou apresentação diferente",
+    );
+
+    for (const item of scored) {
+      if (selected.length >= 3) break;
+      pick(item, "variacao_relevante", "outra apresentação comercial relevante");
+    }
+
+    return selected.slice(0, 3);
+  }
+
+  private scoreRankedOption<T extends SelectorOption>(
+    medicineName: string,
+    option: T,
+    priorityRules: MedicinePriorityRuleConfig[],
+  ): RankedOption<T> {
+    const genericScore = this.genericRankingScore(medicineName, option);
+    const config = this.priorityRuleScore(option, priorityRules);
+    const score = this.optionScore(medicineName, option) + genericScore + config.score;
+    const category = config.score > 0 ? "prioridade_configurada" : "ranking_generico";
+    const reason = config.reason || "pontuação por relevância, preço e embalagem";
+
+    return {
+      option,
+      score,
+      category,
+      reason,
+      configPriority: config.score,
+      unitPrice: this.unitPrice(option),
+      totalPrice: option.pricePf,
+      signature: this.presentationSignature(option),
+    };
+  }
+
+  private priorityRuleScore(
+    option: SelectorOption,
+    priorityRules: MedicinePriorityRuleConfig[],
+  ) {
+    const matches = priorityRules
+      .filter((rule) => this.optionMatchesPriorityRule(option, rule))
+      .sort((a, b) => b.priority - a.priority);
+
+    if (!matches.length) {
+      return { score: 0, reason: "" };
+    }
+
+    const best = matches[0];
+    const details = [
+      best.brand ? `marca ${best.brand}` : undefined,
+      best.dosageMg ? `${best.dosageMg}mg` : best.dosageText,
+      best.formGroup,
+      best.quantity ? `${best.quantity} unidades` : undefined,
+    ].filter(Boolean);
+
+    return {
+      score: best.priority * 10,
+      reason: `prioridade ${best.priority}${details.length ? ` (${details.join(", ")})` : ""}`,
+    };
+  }
+
+  private optionMatchesPriorityRule(
+    option: SelectorOption,
+    rule: MedicinePriorityRuleConfig,
+  ) {
+    if (rule.brand && !this.optionHasBrand(option, rule.brand)) {
+      return false;
+    }
+
+    if (
+      rule.dosageMg !== undefined &&
+      !this.optionMatchesDosageMg(option, rule.dosageMg)
+    ) {
+      return false;
+    }
+
+    if (
+      rule.dosageText &&
+      !this.normalize([option.strength, option.label].filter(Boolean).join(" ")).includes(
+        this.normalize(rule.dosageText),
+      )
+    ) {
+      return false;
+    }
+
+    if (rule.quantity !== undefined && option.packageInfo?.unitCount !== rule.quantity) {
+      return false;
+    }
+
+    if (
+      rule.formGroup &&
+      this.normalize(option.formGroup) !== this.normalize(rule.formGroup)
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private genericRankingScore(medicineName: string, option: SelectorOption) {
+    const canonical = this.getCanonicalMedicineName(medicineName);
+    let score = 0;
+
+    if (this.normalize(option.productName) === canonical) score += 280;
+    if (this.optionHasCommercialBrand(option, canonical)) score += 160;
+    if (this.isGenericOption(option, canonical)) score += 120;
+
+    const packageInfo = option.packageInfo;
+    const unitCount = packageInfo?.unitCount;
+
+    if (unitCount !== undefined) {
+      if (unitCount >= 8 && unitCount <= 30) score += 120;
+      if ([10, 12, 15, 20, 28, 30].includes(unitCount)) score += 55;
+      if (unitCount > 60) score -= 320;
+      if (unitCount >= 50 && unitCount <= 60) score -= 120;
+    }
+
+    if (packageInfo?.isInjectable || packageInfo?.isHospitalUse) score -= 1000;
+    if (packageInfo?.isLargePackage && (unitCount === undefined || unitCount > 60)) {
+      score -= 220;
+    }
+
+    const price = option.pricePf;
+    if (price !== undefined && price > 0) {
+      score += Math.max(0, 140 - price);
+      const unitPrice = this.unitPrice(option);
+      if (unitPrice !== undefined) {
+        score += Math.max(0, 80 - unitPrice * 10);
+      }
+    }
+
+    return score;
+  }
+
+  private findCheapest<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    return scored
+      .filter((item) => item.totalPrice !== undefined)
+      .filter((item) => !this.isAlreadyPicked(selected, item))
+      .sort((a, b) => (a.totalPrice ?? Infinity) - (b.totalPrice ?? Infinity))[0];
+  }
+
+  private findBestUnitPrice<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    return scored
+      .filter((item) => item.unitPrice !== undefined)
+      .filter((item) => !this.isAlreadyPicked(selected, item))
+      .sort((a, b) => (a.unitPrice ?? Infinity) - (b.unitPrice ?? Infinity))[0];
+  }
+
+  private findDistinct<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    return scored.find((item) => !this.isAlreadyPicked(selected, item));
+  }
+
+  private isAlreadyPicked<T extends SelectorOption>(
+    selected: Array<RankedOption<T>>,
+    item: RankedOption<T>,
+  ) {
+    if (selected.some((picked) => picked.option.presentationId === item.option.presentationId)) {
+      return true;
+    }
+
+    if (selected.length < 2) {
+      return selected.some((picked) => picked.signature === item.signature);
+    }
+
+    return (
+      selected.filter((picked) => picked.signature === item.signature).length >= 1
+    );
+  }
+
+  private unitPrice(option: SelectorOption) {
+    const price = option.pricePf;
+    const unitCount = option.packageInfo?.unitCount;
+
+    if (!price || !unitCount || unitCount <= 0) {
+      return undefined;
+    }
+
+    return price / unitCount;
+  }
+
+  private presentationSignature(option: SelectorOption) {
+    return this.normalize(
+      [
+        option.formGroup,
+        this.extractDosageSignature(option),
+        option.packageInfo?.unitCount,
+        option.packageInfo?.volumeMl,
+      ]
+        .filter(Boolean)
+        .join("|"),
+    );
+  }
+
+  private extractDosageSignature(option: SelectorOption) {
+    const parsed = this.extractRequestedDosage(option.strength || "");
+    return parsed.mg !== undefined ? `${parsed.mg}mg` : option.strength || "";
+  }
+
+  private legacySelectCommercialOptions<T extends SelectorOption>(
     medicineName: string,
     options: T[],
   ) {
@@ -770,7 +1103,7 @@ export class CommercialMedicineSelector {
   }
 
   private optionHasBrand(option: SelectorOption, brand: string) {
-    return this.normalize(option.productName).includes(brand);
+    return this.normalize(option.productName).includes(this.normalize(brand));
   }
 
   private optionHasCommercialBrand(option: SelectorOption, canonical: string) {

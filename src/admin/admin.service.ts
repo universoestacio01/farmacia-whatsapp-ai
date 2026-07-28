@@ -11,6 +11,8 @@ import {
   Prisma,
 } from "@prisma/client";
 import { sanitizeEnv } from "../config/env-sanitize";
+import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
+import { MedicinePriorityRulesService } from "../integrations/medicine-priority-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
 
@@ -20,6 +22,7 @@ export class AdminService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly whatsappService: WhatsappService,
+    private readonly medicinePriorityRules: MedicinePriorityRulesService,
   ) {}
 
   async overview() {
@@ -430,6 +433,14 @@ export class AdminService {
         createdAt: payment.createdAt,
       })),
     };
+  }
+
+  medicinePriorities() {
+    return this.medicinePriorityRules.listAll();
+  }
+
+  replaceMedicinePriorities(rules: MedicinePriorityRuleConfig[]) {
+    return this.medicinePriorityRules.replaceRules(rules);
   }
 
   providers() {

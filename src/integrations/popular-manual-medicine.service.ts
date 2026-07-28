@@ -1,4 +1,8 @@
 import { Injectable } from "@nestjs/common";
+import {
+  SYMPTOM_MEDICINE_RULES,
+  SymptomMedicineRule,
+} from "../config/symptom-medicine.config";
 import { CommercialMedicineSelector } from "./commercial-medicine-selector";
 import {
   MedicineProvider,
@@ -94,6 +98,15 @@ export class PopularManualMedicineService implements MedicineProvider {
     }
 
     return null;
+  }
+
+  findSymptomSuggestion(message: string): SymptomMedicineRule | null {
+    const normalized = this.normalize(message);
+    const suggestion = SYMPTOM_MEDICINE_RULES.find((rule) =>
+      rule.patterns.some((pattern) => normalized.includes(this.normalize(pattern))),
+    );
+
+    return suggestion || null;
   }
 
   private readonly catalog: Record<string, NormalizedMedicineOption[]> = {
@@ -242,6 +255,53 @@ export class PopularManualMedicineService implements MedicineProvider {
     luftal: [
       this.option("Luftal gotas", "Luftal Gotas", "gotas", "luftal"),
       this.option("Luftal comprimido", "Luftal Comprimido", "comprimido", "luftal"),
+    ],
+    loratadina: [
+      this.option(
+        "Loratadina",
+        "Loratadina genérica Comprimido 10mg",
+        "comprimido",
+        "loratadina",
+        12.9,
+        "10mg",
+        "10 MG COM CT BL X 12",
+      ),
+      this.option(
+        "Loratadina",
+        "Loratadina Xarope",
+        "xarope",
+        "loratadina",
+        18.9,
+      ),
+    ],
+    omeprazol: [
+      this.option(
+        "Omeprazol",
+        "Omeprazol genérico Cápsula 20mg",
+        "cápsula",
+        "omeprazol",
+        12.9,
+        "20mg",
+        "20 MG CAP CT BL X 14",
+      ),
+      this.option(
+        "Omeprazol",
+        "Omeprazol genérico Cápsula 20mg",
+        "cápsula",
+        "omeprazol",
+        19.9,
+        "20mg",
+        "20 MG CAP CT BL X 28",
+      ),
+    ],
+    neopiridin: [
+      this.option(
+        "Neopiridin",
+        "Neopiridin Pastilha",
+        "pastilha",
+        "neopiridin",
+        14.9,
+      ),
     ],
     neosaldina: [
       this.option(

@@ -8,6 +8,9 @@ const { PharmaDbService } = require("../dist/integrations/pharmadb.service");
 const {
   MedicineSearchOrchestratorService,
 } = require("../dist/integrations/medicine-search-orchestrator.service");
+const {
+  DEFAULT_MEDICINE_PRIORITY_RULES,
+} = require("../dist/config/medicine-priority-rules.config");
 
 loadEnv();
 
@@ -17,12 +20,19 @@ const auth = new PharmaDbAuthService(config);
 const pharmaDb = new PharmaDbService(config, auth, selector);
 const bulaApi = { lookupMedicine: async () => null };
 const manual = { search: async () => [], findSymptomOptions: () => null };
+const priorityRules = {
+  getRulesForPrinciple: async (principle) =>
+    DEFAULT_MEDICINE_PRIORITY_RULES.filter(
+      (rule) => rule.principleActive === principle,
+    ),
+};
 const orchestrator = new MedicineSearchOrchestratorService(
   config,
   selector,
   pharmaDb,
   bulaApi,
   manual,
+  priorityRules,
 );
 
 const queries = [

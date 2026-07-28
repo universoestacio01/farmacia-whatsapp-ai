@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { SymptomMedicineRule } from "../config/symptom-medicine.config";
 import {
   BulaApiService,
   CommercialMedicineOption,
@@ -10,6 +11,7 @@ import {
   ParsedMedicineQuery,
 } from "./commercial-medicine-selector";
 import { NormalizedMedicineOption } from "./medicine-provider.interface";
+import { MedicinePriorityRulesService } from "./medicine-priority-rules.service";
 import { PharmaDbService } from "./pharmadb.service";
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
 
@@ -29,6 +31,7 @@ export class MedicineSearchOrchestratorService {
     private readonly pharmaDbService: PharmaDbService,
     private readonly bulaApiService: BulaApiService,
     private readonly popularManualService: PopularManualMedicineService,
+    private readonly priorityRulesService: MedicinePriorityRulesService,
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
@@ -85,6 +88,10 @@ export class MedicineSearchOrchestratorService {
     return this.popularManualService.findSymptomOptions(message);
   }
 
+  findSymptomSuggestion(message: string): SymptomMedicineRule | null {
+    return this.popularManualService.findSymptomSuggestion(message);
+  }
+
   private async safeSearchPharmaDb(query: ParsedMedicineQuery) {
     try {
       return await this.searchPharmaDb(query);
@@ -126,7 +133,7 @@ export class MedicineSearchOrchestratorService {
       return null;
     }
 
-    const selected = this.selectNormalized(query, rawOptions);
+    const selected = await this.selectNormalized(query, rawOptions);
 
     return {
       medicineName: query.canonicalName || query.medicineName || query.received,
@@ -137,7 +144,7 @@ export class MedicineSearchOrchestratorService {
 
   private async searchManual(query: string): Promise<MedicineLookupSummary> {
     const rawOptions = await this.popularManualService.search(query);
-    const selected = this.selectNormalized(
+    const selected = await this.selectNormalized(
       this.selector.parseMedicineQuery(query),
       rawOptions,
     );
@@ -206,10 +213,10 @@ export class MedicineSearchOrchestratorService {
     return [...deduped.values()];
   }
 
-  private selectNormalized(
+  private async selectNormalized(
     query: ParsedMedicineQuery,
     options: NormalizedMedicineOption[],
-  ): CommercialMedicineOption[] {
+  ): Promise<CommercialMedicineOption[]> {
     const filterTerm = query.canonicalName || query.medicineName || query.received;
     this.logger.log(`SEARCH TERM: ${query.received}`);
     this.logger.log(`TERM CONSULTADO/FILTRO: ${filterTerm}`);
@@ -271,9 +278,30 @@ export class MedicineSearchOrchestratorService {
       } satisfies CommercialMedicineOption;
     });
 
-    return this.selector
-      .selectCommercialOptions(query.received, mapped)
-      .map((option, index) => ({ ...option, optionId: index + 1 }));
+    this.logger.log(`PRODUTOS ENCONTRADOS: ${mapped.length}`);
+    const principleActive = query.canonicalName || filterTerm;
+    const priorityRules =
+      await this.priorityRulesService.getRulesForPrinciple(principleActive);
+    const ranking = this.selector.rankCommercialOptions(
+      query.received,
+      mapped,
+      priorityRules,
+    );
+
+    this.logger.log(
+      `PONTUAÇÃO MEDICAMENTOS: ${JSON.stringify(ranking.scored.slice(0, 20))}`,
+    );
+    this.logger.log(
+      `SELEÇÃO FINAL MEDICAMENTOS: ${JSON.stringify(
+        ranking.selected.map((option) => ({
+          label: option.label,
+          categoria: option.selectionReason?.split(":")[0],
+          motivo: option.selectionReason,
+        })),
+      )}`,
+    );
+
+    return ranking.selected.map((option, index) => ({ ...option, optionId: index + 1 }));
   }
 
   private calculateSalePrice(option: NormalizedMedicineOption) {

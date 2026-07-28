@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Conversation, ConversationState, Prisma } from "@prisma/client";
 import { AiService } from "../ai/ai.service";
+import { SymptomMedicineRule } from "../config/symptom-medicine.config";
 import {
   BulaApiService,
   CommercialMedicineOption,
@@ -260,10 +261,10 @@ export class ConversationEngineService {
       return "Qual produto você quer consultar? Pode me mandar o nome ou a marca.";
     }
 
-    const symptomReply = this.medicineSearch.findSymptomOptions(text);
+    const symptomSuggestion = this.medicineSearch.findSymptomSuggestion(text);
 
-    if (symptomReply) {
-      return symptomReply;
+    if (symptomSuggestion) {
+      return this.handleSymptomMedicineQuestion(conversation, symptomSuggestion);
     }
 
     if (this.productSearch.isRetailProductQuery(text)) {
@@ -282,6 +283,12 @@ export class ConversationEngineService {
     text: string,
     medicineQuestion: MedicineQuestion | null,
   ) {
+    const symptomSuggestion = this.medicineSearch.findSymptomSuggestion(text);
+
+    if (symptomSuggestion) {
+      return this.handleSymptomMedicineQuestion(conversation, symptomSuggestion);
+    }
+
     if (this.productSearch.isRetailProductQuery(text)) {
       return this.handleRetailProductQuestion(conversation.id, text);
     }
@@ -837,6 +844,127 @@ export class ConversationEngineService {
   private extractConfirmedOrderId(lastIntent: string | null) {
     const match = lastIntent?.match(/^ORDER_CONFIRMED:(.+)$/);
     return match?.[1] || null;
+  }
+
+  private async handleSymptomMedicineQuestion(
+    conversation: Conversation,
+    symptom: SymptomMedicineRule,
+  ) {
+    this.logger.log(`INTENÇÃO POR SINTOMA DETECTADA: ${symptom.key}`);
+
+    if (symptom.clarificationQuestion || symptom.candidates.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: `SYMPTOM:${symptom.key}`,
+          pendingAction: ConversationState.IDLE,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return symptom.clarificationQuestion || "Me conte um pouco melhor o que você está sentindo para eu procurar a opção mais adequada.";
+    }
+
+    const options: CommercialMedicineOption[] = [];
+    const consulted: string[] = [];
+
+    for (const candidate of symptom.candidates) {
+      consulted.push(candidate.medicineName);
+      this.logger.log(
+        `CONSULTANDO MEDICAMENTO POR SINTOMA: sintoma=${symptom.key} medicamento=${candidate.medicineName}`,
+      );
+      const summary = await this.medicineSearch.searchMedicine(candidate.medicineName);
+      const option = summary?.options[0];
+
+      if (!option) {
+        this.logger.log(
+          `MEDICAMENTO POR SINTOMA SEM RESULTADO: sintoma=${symptom.key} medicamento=${candidate.medicineName}`,
+        );
+        continue;
+      }
+
+      if (
+        options.some(
+          (item) =>
+            this.normalize(item.label) === this.normalize(option.label) ||
+            this.normalize(item.productName) === this.normalize(option.productName),
+        )
+      ) {
+        continue;
+      }
+
+      options.push({
+        ...option,
+        optionId: options.length + 1,
+        selectionReason: `sintoma ${symptom.key}: ${candidate.reason}`,
+      });
+
+      if (options.length >= 3) {
+        break;
+      }
+    }
+
+    this.logger.log(
+      `RESULTADO BUSCA POR SINTOMA: sintoma=${symptom.key} consultados=${consulted.join(", ")} opcoes=${options.length}`,
+    );
+
+    if (options.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: `SYMPTOM:${symptom.key}`,
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          currentMedicineQuery: null,
+          currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+
+      return [
+        `Entendi. Não localizei uma opção comum para ${symptom.label} neste momento.`,
+        "",
+        "Pode me dizer o nome do medicamento que você costuma usar ou enviar uma foto da embalagem?",
+      ].join("\n");
+    }
+
+    const shouldAskQuantity = options.length === 1;
+    const selectedOption = shouldAskQuantity
+      ? await this.ensureSelectedOptionPrice(options[0])
+      : null;
+
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: `SYMPTOM:${symptom.key}`,
+        pendingAction: shouldAskQuantity
+          ? ConversationState.WAITING_QUANTITY
+          : ConversationState.WAITING_PRESENTATION,
+        lastMedicine: null,
+        currentMedicineQuery: null,
+        currentRetailCategory: null,
+        candidateOptions: this.toJson(options),
+        selectedPresentation: selectedOption
+          ? this.toJson(selectedOption)
+          : Prisma.JsonNull,
+      },
+    });
+
+    if (selectedOption) {
+      return [
+        `Para ${symptom.label}, encontrei uma opção comum:`,
+        "",
+        this.formatSelectedOptionReply(selectedOption),
+        symptom.safetyNote ? `\n${symptom.safetyNote}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    return this.formatSymptomOptionsReply(symptom, options);
   }
 
   private async handleMedicineQuestion(
@@ -1492,6 +1620,27 @@ export class ConversationEngineService {
         return `${option.optionId}. ${formatProductDisplayName(option.label)}${price}`;
       })
       .join("\n");
+  }
+
+  private formatSymptomOptionsReply(
+    symptom: SymptomMedicineRule,
+    options: CommercialMedicineOption[],
+  ) {
+    const lines = [
+      `Entendi. Para ${symptom.label}, encontrei estas opções comuns:`,
+      "",
+      this.formatCandidateOptions(options),
+      "",
+      "Me diga qual opção você quer consultar para eu separar no carrinho.",
+      "",
+      choicePrompt(),
+    ];
+
+    if (symptom.safetyNote) {
+      lines.push("", symptom.safetyNote);
+    }
+
+    return lines.join("\n");
   }
 
   private formatMedicineInformationReply(

@@ -51,6 +51,12 @@ const medicines = {
   neosoro: [
     option(1, "medicine", "neosoro", "Neosoro solução nasal 30ml", 14.9, "solução nasal", "Neosoro"),
   ],
+  buscopan: [
+    option(1, "medicine", "buscopan", "Buscopan Comprimido", 13.9, "comprimido", "Buscopan"),
+  ],
+  luftal: [
+    option(1, "medicine", "luftal", "Luftal Gotas", 16.9, "gotas", "Luftal"),
+  ],
   tylenol: [
     option(1, "medicine", "tylenol", "Tylenol 750mg", 21.9, "comprimido", "Tylenol"),
   ],
@@ -159,9 +165,22 @@ function createEngine(conversation, options = {}) {
     searchMedicine: async (name) => ({
       medicineName: name,
       products: [],
-      options: medicines[name] || [],
+      options: medicines[normalize(name)] || [],
     }),
     findSymptomOptions: () => null,
+    findSymptomSuggestion: (text) =>
+      /dor de barriga|dor abdominal|colica|cólica/.test(normalize(text))
+        ? {
+            key: "dor_barriga",
+            label: "dor de barriga",
+            patterns: [],
+            candidates: [
+              { medicineName: "Buscopan", reason: "opção comum para cólicas" },
+              { medicineName: "Luftal", reason: "opção comum quando há gases" },
+            ],
+            safetyNote: "Se a dor for forte ou persistente, procure orientação profissional.",
+          }
+        : null,
   };
   const productSearch = {
     isRetailProductQuery: (text) => Boolean(retailCategory(text)),
@@ -538,6 +557,15 @@ async function run() {
       assert.doesNotMatch(lastReplyText(result), /Nao localizei|Não localizei/);
     }));
   }
+
+  results.push(await runScenario("sintoma dor de barriga busca remedios", [
+    "Estou com dor de barriga",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
+    assert.notEqual(result.conversation.candidateOptions, null);
+    assert.match(lastReplyText(result), /Buscopan|Luftal/);
+    assert.doesNotMatch(lastReplyText(result), /IA fallback/i);
+  }));
 
   const retailQueries = [
     "Tem Shampoo Seda?",
