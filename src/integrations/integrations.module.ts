@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { PrismaModule } from "../prisma/prisma.module";
+import { ObservabilityModule } from "../observability/observability.module";
 import { BulaApiService } from "./bula-api.service";
 import { CommercialMedicineSelector } from "./commercial-medicine-selector";
 import { CosmosService } from "./cosmos.service";
@@ -14,7 +15,7 @@ import { ProductSearchOrchestratorService } from "./product-search-orchestrator.
 import { ViaCepService } from "./via-cep.service";
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, ObservabilityModule],
   providers: [
     BulaApiService,
     CommercialMedicineSelector,

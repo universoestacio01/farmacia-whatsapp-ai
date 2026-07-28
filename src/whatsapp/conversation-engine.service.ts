@@ -21,6 +21,7 @@ import {
   sanitizeCustomerText,
   WhatsappCopy,
 } from "./whatsapp-copy";
+import { ConversationInputService } from "./conversation-input.service";
 
 interface CartItem {
   type: "medicine" | "retail_product";
@@ -64,6 +65,7 @@ export class ConversationEngineService {
     private readonly productSearch: ProductSearchOrchestratorService,
     private readonly viaCepService: ViaCepService,
     private readonly paymentsService: PaymentsService,
+    private readonly inputService: ConversationInputService = new ConversationInputService(),
   ) {}
 
   async resolveReply(conversation: Conversation, text: string) {
@@ -475,7 +477,7 @@ export class ConversationEngineService {
       return this.reopenCandidateOptions(conversation);
     }
 
-    const quantity = this.extractQuantity(text);
+    const quantity = this.inputService.parseQuantity(text);
 
     if (!quantity) {
       return WhatsappCopy.askQuantity();
@@ -544,7 +546,7 @@ export class ConversationEngineService {
       return WhatsappCopy.askCep();
     }
 
-    const cep = this.extractCep(text);
+    const cep = this.inputService.parseCep(text);
 
     if (!cep) {
       if (this.isCurrentItemQuestion(text) || this.isPriceQuestion(text)) {
@@ -586,7 +588,7 @@ export class ConversationEngineService {
   ) {
     const number = text.trim();
 
-    if (!this.isAddressNumber(number)) {
+    if (!this.inputService.isLikelyAddressNumber(number)) {
       return "Qual é o número do endereço?";
     }
 

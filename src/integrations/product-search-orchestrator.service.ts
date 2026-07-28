@@ -1,5 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
+import { ProviderRequestOutcome } from "@prisma/client";
 import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
+import { ProviderRequestLogService } from "../observability/provider-request-log.service";
 import { formatProductDisplayName } from "../whatsapp/whatsapp-copy";
 import { CommercialMedicineOption } from "./bula-api.service";
 import { CosmosService } from "./cosmos.service";
@@ -14,13 +16,20 @@ export interface RetailProductLookupSummary {
   requestedBrand?: string;
 }
 
+interface RetailCacheEntry {
+  expiresAt: number;
+  value: RetailProductLookupSummary;
+}
+
 @Injectable()
 export class ProductSearchOrchestratorService {
   private readonly logger = new Logger(ProductSearchOrchestratorService.name);
+  private readonly cache = new Map<string, RetailCacheEntry>();
 
   constructor(
     private readonly cosmosService: CosmosService,
     private readonly manualRetailProductService: ManualRetailProductService,
+    private readonly providerRequestLog?: ProviderRequestLogService,
   ) {}
 
   isRetailProductQuery(message: string) {
@@ -46,12 +55,19 @@ export class ProductSearchOrchestratorService {
   async searchProducts(query: string): Promise<RetailProductLookupSummary> {
     this.logger.log("PRODUCT INTENT DETECTED");
     this.logger.log(`RETAIL PRODUCT QUERY: ${query}`);
+    const cacheKey = this.normalize(query);
+    const cached = this.getFromCache(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
 
     const gtin = this.extractGtin(query);
     const category = this.findCategoryForQuery(query);
     const requestedBrand = this.findRequestedBrand(query, category);
     const allowKits = this.allowsKits(query);
     let products: NormalizedRetailProduct[] = [];
+    const startedAt = Date.now();
 
     if (category && this.isGenericCategoryQuery(query, category) && !requestedBrand) {
       const manualProducts = await this.getManualFallbackProducts(
@@ -60,13 +76,15 @@ export class ProductSearchOrchestratorService {
         requestedBrand,
       );
 
-      return {
+      const summary = {
         query,
         category,
         requestedBrand: undefined,
         options: this.toCommercialOptions(manualProducts).slice(0, 3),
         manualFallback: true,
       };
+      this.setCache(cacheKey, summary, 300);
+      return summary;
     }
 
     try {
@@ -76,12 +94,30 @@ export class ProductSearchOrchestratorService {
       } else {
         products = await this.cosmosService.search(query);
       }
+      await this.providerRequestLog?.record({
+        provider: "cosmos",
+        operation: gtin ? "retail_gtin_search" : "retail_name_search",
+        query,
+        durationMs: Date.now() - startedAt,
+        resultsFound: products.length,
+        outcome: products.length
+          ? ProviderRequestOutcome.SUCCESS
+          : ProviderRequestOutcome.EMPTY,
+      });
     } catch (error) {
       this.logger.warn(
         `COSMOS FAILED, FALLING BACK TO MANUAL CATALOG: ${
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      await this.providerRequestLog?.record({
+        provider: "cosmos",
+        operation: gtin ? "retail_gtin_search" : "retail_name_search",
+        query,
+        durationMs: Date.now() - startedAt,
+        outcome: ProviderRequestOutcome.FAILED,
+        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
+      });
       products = [];
     }
 
@@ -95,6 +131,20 @@ export class ProductSearchOrchestratorService {
         allowKits,
       });
       let manualFallback = false;
+      await this.providerRequestLog?.record({
+        provider: "cosmos",
+        operation: "retail_commercial_filter",
+        query,
+        durationMs: Date.now() - startedAt,
+        resultsFound: products.length,
+        resultsAfterFilter: selectedProducts.length,
+        outcome: selectedProducts.length
+          ? ProviderRequestOutcome.SUCCESS
+          : ProviderRequestOutcome.FALLBACK,
+        failureReason: selectedProducts.length
+          ? undefined
+          : "Nenhum produto passou no filtro comercial",
+      });
 
       if (selectedProducts.length === 0 && category) {
         this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
@@ -106,13 +156,15 @@ export class ProductSearchOrchestratorService {
         manualFallback = true;
       }
 
-      return {
+      const summary = {
         query,
         category: category || undefined,
         requestedBrand: requestedBrand || undefined,
         options: this.toCommercialOptions(selectedProducts).slice(0, 3),
         manualFallback,
       };
+      this.setCache(cacheKey, summary, 300);
+      return summary;
     }
 
     this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
@@ -122,13 +174,15 @@ export class ProductSearchOrchestratorService {
       requestedBrand,
     );
 
-    return {
+    const summary = {
       query,
       category: category || undefined,
       requestedBrand: requestedBrand || undefined,
       options: this.toCommercialOptions(manualProducts).slice(0, 3),
       manualFallback: true,
     };
+    this.setCache(cacheKey, summary, summary.options.length ? 300 : 60);
+    return summary;
   }
 
   buildQueryFromBrandSelection(category: string, brand: string) {
@@ -406,6 +460,28 @@ export class ProductSearchOrchestratorService {
   private extractGtin(query: string) {
     const digits = query.replace(/\D/g, "");
     return [8, 12, 13, 14].includes(digits.length) ? digits : null;
+  }
+
+  private getFromCache(key: string) {
+    const cached = this.cache.get(key);
+
+    if (!cached || cached.expiresAt < Date.now()) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return cached.value;
+  }
+
+  private setCache(
+    key: string,
+    value: RetailProductLookupSummary,
+    ttlSeconds: number,
+  ) {
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
   }
 
   private normalize(value: string) {

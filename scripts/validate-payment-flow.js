@@ -198,7 +198,8 @@ async function run() {
   });
   assert.equal(failedPix.pixCreationFailed, true);
   assert.equal(failedPix.manualFallback, false);
-  assert.equal(failingPrisma.payments.length, 0);
+  assert.equal(failingPrisma.payments.length, 1);
+  assert.equal(failingPrisma.payments[0].status, PaymentStatus.FAILED);
 
   const prisma = new FakePrisma();
   const pixCalls = [];
@@ -245,8 +246,8 @@ async function run() {
       cart,
     });
   assert.equal(pixWithPersistenceFailure.manualFallback, false);
-  assert.equal(pixWithPersistenceFailure.pixCreationFailed, undefined);
-  assert.equal(pixWithPersistenceFailure.pixCopyPaste, "000201PIXTESTE");
+  assert.equal(pixWithPersistenceFailure.pixCreationFailed, true);
+  assert.equal(pixWithPersistenceFailure.pixCopyPaste, undefined);
   assert.equal(persistenceFailPrisma.payments.length, 0);
 
   const reused = await service.confirmCheckout({
@@ -301,9 +302,10 @@ async function run() {
     },
     sigiloPayService,
     { get: () => ({ sendTextMessage: async () => undefined }) },
+    {},
   );
-  assert.throws(
-    () =>
+  await assert.rejects(
+    async () =>
       controller.receive({
         event: "TRANSACTION_PAID",
         token: "token-errado",
@@ -322,14 +324,15 @@ async function run() {
     },
     new SigiloPayService(config({ SIGILOPAY_WEBHOOK_TOKEN: "token-correto" })),
     { get: () => ({ sendTextMessage: async () => undefined }) },
+    {},
   );
   assert.deepEqual(
-    panicController.receive({
+    await panicController.receive({
       event: "TRANSACTION_PAID",
       token: "token-correto",
       transaction: { id: "tx_panic", status: "COMPLETED" },
     }),
-    { received: true },
+    { received: true, duplicate: true },
   );
 
   const originalFetch = global.fetch;

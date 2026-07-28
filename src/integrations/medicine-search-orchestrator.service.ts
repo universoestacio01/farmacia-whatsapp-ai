@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { ProviderRequestOutcome } from "@prisma/client";
 import { SymptomMedicineRule } from "../config/symptom-medicine.config";
+import { ProviderRequestLogService } from "../observability/provider-request-log.service";
 import {
   BulaApiService,
   CommercialMedicineOption,
@@ -32,6 +34,7 @@ export class MedicineSearchOrchestratorService {
     private readonly bulaApiService: BulaApiService,
     private readonly popularManualService: PopularManualMedicineService,
     private readonly priorityRulesService: MedicinePriorityRulesService,
+    private readonly providerRequestLog?: ProviderRequestLogService,
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
@@ -101,27 +104,69 @@ export class MedicineSearchOrchestratorService {
   }
 
   private async safeSearchPharmaDb(query: ParsedMedicineQuery) {
+    const startedAt = Date.now();
     try {
-      return await this.searchPharmaDb(query);
+      const summary = await this.searchPharmaDb(query);
+      await this.providerRequestLog?.record({
+        provider: "pharmadb",
+        operation: "medicine_search",
+        query: query.received,
+        durationMs: Date.now() - startedAt,
+        resultsFound: summary?.options.length ?? 0,
+        resultsAfterFilter: summary?.options.length ?? 0,
+        outcome: summary?.options.length
+          ? ProviderRequestOutcome.SUCCESS
+          : ProviderRequestOutcome.EMPTY,
+      });
+      return summary;
     } catch (error) {
       this.logger.warn(
         `PHARMADB SEARCH FAILED, FALLING BACK TO BULAPI: ${
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      await this.providerRequestLog?.record({
+        provider: "pharmadb",
+        operation: "medicine_search",
+        query: query.received,
+        durationMs: Date.now() - startedAt,
+        outcome: ProviderRequestOutcome.FAILED,
+        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
+      });
       return null;
     }
   }
 
   private async safeSearchBulaApi(query: string) {
+    const startedAt = Date.now();
     try {
-      return await this.bulaApiService.lookupMedicine(query);
+      const summary = await this.bulaApiService.lookupMedicine(query);
+      await this.providerRequestLog?.record({
+        provider: "bulapi",
+        operation: "medicine_search",
+        query,
+        durationMs: Date.now() - startedAt,
+        resultsFound: summary?.options.length ?? 0,
+        resultsAfterFilter: summary?.options.length ?? 0,
+        outcome: summary?.options.length
+          ? ProviderRequestOutcome.SUCCESS
+          : ProviderRequestOutcome.EMPTY,
+      });
+      return summary;
     } catch (error) {
       this.logger.warn(
         `BulAPI falhou, usando catálogo manual: ${
           error instanceof Error ? error.message : "erro desconhecido"
         }`,
       );
+      await this.providerRequestLog?.record({
+        provider: "bulapi",
+        operation: "medicine_search",
+        query,
+        durationMs: Date.now() - startedAt,
+        outcome: ProviderRequestOutcome.FAILED,
+        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
+      });
       return null;
     }
   }

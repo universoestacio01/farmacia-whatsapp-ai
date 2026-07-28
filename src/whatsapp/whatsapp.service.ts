@@ -1,12 +1,20 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { MessageDirection, MessageRole, MessageStatus } from "@prisma/client";
+import {
+  MessageDirection,
+  MessageRole,
+  MessageStatus,
+  WhatsappOutboxStatus,
+} from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import { RequestContext } from "../observability/request-context.service";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   WhatsappIncomingMessage,
   WhatsappWebhookPayload,
 } from "../webhooks/dto/whatsapp-webhook.dto";
 import { ConversationEngineService } from "./conversation-engine.service";
+import { WhatsappMediaService } from "./whatsapp-media.service";
 
 interface WhatsappSendResult {
   whatsappMessageId?: string;
@@ -39,6 +47,7 @@ export class WhatsappService {
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly conversationEngine: ConversationEngineService,
+    private readonly whatsappMediaService: WhatsappMediaService,
   ) {}
 
   enqueueWebhook(payload: WhatsappWebhookPayload) {
@@ -50,6 +59,8 @@ export class WhatsappService {
   }
 
   async handleWebhook(payload: WhatsappWebhookPayload) {
+    await this.processPendingOutbox();
+
     const changes =
       payload.entry?.flatMap((entry) => entry.changes || []) || [];
 
@@ -60,10 +71,12 @@ export class WhatsappService {
       for (const message of messages) {
         const contact = contacts.find((item) => item.wa_id === message.from);
         try {
-          await this.handleIncomingMessage(
-            message,
-            contact?.profile?.name,
-            payload,
+          await RequestContext.run(
+            {
+              traceId: randomUUID(),
+              whatsappMessageId: message.id,
+            },
+            () => this.handleIncomingMessage(message, contact?.profile?.name, payload),
           );
         } catch (error) {
           this.logWebhookProcessingError(error);
@@ -162,13 +175,28 @@ export class WhatsappService {
                 direction: MessageDirection.INBOUND,
                 role: MessageRole.CUSTOMER,
                 status: MessageStatus.RECEIVED,
-                content: "[mensagem sem texto]",
+                content: this.describeNonTextMessage(message),
                 rawPayload: rawPayload
                   ? JSON.parse(JSON.stringify(rawPayload))
                   : undefined,
               },
-            }),
+          }),
         );
+
+        const imageSearchText = await this.extractSearchTextFromImage(message);
+
+        if (imageSearchText) {
+          const reply = await this.prisma.safePrismaCall(
+            "whatsapp.conversationEngine.resolveReply.image",
+            () =>
+              this.conversationEngine.resolveReply(
+                activeConversation,
+                imageSearchText,
+              ),
+          );
+          await this.replyAndRecord(activeConversation.id, message.from, reply);
+          return;
+        }
 
         await this.replyAndRecord(
           activeConversation.id,
@@ -229,41 +257,132 @@ export class WhatsappService {
     recipient: string,
     content: string,
   ) {
+    const outbox = await this.prisma.safePrismaCall(
+      "whatsapp.outbox.create",
+      (prisma) =>
+        prisma.whatsappOutbox.create({
+          data: {
+            conversationId,
+            recipient,
+            content,
+            status: WhatsappOutboxStatus.PENDING,
+          },
+        }),
+    );
+
+    await this.processOutboxMessage(outbox.id);
+  }
+
+  async processPendingOutbox(limit = 10) {
+    const now = new Date();
+    const messages = await this.prisma.safePrismaCall(
+      "whatsapp.outbox.findMany.pending",
+      (prisma) =>
+        prisma.whatsappOutbox.findMany({
+          where: {
+            status: { in: [WhatsappOutboxStatus.PENDING, WhatsappOutboxStatus.FAILED] },
+            attempts: { lt: 5 },
+            OR: [{ nextAttemptAt: null }, { nextAttemptAt: { lte: now } }],
+          },
+          orderBy: { createdAt: "asc" },
+          take: limit,
+        }),
+      [],
+    );
+
+    for (const message of messages) {
+      await this.processOutboxMessage(message.id);
+    }
+  }
+
+  private async processOutboxMessage(outboxId: string) {
+    const outbox = await this.prisma.safePrismaCall(
+      "whatsapp.outbox.findUnique",
+      (prisma) => prisma.whatsappOutbox.findUnique({ where: { id: outboxId } }),
+      null,
+    );
+
+    if (!outbox || outbox.status === WhatsappOutboxStatus.SENT) {
+      return;
+    }
+
+    await this.prisma.safePrismaCall(
+      "whatsapp.outbox.update.sending",
+      (prisma) =>
+        prisma.whatsappOutbox.update({
+          where: { id: outbox.id },
+          data: {
+            status: WhatsappOutboxStatus.SENDING,
+            attempts: { increment: 1 },
+          },
+        }),
+      undefined,
+    );
+
     try {
-      const sendResult = await this.sendTextMessage(recipient, content);
+      const sendResult = await this.sendTextMessage(outbox.recipient, outbox.content);
+
+      await this.prisma.safePrismaCall(
+        "whatsapp.outbox.update.sent",
+        (prisma) =>
+          prisma.whatsappOutbox.update({
+            where: { id: outbox.id },
+            data: {
+              status: WhatsappOutboxStatus.SENT,
+              whatsappMessageId: sendResult.whatsappMessageId,
+              errorMessage: null,
+            },
+          }),
+        undefined,
+      );
 
       await this.prisma.safePrismaCall(
         "whatsapp.message.create.outbound_sent",
         (prisma) =>
           prisma.message.create({
             data: {
-              conversationId,
+              conversationId: outbox.conversationId,
               whatsappId: sendResult.whatsappMessageId,
               direction: MessageDirection.OUTBOUND,
               role: MessageRole.ASSISTANT,
               status: MessageStatus.SENT,
-              content,
+              content: outbox.content,
             },
           }),
       );
     } catch (error) {
       this.logger.error("Falha ao enviar resposta pelo WhatsApp", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Erro desconhecido ao enviar WhatsApp";
+      const nextAttemptAt = new Date(Date.now() + this.retryDelayMs(outbox.attempts + 1));
+
+      await this.prisma.safePrismaCall(
+        "whatsapp.outbox.update.failed",
+        (prisma) =>
+          prisma.whatsappOutbox.update({
+            where: { id: outbox.id },
+            data: {
+              status: WhatsappOutboxStatus.FAILED,
+              errorMessage,
+              nextAttemptAt,
+            },
+          }),
+        undefined,
+      );
 
       await this.prisma.safePrismaCall(
         "whatsapp.message.create.outbound_failed",
         (prisma) =>
           prisma.message.create({
             data: {
-              conversationId,
+              conversationId: outbox.conversationId,
               direction: MessageDirection.OUTBOUND,
               role: MessageRole.ASSISTANT,
               status: MessageStatus.FAILED,
-              content,
+              content: outbox.content,
               rawPayload: {
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Erro desconhecido ao enviar WhatsApp",
+                outboxId: outbox.id,
+                error: errorMessage,
               },
             },
           }),
@@ -329,6 +448,40 @@ export class WhatsappService {
     }
 
     return message.text?.body?.trim() || null;
+  }
+
+  private async extractSearchTextFromImage(message: WhatsappIncomingMessage) {
+    if (message.type !== "image" || !message.image?.id) {
+      return null;
+    }
+
+    const extracted = await this.whatsappMediaService.extractMedicineFromImage(
+      message.image.id,
+      message.image.mime_type,
+    );
+
+    if (!extracted) {
+      return null;
+    }
+
+    this.logger.log(`Texto extraído da embalagem: ${extracted}`);
+    return extracted;
+  }
+
+  private describeNonTextMessage(message: WhatsappIncomingMessage) {
+    if (message.type === "image") {
+      return "[imagem recebida]";
+    }
+
+    if (message.type === "document") {
+      return "[documento recebido]";
+    }
+
+    return "[mensagem sem texto]";
+  }
+
+  private retryDelayMs(attempts: number) {
+    return Math.min(15 * 60 * 1000, Math.max(30 * 1000, attempts * 60 * 1000));
   }
 
   private logWebhookProcessingError(error: unknown) {

@@ -124,7 +124,8 @@ export const WhatsappCopy = {
 
   askRetailBrand(category: string, brands: string[]) {
     const lines = [
-      `Claro. Para ${formatProductDisplayName(category)}, você tem alguma marca de preferência?`,
+      `Claro. Para ${formatProductDisplayName(category)}, separei as marcas mais pedidas.`,
+      "Você tem alguma marca de preferência?",
       "",
       "Marcas mais pedidas:",
     ];
@@ -405,7 +406,7 @@ export function choicePrompt() {
   return [
     "Qual opção você prefere?",
     "",
-    "Responda apenas com o número.",
+    "Digite apenas o número da opção.",
   ].join("\n");
 }
 

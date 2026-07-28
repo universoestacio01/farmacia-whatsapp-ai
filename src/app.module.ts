@@ -5,6 +5,7 @@ import { AdminModule } from "./admin/admin.module";
 import { AiModule } from "./ai/ai.module";
 import { HealthModule } from "./health/health.module";
 import { IntegrationsModule } from "./integrations/integrations.module";
+import { ObservabilityModule } from "./observability/observability.module";
 import { PaymentsModule } from "./payments/payments.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
@@ -56,6 +57,7 @@ function shouldIgnoreEnvFile() {
     PrismaModule,
     HealthModule,
     AiModule,
+    ObservabilityModule,
     IntegrationsModule,
     PaymentsModule,
     AdminModule,

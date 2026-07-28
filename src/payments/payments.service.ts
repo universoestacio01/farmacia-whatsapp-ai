@@ -1,6 +1,13 @@
 ﻿import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { OrderStatus, PaymentStatus, Prisma } from "@prisma/client";
+import {
+  OrderItemType,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from "@prisma/client";
+import { createHash } from "node:crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import {
   CreatePixPaymentInput,
@@ -54,6 +61,25 @@ interface ConfirmCheckoutResult extends CreatePaymentResult {
   totalCents: number;
 }
 
+interface OrderDelegateWithOptionalMethods {
+  findUnique?: (args: {
+    where: { checkoutKey: string };
+  }) => Promise<{ id: string } | null>;
+  findFirst?: (args: {
+    where: { checkoutKey?: string; id?: string; customerId?: string };
+  }) => Promise<{ id: string } | null>;
+}
+
+interface OrderItemDelegateWithOptionalMethods {
+  createMany?: (args: { data: Prisma.OrderItemCreateManyInput[] }) => Promise<unknown>;
+}
+
+interface PaymentDelegateWithOptionalMethods {
+  upsert?: (args: Prisma.PaymentUpsertArgs) => Promise<{ id: string }>;
+  findFirst?: (args: Prisma.PaymentFindFirstArgs) => Promise<{ id: string } | null>;
+  create?: (args: Prisma.PaymentCreateArgs) => Promise<{ id: string }>;
+}
+
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
@@ -72,6 +98,7 @@ export class PaymentsService {
     input: ConfirmCheckoutInput,
   ): Promise<ConfirmCheckoutResult> {
     const totalCents = this.calculateCartTotalCents(input.cart);
+    const checkoutKey = this.createCheckoutKey(input, totalCents);
     const customer = await this.prisma.safePrismaCall(
       "payments.customer.findUnique",
       (prisma) =>
@@ -81,7 +108,7 @@ export class PaymentsService {
     );
     const order = input.existingOrderId
       ? await this.findOrder(input.existingOrderId, input.customerId)
-      : await this.createOrder(input, totalCents);
+      : await this.findOrCreateOrder(input, totalCents, checkoutKey);
 
     const reusablePayment = await this.findReusablePayment(order.id);
 
@@ -112,6 +139,24 @@ export class PaymentsService {
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
+    let paymentIntent: { id: string };
+
+    try {
+      paymentIntent = await this.createPendingPaymentIntent(
+        order.id,
+        totalCents,
+        checkoutKey,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "erro desconhecido";
+      this.logger.error(
+        `PAYMENT INTENT CREATION FAILED: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return this.pixFailureResult(order.id, totalCents, message);
+    }
+
     let payment: PixPaymentResult;
 
     try {
@@ -130,11 +175,23 @@ export class PaymentsService {
         `SIGILOPAY PIX CREATION FAILED: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
+      await this.markPaymentIntentFailed(paymentIntent.id, message);
 
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
-    await this.persistSigiloPayPaymentSafely(order.id, totalCents, payment);
+    const persisted = await this.updateSigiloPayPaymentIntentSafely(
+      paymentIntent.id,
+      payment,
+    );
+
+    if (!persisted) {
+      return this.pixFailureResult(
+        order.id,
+        totalCents,
+        "Pix criado, mas não foi possível registrar a cobrança localmente.",
+      );
+    }
 
     return this.pixSuccessResult(order.id, totalCents, payment);
   }
@@ -245,11 +302,36 @@ export class PaymentsService {
     };
   }
 
-  private async createOrder(input: ConfirmCheckoutInput, totalCents: number) {
-    return this.prisma.safePrismaCall("payments.order.create", (prisma) =>
-      prisma.order.create({
+  private async findOrCreateOrder(
+    input: ConfirmCheckoutInput,
+    totalCents: number,
+    checkoutKey: string,
+  ) {
+    const existingOrder = await this.prisma.safePrismaCall(
+      "payments.order.findUnique.checkout_key",
+      (prisma) => {
+        const orderDelegate =
+          prisma.order as unknown as OrderDelegateWithOptionalMethods;
+
+        if (orderDelegate.findUnique) {
+          return orderDelegate.findUnique({ where: { checkoutKey } });
+        }
+
+        return orderDelegate.findFirst?.({ where: { checkoutKey } }) || null;
+      },
+      null,
+    );
+
+    if (existingOrder) {
+      return existingOrder;
+    }
+
+    return this.prisma.safePrismaCall("payments.order.create", async (prisma) => {
+      const order = await prisma.order.create({
         data: {
           customerId: input.customerId,
+          conversationId: input.conversationId,
+          checkoutKey,
           status: OrderStatus.CONFIRMED,
           totalCents,
           notes: JSON.stringify({
@@ -258,8 +340,38 @@ export class PaymentsService {
             items: input.cart,
           }),
         },
-      }),
-    );
+      });
+
+      const orderItems = input.cart.map((item) => ({
+          orderId: order.id,
+          type:
+            item.type === "retail_product"
+              ? OrderItemType.RETAIL_PRODUCT
+              : OrderItemType.MEDICINE,
+          name: item.name,
+          brand: item.brand,
+          presentation: item.presentation || item.description,
+          description: item.description,
+          quantity: item.quantity,
+          unitPriceCents: this.moneyToCents(
+            item.unitPrice || (item.total || 0) / Math.max(item.quantity, 1),
+          ),
+          totalCents: this.moneyToCents(item.total || 0),
+          imageUrl: item.imageUrl,
+          source: item.source,
+          rawPayload: this.toJson(item),
+        }));
+      const orderItemDelegate =
+        prisma.orderItem as unknown as
+          | OrderItemDelegateWithOptionalMethods
+          | undefined;
+
+      if (orderItemDelegate?.createMany) {
+        await orderItemDelegate.createMany({ data: orderItems });
+      }
+
+      return order;
+    });
   }
 
   private async findOrder(orderId: string, customerId: string) {
@@ -289,21 +401,63 @@ export class PaymentsService {
     );
   }
 
-  private async persistSigiloPayPaymentSafely(
+  private async createPendingPaymentIntent(
     orderId: string,
     totalCents: number,
+    checkoutKey: string,
+  ) {
+    return this.prisma.safePrismaCall(
+      "payments.payment.upsert.intent",
+      async (prisma) => {
+        const paymentDelegate =
+          prisma.payment as unknown as PaymentDelegateWithOptionalMethods;
+        const create = {
+          orderId,
+          method: PaymentMethod.PIX,
+          status: PaymentStatus.PENDING,
+          amountCents: totalCents,
+          amount: this.centsToMoney(totalCents),
+          provider: "sigilopay",
+          idempotencyKey: checkoutKey,
+        };
+
+        if (paymentDelegate.upsert) {
+          return paymentDelegate.upsert({
+            where: { idempotencyKey: checkoutKey },
+            update: {},
+            create,
+          });
+        }
+
+        const existing = await paymentDelegate.findFirst?.({
+          where: { idempotencyKey: checkoutKey },
+        });
+
+        if (existing) {
+          return existing;
+        }
+
+        if (!paymentDelegate.create) {
+          throw new Error("Prisma payment delegate sem create.");
+        }
+
+        return paymentDelegate.create({ data: create });
+      },
+    );
+  }
+
+  private async updateSigiloPayPaymentIntentSafely(
+    paymentId: string,
     payment: PixPaymentResult,
   ) {
     try {
       await this.prisma.safePrismaCall(
-        "payments.payment.create.sigilopay",
+        "payments.payment.update.sigilopay",
         (prisma) =>
-          prisma.payment.create({
+          prisma.payment.update({
+            where: { id: paymentId },
             data: {
-              orderId,
               status: PaymentStatus.PENDING,
-              amountCents: totalCents,
-              amount: this.centsToMoney(totalCents),
               provider: "sigilopay",
               providerPaymentId: payment.providerPaymentId,
               providerTransactionId:
@@ -318,6 +472,7 @@ export class PaymentsService {
             },
           }),
       );
+      return true;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "erro desconhecido";
@@ -325,7 +480,23 @@ export class PaymentsService {
         `SIGILOPAY PIX CREATED BUT PAYMENT PERSISTENCE FAILED: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
+      return false;
     }
+  }
+
+  private async markPaymentIntentFailed(paymentId: string, errorMessage: string) {
+    await this.prisma.safePrismaCall(
+      "payments.payment.update.intent_failed",
+      (prisma) =>
+        prisma.payment.update({
+          where: { id: paymentId },
+          data: {
+            status: PaymentStatus.FAILED,
+            rawResponse: this.toJson({ errorMessage }),
+          },
+        }),
+      undefined,
+    );
   }
 
   private pixSuccessResult(
@@ -391,8 +562,33 @@ export class PaymentsService {
     return Math.round(total * 100);
   }
 
+  private moneyToCents(value: number) {
+    return Math.round((Number(value) || 0) * 100);
+  }
+
   private centsToMoney(cents: number) {
     return Number((cents / 100).toFixed(2));
+  }
+
+  private createCheckoutKey(input: ConfirmCheckoutInput, totalCents: number) {
+    return createHash("sha256")
+      .update(
+        JSON.stringify({
+          conversationId: input.conversationId,
+          customerId: input.customerId,
+          totalCents,
+          cart: input.cart.map((item) => ({
+            type: item.type || "medicine",
+            name: item.name,
+            presentation: item.presentation || item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+            total: item.total,
+          })),
+          address: input.address,
+        }),
+      )
+      .digest("hex");
   }
 
   private resolveWebhookStatus(payload: SigiloPayWebhookEvent) {

@@ -37,4 +37,16 @@ export interface WhatsappIncomingMessage {
   text?: {
     body?: string;
   };
+  image?: {
+    id?: string;
+    mime_type?: string;
+    sha256?: string;
+    caption?: string;
+  };
+  document?: {
+    id?: string;
+    mime_type?: string;
+    filename?: string;
+    caption?: string;
+  };
 }

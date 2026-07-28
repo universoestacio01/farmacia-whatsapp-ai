@@ -202,6 +202,7 @@ export class AdminService {
           take,
           include: {
             customer: true,
+            items: true,
             payments: {
               orderBy: { createdAt: "desc" },
               take: 1,
@@ -216,6 +217,17 @@ export class AdminService {
       status: order.status,
       totalCents: order.totalCents,
       notes: this.parseOrderNotes(order.notes),
+      items: order.items.map((item) => ({
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        brand: item.brand,
+        presentation: item.presentation,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        totalCents: item.totalCents,
+        source: item.source,
+      })),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: {
@@ -245,6 +257,7 @@ export class AdminService {
           where: { id: orderId },
           include: {
             customer: true,
+            items: true,
             payments: { orderBy: { createdAt: "desc" } },
           },
         }),
@@ -260,6 +273,19 @@ export class AdminService {
       status: order.status,
       totalCents: order.totalCents,
       notes: this.parseOrderNotes(order.notes),
+      items: order.items.map((item) => ({
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        brand: item.brand,
+        presentation: item.presentation,
+        description: item.description,
+        quantity: item.quantity,
+        unitPriceCents: item.unitPriceCents,
+        totalCents: item.totalCents,
+        imageUrl: item.imageUrl,
+        source: item.source,
+      })),
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
       customer: {
@@ -433,6 +459,62 @@ export class AdminService {
         createdAt: payment.createdAt,
       })),
     };
+  }
+
+  async providerRequestLogs(limit = 50) {
+    const take = this.clampLimit(limit, 200);
+    return this.prisma.safePrismaCall(
+      "admin.provider_request_log.findMany",
+      (prisma) =>
+        prisma.providerRequestLog.findMany({
+          orderBy: { createdAt: "desc" },
+          take,
+        }),
+      [],
+    );
+  }
+
+  async webhookEvents(limit = 50) {
+    const take = this.clampLimit(limit, 200);
+    return this.prisma.safePrismaCall(
+      "admin.webhook_event.findMany",
+      (prisma) =>
+        prisma.webhookEvent.findMany({
+          orderBy: { createdAt: "desc" },
+          take,
+          select: {
+            id: true,
+            provider: true,
+            eventId: true,
+            status: true,
+            attempts: true,
+            errorMessage: true,
+            receivedAt: true,
+            processedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+      [],
+    );
+  }
+
+  async whatsappOutbox(limit = 50) {
+    const take = this.clampLimit(limit, 200);
+    return this.prisma.safePrismaCall(
+      "admin.whatsapp_outbox.findMany",
+      (prisma) =>
+        prisma.whatsappOutbox.findMany({
+          orderBy: { createdAt: "desc" },
+          take,
+          include: {
+            conversation: {
+              include: { customer: true },
+            },
+          },
+        }),
+      [],
+    );
   }
 
   medicinePriorities() {

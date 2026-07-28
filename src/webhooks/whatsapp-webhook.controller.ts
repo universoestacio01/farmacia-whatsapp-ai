@@ -15,14 +15,14 @@ import {
 import { ConfigService } from "@nestjs/config";
 import { Request } from "express";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { WhatsappService } from "../whatsapp/whatsapp.service";
+import { WhatsappWebhookQueueService } from "../whatsapp/whatsapp-webhook-queue.service";
 import { WhatsappWebhookPayload } from "./dto/whatsapp-webhook.dto";
 
 @Controller("webhooks/whatsapp")
 export class WhatsappWebhookController {
   constructor(
     private readonly configService: ConfigService,
-    private readonly whatsappService: WhatsappService,
+    private readonly whatsappWebhookQueue: WhatsappWebhookQueueService,
   ) {}
 
   @Get()
@@ -42,7 +42,7 @@ export class WhatsappWebhookController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  receiveMessage(
+  async receiveMessage(
     @Body() payload: WhatsappWebhookPayload,
     @Headers("x-hub-signature-256") signature: string | undefined,
     @Req() request: RawBodyRequest<Request>,
@@ -51,7 +51,7 @@ export class WhatsappWebhookController {
       throw new UnauthorizedException("Assinatura do webhook invalida");
     }
 
-    this.whatsappService.enqueueWebhook(payload);
+    await this.whatsappWebhookQueue.enqueue(payload);
     return { received: true };
   }
 

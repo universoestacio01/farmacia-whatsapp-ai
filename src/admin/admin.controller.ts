@@ -147,6 +147,33 @@ export class AdminController {
     return this.adminService.errors(Number(limit) || 30);
   }
 
+  @Get("provider-request-logs")
+  providerRequestLogs(
+    @Headers("x-admin-token") token?: string,
+    @Query("limit") limit?: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.providerRequestLogs(Number(limit) || 50);
+  }
+
+  @Get("webhook-events")
+  webhookEvents(
+    @Headers("x-admin-token") token?: string,
+    @Query("limit") limit?: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.webhookEvents(Number(limit) || 50);
+  }
+
+  @Get("whatsapp-outbox")
+  whatsappOutbox(
+    @Headers("x-admin-token") token?: string,
+    @Query("limit") limit?: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.whatsappOutbox(Number(limit) || 50);
+  }
+
   @Get("providers")
   providers(@Headers("x-admin-token") token?: string) {
     this.assertAuthorized(token);
@@ -189,7 +216,7 @@ export class AdminController {
     const expected = this.adminToken();
 
     if (!expected) {
-      return true;
+      return process.env.NODE_ENV !== "production";
     }
 
     return sanitizeEnv(token) === expected;
