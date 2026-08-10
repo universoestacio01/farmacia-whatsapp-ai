@@ -11,9 +11,16 @@ const {
   DEFAULT_MEDICINE_PRIORITY_RULES,
 } = require("../dist/config/medicine-priority-rules.config");
 
-function option(productName, displayName, substance, dosage, presentation) {
+function option(
+  productName,
+  displayName,
+  substance,
+  dosage,
+  presentation,
+  source = "pharmadb",
+) {
   return {
-    source: "pharmadb",
+    source,
     sourceId: `${productName}-${dosage}-${presentation}`,
     productName,
     displayName,
@@ -26,12 +33,12 @@ function option(productName, displayName, substance, dosage, presentation) {
   };
 }
 
-function createOrchestrator(pharmaSearch) {
+function createOrchestrator(pharmaSearch, manualSearch = async () => []) {
   const selector = new CommercialMedicineSelector();
   const config = { get: (name) => (name === "MEDICINE_PRIMARY_PROVIDER" ? "pharmadb" : undefined) };
   const pharmaDb = { search: pharmaSearch };
   const bulaApi = { lookupMedicine: async () => null };
-  const manual = { search: async () => [], findSymptomOptions: () => null };
+  const manual = { search: manualSearch, findSymptomOptions: () => null };
   const priorityRules = {
     getRulesForPrinciple: async (principle) =>
       DEFAULT_MEDICINE_PRIORITY_RULES.filter(
@@ -50,6 +57,135 @@ function createOrchestrator(pharmaSearch) {
       priorityRules,
     ),
   };
+}
+
+async function testRetailCurationPreferredOverRawApi() {
+  const { orchestrator } = createOrchestrator(
+    async (term) => {
+      if (term === "dipirona" || term === "novalgina") {
+        return [
+          option(
+            "Lqfex - Dipirona",
+            "Lqfex - Dipirona Comprimido 500mg",
+            "dipirona",
+            "500mg",
+            "500 MG COM CT BL X 20",
+          ),
+          option(
+            "Dipirona Sodica",
+            "Dipirona Sodica Sol Inj",
+            "dipirona",
+            "500mg/ml",
+            "500 MG/ML SOL INJ CX 100 AMP VD AMB X 2 ML",
+          ),
+          option(
+            "Novalgina",
+            "Novalgina Comprimido 1g",
+            "dipirona",
+            "1g",
+            "1 G COM CT BL X 10",
+          ),
+        ];
+      }
+
+      return [];
+    },
+    async (query) => {
+      const canonical = new CommercialMedicineSelector().getCanonicalMedicineName(query);
+
+      if (canonical !== "dipirona") {
+        return [];
+      }
+
+      return [
+        option(
+          "Novalgina",
+          "Novalgina Comprimido 500mg",
+          "dipirona",
+          "500mg",
+          "500 MG COM CT BL X 10",
+          "popular_manual",
+        ),
+        option(
+          "Dipirona",
+          "Dipirona genérica Comprimido 500mg",
+          "dipirona",
+          "500mg",
+          "500 MG COM CT BL X 10",
+          "popular_manual",
+        ),
+        option(
+          "Novalgina",
+          "Novalgina Gotas / solução oral",
+          "dipirona",
+          "500mg/ml",
+          "500 MG/ML SOL OR CT FR GOT X 20 ML",
+          "popular_manual",
+        ),
+      ];
+    },
+  );
+
+  const summary = await orchestrator.searchMedicine("Preciso de dipirona");
+  const labels = summary.options.map((item) => item.label).join(" | ");
+
+  assert.match(labels, /Novalgina Comprimido 500mg/i);
+  assert.match(labels, /Dipirona Genérica Comprimido 500mg/i);
+  assert.match(labels, /Gotas|solução oral/i);
+  assert.doesNotMatch(labels, /Lqfex|Sol Inj|Amp/i);
+}
+
+async function testDorflexRetailLabels() {
+  const { orchestrator } = createOrchestrator(
+    async (term) => {
+      if (term === "dorflex") {
+        return [
+          option(
+            "Dorflex",
+            "Dorflex",
+            "dorflex",
+            "35mg",
+            "(35 + 300 + 50) MG COM CT BL X 8",
+          ),
+        ];
+      }
+
+      return [];
+    },
+    async () => [
+      option(
+        "Dorflex",
+        "Dorflex Comprimido",
+        "dorflex",
+        undefined,
+        "(35 + 300 + 50) MG COM CT BL X 8",
+        "popular_manual",
+      ),
+      option(
+        "Dorflex",
+        "Dorflex Comprimido",
+        "dorflex",
+        undefined,
+        "(35 + 300 + 50) MG COM CT BL X 16",
+        "popular_manual",
+      ),
+      option(
+        "Dorflex Uno",
+        "Dorflex Uno 1g",
+        "dorflex",
+        "1g",
+        "1 G COM CT BL X 10",
+        "popular_manual",
+      ),
+    ],
+  );
+
+  const summary = await orchestrator.searchMedicine("Tem dorflex?");
+  const labels = summary.options.map((item) => item.label).join(" | ");
+
+  assert.match(labels, /Dorflex Comprimido/i);
+  assert.match(labels, /Dorflex Uno 1g/i);
+  assert.doesNotMatch(labels, /35mg/i);
 }
 
 async function testParser() {
@@ -303,6 +439,8 @@ function response(body, status = 200) {
 
 async function run() {
   await testParser();
+  await testRetailCurationPreferredOverRawApi();
+  await testDorflexRetailLabels();
   await testSearchFallbacksAndRanking();
   await testPharmaDbPagination();
   await testConfigurableCommercialRanking();

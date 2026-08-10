@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+﻿import { Injectable } from "@nestjs/common";
 import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 
@@ -40,6 +40,7 @@ export interface SelectorOption {
   label?: string;
   pricePf?: number;
   selectionReason?: string;
+  source?: string;
 }
 
 export interface PackageInfo {
@@ -378,12 +379,6 @@ export class CommercialMedicineSelector {
   private getPresentationGroupFromText(text: string) {
     if (/\bcomprim|\bcom\b/.test(text)) return "comprimido";
     if (/\bcaps|\bcap\b/.test(text)) return "capsula";
-    if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
-    if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text)) {
-      return "solucao oral";
-    }
-    if (/\bsuspensao oral\b|\bsusp oral\b/.test(text)) return "suspensao oral";
-    if (/\bxarope\b/.test(text)) return "xarope";
     if (
       /\bsolucao nasal\b|\bsol nasal\b|\bsol nas\b|\bsoro fisiologico nasal\b|\bnasal\b/.test(
         text,
@@ -391,6 +386,12 @@ export class CommercialMedicineSelector {
     ) {
       return "solucao nasal";
     }
+    if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
+    if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text)) {
+      return "solucao oral";
+    }
+    if (/\bsuspensao oral\b|\bsusp oral\b/.test(text)) return "suspensao oral";
+    if (/\bxarope\b/.test(text)) return "xarope";
     if (/\bpomada\b/.test(text)) return "pomada";
     if (/\bcreme\b/.test(text)) return "creme";
     if (/\bgel\b/.test(text)) return "gel";
@@ -499,6 +500,17 @@ export class CommercialMedicineSelector {
         : "maior aderência ao produto pesquisado",
     );
 
+    if (hasConfiguredRules) {
+      for (const item of scored.filter((candidate) => candidate.configPriority > 0)) {
+        if (selected.length >= 3) break;
+        pick(
+          item,
+          "prioridade_comercial",
+          "apresentacao priorizada na configuracao comercial",
+        );
+      }
+    }
+
     pick(
       this.findCheapest(scored, selected),
       "menor_preco",
@@ -597,10 +609,18 @@ export class CommercialMedicineSelector {
     priorityRules: MedicinePriorityRuleConfig[],
   ): RankedOption<T> {
     const genericScore = this.genericRankingScore(medicineName, option);
+    const curationScore = this.retailCurationScore(medicineName, option);
     const config = this.priorityRuleScore(option, priorityRules);
-    const score = this.optionScore(medicineName, option) + genericScore + config.score;
+    const score =
+      this.optionScore(medicineName, option) +
+      genericScore +
+      curationScore.score +
+      config.score;
     const category = config.score > 0 ? "prioridade_configurada" : "ranking_generico";
-    const reason = config.reason || "pontuação por relevância, preço e embalagem";
+    const reason =
+      config.reason ||
+      curationScore.reason ||
+      "pontuacao por relevancia, preco e embalagem";
 
     return {
       option,
@@ -678,6 +698,88 @@ export class CommercialMedicineSelector {
     return true;
   }
 
+  private retailCurationScore(medicineName: string, option: SelectorOption) {
+    const canonical = this.getCanonicalMedicineName(medicineName);
+    const text = this.normalize(
+      [
+        option.productName,
+        option.label,
+        option.medicineName,
+        option.strength,
+        option.packageInfo?.formGroup,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+    let score = 0;
+    const reasons: string[] = [];
+
+    if (
+      option.source === "popular_manual" ||
+      this.normalize(option.selectionReason || "").includes("popular_manual")
+    ) {
+      score += 6000;
+      reasons.push("catalogo popular curado");
+    }
+
+    if (/\b(sol inj|inj|injetavel|ampola|amp|hospitalar|iv|im)\b/.test(text)) {
+      score -= 8000;
+      reasons.push("apresentacao hospitalar ou injetavel evitada no varejo");
+    }
+
+    if (option.packageInfo?.unitCount && option.packageInfo.unitCount > 60) {
+      score -= 2500;
+      reasons.push("embalagem grande demais para venda comum");
+    }
+
+    if (canonical === "dipirona") {
+      if (this.optionHasBrand(option, "novalgina") && this.optionMatchesDosageMg(option, 500)) {
+        score += 900;
+        reasons.push("Novalgina 500mg priorizada para varejo");
+      }
+
+      if (this.isGenericOption(option, canonical) && this.optionMatchesDosageMg(option, 500)) {
+        score += 700;
+        reasons.push("dipirona generica 500mg priorizada");
+      }
+
+      if (["gotas", "solucao oral"].includes(option.formGroup)) {
+        score += 500;
+        reasons.push("gotas ou solucao oral mantida como variacao popular");
+      }
+
+      if (this.optionHasBrand(option, "lqfex")) {
+        score -= 1800;
+        reasons.push("marca menos comum ficou abaixo das opcoes populares");
+      }
+    }
+
+    if (canonical === "dorflex") {
+      if (this.optionHasBrand(option, "dorflex") && option.formGroup === "comprimido") {
+        score += 850;
+        reasons.push("Dorflex comprimido priorizado");
+      }
+
+      if (
+        this.optionHasBrand(option, "dorflex") &&
+        ["gotas", "solucao oral"].includes(option.formGroup)
+      ) {
+        score += 500;
+        reasons.push("Dorflex gotas mantido como variacao popular");
+      }
+    }
+
+    if (canonical === "neosoro" && option.formGroup === "solucao nasal") {
+      score += 800;
+      reasons.push("solucao nasal priorizada para Neosoro");
+    }
+
+    return {
+      score,
+      reason: reasons.join("; "),
+    };
+  }
+
   private genericRankingScore(medicineName: string, option: SelectorOption) {
     const canonical = this.getCanonicalMedicineName(medicineName);
     let score = 0;
@@ -717,9 +819,8 @@ export class CommercialMedicineSelector {
     scored: Array<RankedOption<T>>,
     selected: Array<RankedOption<T>>,
   ) {
-    return scored
+    return this.selectableCandidates(scored, selected)
       .filter((item) => item.totalPrice !== undefined)
-      .filter((item) => !this.isAlreadyPicked(selected, item))
       .sort((a, b) => (a.totalPrice ?? Infinity) - (b.totalPrice ?? Infinity))[0];
   }
 
@@ -727,9 +828,8 @@ export class CommercialMedicineSelector {
     scored: Array<RankedOption<T>>,
     selected: Array<RankedOption<T>>,
   ) {
-    return scored
+    return this.selectableCandidates(scored, selected)
       .filter((item) => item.unitPrice !== undefined)
-      .filter((item) => !this.isAlreadyPicked(selected, item))
       .sort((a, b) => (a.unitPrice ?? Infinity) - (b.unitPrice ?? Infinity))[0];
   }
 
@@ -737,7 +837,17 @@ export class CommercialMedicineSelector {
     scored: Array<RankedOption<T>>,
     selected: Array<RankedOption<T>>,
   ) {
-    return scored.find((item) => !this.isAlreadyPicked(selected, item));
+    return this.selectableCandidates(scored, selected)[0];
+  }
+
+  private selectableCandidates<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    const candidates = scored.filter((item) => !this.isAlreadyPicked(selected, item));
+    const nonNegative = candidates.filter((item) => item.score >= 0);
+
+    return nonNegative.length > 0 ? nonNegative : candidates;
   }
 
   private isAlreadyPicked<T extends SelectorOption>(
@@ -1323,3 +1433,4 @@ export class CommercialMedicineSelector {
       .toLowerCase();
   }
 }
+

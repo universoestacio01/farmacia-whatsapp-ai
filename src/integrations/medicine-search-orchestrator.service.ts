@@ -219,10 +219,6 @@ export class MedicineSearchOrchestratorService {
     manualQuery: string,
     summary: MedicineLookupSummary,
   ) {
-    if (this.hasEnoughDistinctOptions(summary.options)) {
-      return summary;
-    }
-
     const manualOptions = await this.popularManualService.search(manualQuery);
 
     if (manualOptions.length === 0) {
@@ -234,8 +230,8 @@ export class MedicineSearchOrchestratorService {
       manualOptions,
     );
     const merged = this.dedupeCommercialOptions([
-      ...summary.options,
       ...manualSelected,
+      ...summary.options,
     ]);
     const priorityRules =
       await this.priorityRulesService.getRulesForPrinciple(canonicalQuery);
@@ -246,7 +242,7 @@ export class MedicineSearchOrchestratorService {
     );
 
     this.logger.log(
-      `BACKFILL CATÁLOGO MANUAL: medicamento=${canonicalQuery} antes=${summary.options.length} depois=${ranking.selected.length}`,
+      `CURADORIA CATALOGO POPULAR: medicamento=${canonicalQuery} api=${summary.options.length} manual=${manualSelected.length} final=${ranking.selected.length}`,
     );
 
     return {
@@ -256,31 +252,6 @@ export class MedicineSearchOrchestratorService {
         optionId: index + 1,
       })),
     };
-  }
-
-  private hasEnoughDistinctOptions(options: CommercialMedicineOption[]) {
-    if (options.length < 3) {
-      return false;
-    }
-
-    return this.distinctOptionSignatures(options).size >= 3;
-  }
-
-  private distinctOptionSignatures(options: CommercialMedicineOption[]) {
-    return new Set(
-      options.map((option) =>
-        this.normalize(
-          [
-            option.formGroup,
-            option.strength,
-            option.packageInfo?.unitCount,
-            option.packageInfo?.volumeMl,
-          ]
-            .filter(Boolean)
-            .join("|"),
-        ).replace(/\s+/g, ""),
-      ),
-    );
   }
 
   private dedupeCommercialOptions(options: CommercialMedicineOption[]) {
@@ -455,6 +426,7 @@ export class MedicineSearchOrchestratorService {
         packageInfo,
         pricePf: this.calculateSalePrice(option),
         selectionReason: `fonte ${option.source}`,
+        source: option.source,
       } satisfies CommercialMedicineOption;
     });
 
@@ -603,11 +575,13 @@ export class MedicineSearchOrchestratorService {
 
     if (/\bcomprim/.test(normalized)) return "comprimido";
     if (/\bcaps/.test(normalized)) return "capsula";
+    if (/\bsolucao nasal\b|\bsol nas\b|\bnasal\b/.test(normalized)) {
+      return "solucao nasal";
+    }
     if (/\bgotas?\b/.test(normalized)) return "gotas";
     if (/\bsolucao oral\b|\boral\b/.test(normalized)) return "solucao oral";
     if (/\bsuspensao\b/.test(normalized)) return "suspensao oral";
     if (/\bxarope\b/.test(normalized)) return "xarope";
-    if (/\bsolucao nasal\b|\bnasal\b/.test(normalized)) return "solucao nasal";
     if (/\bpomada\b/.test(normalized)) return "pomada";
     if (/\bcreme\b/.test(normalized)) return "creme";
     if (/\bgel\b/.test(normalized)) return "gel";
