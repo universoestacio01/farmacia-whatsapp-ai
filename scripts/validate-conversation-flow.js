@@ -259,7 +259,7 @@ function createEngine(conversation, options = {}) {
         return {
           orderId: "order_conversation_flow",
           totalCents,
-          provider: "static_pix",
+          provider: "pix_direct",
           status: "failed",
           manualFallback: false,
           pixCreationFailed: true,
@@ -269,7 +269,7 @@ function createEngine(conversation, options = {}) {
         id: "order_conversation_flow",
         payments: [
           {
-            provider: "static_pix",
+            provider: "pix_direct",
             status: options.paid ? "PAID" : "PENDING",
             amountCents: totalCents,
             pixCopyPaste: "000201PIXTESTE",
@@ -279,7 +279,7 @@ function createEngine(conversation, options = {}) {
       return {
         orderId: "order_conversation_flow",
         totalCents,
-        provider: "static_pix",
+        provider: "pix_direct",
         status: "pending",
         pixCopyPaste: "000201PIXTESTE",
         manualFallback: false,
@@ -371,8 +371,7 @@ function assertPixMessageSet(reply) {
   assert.equal(Array.isArray(reply), true);
   assert.equal(reply.length, 3);
   assert.match(reply[0], /Pedido confirmado/);
-  assert.match(reply[0], /Pix estático/);
-  assert.match(reply[0], /valor acima/);
+  assert.match(reply[0], /valor já está preenchido/);
   assert.equal(reply[1], "000201PIXTESTE");
   assert.doesNotMatch(reply[1], /[\r\n\t]/);
   assert.match(reply[2], /responda “paguei”/);

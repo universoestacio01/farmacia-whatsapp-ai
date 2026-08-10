@@ -17,8 +17,8 @@ import {
   NormalizedPaymentStatus,
   SigiloPayWebhookEvent,
 } from "./payment.types";
+import { DirectPixService } from "./direct-pix.service";
 import { SigiloPayService } from "./sigilopay.service";
-import { StaticPixService } from "./static-pix.service";
 
 interface CheckoutCartItem {
   type?: "medicine" | "retail_product";
@@ -86,11 +86,11 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sigiloPayService: SigiloPayService,
-    private readonly staticPixService: StaticPixService,
+    private readonly directPixService: DirectPixService,
   ) {}
 
   createPixPayment(input: CreatePixPaymentInput): Promise<PixPaymentResult> {
-    return this.staticPixService.createPayment(input);
+    return this.directPixService.createPayment(input);
   }
 
   async confirmCheckout(
@@ -108,7 +108,7 @@ export class PaymentsService {
       return {
         orderId: order.id,
         totalCents,
-        provider: "static_pix",
+        provider: "pix_direct",
         status: this.toNormalizedStatus(reusablePayment.status),
         providerTransactionId:
           reusablePayment.providerTransactionId ||
@@ -124,16 +124,16 @@ export class PaymentsService {
       };
     }
 
-    if (!this.staticPixService.isConfigured()) {
-      const message = "Pix estatico nao configurado.";
-      this.logger.error(`STATIC PIX CONFIGURATION FAILED: ${message}`);
+    if (!this.directPixService.isConfigured()) {
+      const message = "Pix direto nao configurado.";
+      this.logger.error(`DIRECT PIX CONFIGURATION FAILED: ${message}`);
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
     let payment: PixPaymentResult;
 
     try {
-      payment = await this.staticPixService.createPayment({
+      payment = await this.directPixService.createPayment({
         orderId: order.id,
         amountCents: totalCents,
       });
@@ -141,14 +141,14 @@ export class PaymentsService {
       const message =
         error instanceof Error ? error.message : "erro desconhecido";
       this.logger.error(
-        `STATIC PIX PREPARATION FAILED: ${message}`,
+        `DIRECT PIX GENERATION FAILED: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
     try {
-      await this.createStaticPixPaymentIntent(
+      await this.createDirectPixPaymentIntent(
         order.id,
         totalCents,
         checkoutKey,
@@ -159,7 +159,7 @@ export class PaymentsService {
       const message =
         error instanceof Error ? error.message : "erro desconhecido";
       this.logger.error(
-        `STATIC PIX PERSISTENCE FAILED: ${message}`,
+        `DIRECT PIX PERSISTENCE FAILED: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
       return this.pixFailureResult(order.id, totalCents, message);
@@ -361,7 +361,7 @@ export class PaymentsService {
         prisma.payment.findFirst({
           where: {
             orderId,
-            provider: "static_pix",
+            provider: "pix_direct",
             status: PaymentStatus.PENDING,
             OR: [
               { pixCopyPaste: { not: null } },
@@ -373,14 +373,14 @@ export class PaymentsService {
     );
   }
 
-  private async createStaticPixPaymentIntent(
+  private async createDirectPixPaymentIntent(
     orderId: string,
     totalCents: number,
     checkoutKey: string,
     payment: PixPaymentResult,
   ) {
     return this.prisma.safePrismaCall(
-      "payments.payment.upsert.static_pix",
+      "payments.payment.upsert.pix_direct",
       async (prisma) => {
         const paymentDelegate =
           prisma.payment as unknown as PaymentDelegateWithOptionalMethods;
@@ -390,8 +390,10 @@ export class PaymentsService {
           status: PaymentStatus.PENDING,
           amountCents: totalCents,
           amount: this.centsToMoney(totalCents),
-          provider: "static_pix",
+          provider: "pix_direct",
           idempotencyKey: checkoutKey,
+          providerPaymentId: payment.providerPaymentId,
+          providerTransactionId: payment.providerTransactionId,
           pixPayload: payment.pixPayload || payment.pixCopyPaste,
           pixCopyPaste: payment.pixCopyPaste || payment.pixPayload,
           rawResponse: this.toJson(payment.rawResponse),
@@ -404,9 +406,9 @@ export class PaymentsService {
               status: PaymentStatus.PENDING,
               amountCents: totalCents,
               amount: this.centsToMoney(totalCents),
-              provider: "static_pix",
-              providerPaymentId: null,
-              providerTransactionId: null,
+              provider: "pix_direct",
+              providerPaymentId: payment.providerPaymentId,
+              providerTransactionId: payment.providerTransactionId,
               pixPayload: payment.pixPayload || payment.pixCopyPaste,
               pixCopyPaste: payment.pixCopyPaste || payment.pixPayload,
               pixQrCode: null,
@@ -456,7 +458,7 @@ export class PaymentsService {
     return {
       orderId,
       totalCents,
-      provider: "static_pix",
+      provider: "pix_direct",
       status: "pending",
       providerTransactionId:
         payment.providerTransactionId || payment.providerPaymentId,
@@ -477,7 +479,7 @@ export class PaymentsService {
     return {
       orderId,
       totalCents,
-      provider: "static_pix",
+      provider: "pix_direct",
       status: "failed",
       manualFallback: false,
       pixCreationFailed: true,

@@ -1,4 +1,4 @@
-export type PaymentProvider = "static_pix" | "sigilopay" | "manual";
+export type PaymentProvider = "pix_direct" | "sigilopay" | "manual";
 
 export type NormalizedPaymentStatus =
   | "pending"

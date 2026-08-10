@@ -771,7 +771,7 @@ export class ConversationEngineService {
 
     const pixCopyPaste = payment.pixCopyPaste || payment.pixPayload;
 
-    if (payment.provider === "static_pix" && pixCopyPaste) {
+    if (payment.provider === "pix_direct" && pixCopyPaste) {
       return this.formatPixResendReply(pixCopyPaste);
     }
 
@@ -790,7 +790,7 @@ export class ConversationEngineService {
       "",
       "Vou te enviar o Pix Copia e Cola na próxima mensagem.",
       "",
-      "Como este é um Pix estático, informe no aplicativo do banco exatamente o valor acima.",
+      "O valor já está preenchido no código. Basta copiar e pagar.",
     ].join("\n");
 
     const deliveryInfo = [
@@ -813,7 +813,7 @@ export class ConversationEngineService {
       [
         "Claro, vou reenviar o Pix Copia e Cola na próxima mensagem.",
         "",
-        "Informe no aplicativo do banco o valor exato do pedido.",
+        "O valor do pedido já está preenchido no código.",
       ].join("\n"),
       this.normalizePixCopyPaste(pixCopyPaste),
       "Depois de pagar, responda “paguei”. Nossa equipe vai conferir o pagamento.",

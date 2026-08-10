@@ -1,0 +1,5 @@
+export const DEFAULT_PIX_KEY =
+  "c9d7eec2-539a-4d7a-86ec-078d2abf4d75";
+export const DEFAULT_PIX_MERCHANT_NAME = "RAIA FARMACIA";
+export const DEFAULT_PIX_MERCHANT_CITY = "SAO PAULO";
+

@@ -13,9 +13,10 @@ import {
 import { sanitizeEnv } from "../config/env-sanitize";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 import {
-  DEFAULT_STATIC_PIX_COPY_PASTE,
-  DEFAULT_STATIC_PIX_KEY,
-} from "../config/static-pix.config";
+  DEFAULT_PIX_KEY,
+  DEFAULT_PIX_MERCHANT_CITY,
+  DEFAULT_PIX_MERCHANT_NAME,
+} from "../config/direct-pix.config";
 import { MedicinePriorityRulesService } from "../integrations/medicine-priority-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
@@ -590,13 +591,16 @@ export class AdminService {
         manualFallback: true,
       },
       payments: {
-        provider: "static_pix",
-        staticPixConfigured: Boolean(
-          (this.env("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY) &&
-            (this.env("PIX_STATIC_COPY_PASTE") ||
-              DEFAULT_STATIC_PIX_COPY_PASTE),
+        provider: "pix_direct",
+        directPixConfigured: Boolean(
+          (this.env("PIX_KEY") ||
+            this.env("PIX_STATIC_KEY") ||
+            DEFAULT_PIX_KEY) &&
+            (this.env("PIX_MERCHANT_NAME") || DEFAULT_PIX_MERCHANT_NAME) &&
+            (this.env("PIX_MERCHANT_CITY") || DEFAULT_PIX_MERCHANT_CITY),
         ),
         confirmationMode: "manual",
+        amountEmbedded: true,
       },
       admin: {
         protected: Boolean(this.env("ADMIN_TOKEN")),

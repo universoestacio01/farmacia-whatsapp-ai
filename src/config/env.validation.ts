@@ -1,9 +1,10 @@
 ﻿import { z } from "zod";
-import { sanitizeEnv } from "./env-sanitize";
 import {
-  DEFAULT_STATIC_PIX_COPY_PASTE,
-  DEFAULT_STATIC_PIX_KEY,
-} from "./static-pix.config";
+  DEFAULT_PIX_KEY,
+  DEFAULT_PIX_MERCHANT_CITY,
+  DEFAULT_PIX_MERCHANT_NAME,
+} from "./direct-pix.config";
+import { sanitizeEnv } from "./env-sanitize";
 
 const sanitizedOptionalString = z.preprocess((value) => {
   const sanitized = sanitizeEnv(value);
@@ -100,13 +101,11 @@ const envSchema = z.object({
   COSMOS_PRICE_MULTIPLIER: z.coerce.number().positive().default(1),
   COSMOS_CACHE_TTL_HOURS: z.coerce.number().positive().default(24),
   COSMOS_TOKEN_429_COOLDOWN_MINUTES: z.coerce.number().positive().default(30),
-  PIX_PROVIDER: sanitizedString.default("static_pix"),
-  PIX_STATIC_KEY: sanitizedString.default(DEFAULT_STATIC_PIX_KEY),
-  PIX_STATIC_COPY_PASTE: sanitizedString.default(
-    DEFAULT_STATIC_PIX_COPY_PASTE,
-  ),
-  PIX_MERCHANT_NAME: z.string().trim().optional(),
-  PIX_MERCHANT_CITY: z.string().trim().optional(),
+  PIX_PROVIDER: sanitizedString.default("pix_direct"),
+  PIX_KEY: sanitizedString.default(DEFAULT_PIX_KEY),
+  PIX_STATIC_KEY: sanitizedOptionalString,
+  PIX_MERCHANT_NAME: sanitizedString.default(DEFAULT_PIX_MERCHANT_NAME),
+  PIX_MERCHANT_CITY: sanitizedString.default(DEFAULT_PIX_MERCHANT_CITY),
   SIGILOPAY_API_BASE_URL: z.preprocess(
     (value) => sanitizeEnv(value),
     z.string().url(),

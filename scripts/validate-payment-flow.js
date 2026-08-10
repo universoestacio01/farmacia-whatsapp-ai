@@ -1,13 +1,15 @@
 const assert = require("node:assert/strict");
 const { Logger } = require("@nestjs/common");
 const { OrderStatus, PaymentStatus } = require("@prisma/client");
+const { DirectPixService } = require("../dist/payments/direct-pix.service");
 const { PaymentsService } = require("../dist/payments/payments.service");
-const { StaticPixService } = require("../dist/payments/static-pix.service");
+const {
+  isValidPixBrCodeCrc,
+} = require("../dist/utils/pix-br-code.util");
 
 Logger.overrideLogger(false);
 
-const STATIC_PIX =
-  "00020126580014BR.GOV.BCB.PIX0136c9d7eec2-539a-4d7a-86ec-078d2abf4d755204000053039865802BR5913RAIA FARMACIA6009SAO PAULO62070503***6304CA36";
+const PIX_KEY = "c9d7eec2-539a-4d7a-86ec-078d2abf4d75";
 
 function config(values = {}) {
   return {
@@ -122,11 +124,12 @@ function legacySigiloPayStub() {
   };
 }
 
-function staticPixService() {
-  return new StaticPixService(
+function directPixService() {
+  return new DirectPixService(
     config({
-      PIX_STATIC_KEY: "c9d7eec2-539a-4d7a-86ec-078d2abf4d75",
-      PIX_STATIC_COPY_PASTE: STATIC_PIX,
+      PIX_KEY,
+      PIX_MERCHANT_NAME: "RAIA FARMACIA",
+      PIX_MERCHANT_CITY: "SAO PAULO",
     }),
   );
 }
@@ -145,42 +148,46 @@ async function run() {
   const service = new PaymentsService(
     prisma,
     legacySigiloPayStub(),
-    staticPixService(),
+    directPixService(),
   );
 
   const payment = await service.confirmCheckout({
-    conversationId: "conv_static_pix",
+    conversationId: "conv_direct_pix",
     customerId: "customer_1",
     cart,
   });
 
-  assert.equal(payment.provider, "static_pix");
+  assert.equal(payment.provider, "pix_direct");
   assert.equal(payment.status, "pending");
-  assert.equal(payment.pixCopyPaste, STATIC_PIX);
+  assert.equal(isValidPixBrCodeCrc(payment.pixCopyPaste), true);
+  assert.match(payment.pixCopyPaste, /54049\.98/);
+  assert.match(payment.pixCopyPaste, new RegExp(PIX_KEY));
   assert.equal(payment.paymentUrl, undefined);
-  assert.equal(payment.providerTransactionId, undefined);
+  assert.match(payment.providerTransactionId, /^RD[A-F0-9]{23}$/);
   assert.equal(prisma.payments.length, 1);
-  assert.equal(prisma.payments[0].provider, "static_pix");
+  assert.equal(prisma.payments[0].provider, "pix_direct");
   assert.equal(prisma.payments[0].status, PaymentStatus.PENDING);
   assert.equal(prisma.orders[0].status, OrderStatus.PENDING_PAYMENT_MANUAL);
 
   const reused = await service.confirmCheckout({
-    conversationId: "conv_static_pix",
+    conversationId: "conv_direct_pix",
     customerId: "customer_1",
     cart,
     existingOrderId: payment.orderId,
   });
 
-  assert.equal(reused.pixCopyPaste, STATIC_PIX);
+  assert.equal(reused.pixCopyPaste, payment.pixCopyPaste);
   assert.equal(prisma.payments.length, 1);
 
-  const directStaticPix = await staticPixService().createPayment({
+  const directPix = await directPixService().createPayment({
     orderId: "order_direct",
     amountCents: 200,
   });
-  assert.equal(directStaticPix.provider, "static_pix");
-  assert.equal(directStaticPix.pixCopyPaste, STATIC_PIX);
-  assert.equal(directStaticPix.rawResponse.automaticConfirmation, false);
+  assert.equal(directPix.provider, "pix_direct");
+  assert.match(directPix.pixCopyPaste, /54042\.00/);
+  assert.equal(isValidPixBrCodeCrc(directPix.pixCopyPaste), true);
+  assert.equal(directPix.rawResponse.amountCents, 200);
+  assert.equal(directPix.rawResponse.automaticConfirmation, false);
 
   const failingPrisma = new FakePrisma();
   failingPrisma.payment.upsert = async () => {
@@ -189,18 +196,18 @@ async function run() {
   const failingService = new PaymentsService(
     failingPrisma,
     legacySigiloPayStub(),
-    staticPixService(),
+    directPixService(),
   );
   const failed = await failingService.confirmCheckout({
     conversationId: "conv_failure",
     customerId: "customer_1",
     cart,
   });
-  assert.equal(failed.provider, "static_pix");
+  assert.equal(failed.provider, "pix_direct");
   assert.equal(failed.pixCreationFailed, true);
   assert.equal(failed.pixCopyPaste, undefined);
 
-  console.log("Static Pix payment flow validations passed.");
+  console.log("Direct Pix payment flow validations passed.");
 }
 
 run().catch((error) => {

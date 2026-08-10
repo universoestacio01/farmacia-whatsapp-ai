@@ -1,17 +1,17 @@
 import { Module } from "@nestjs/common";
 import { PIX_PROVIDER } from "./pix/pix-provider.interface";
+import { DirectPixService } from "./direct-pix.service";
 import { PaymentsService } from "./payments.service";
 import { SigiloPayService } from "./sigilopay.service";
-import { StaticPixService } from "./static-pix.service";
 
 @Module({
   providers: [
     PaymentsService,
     SigiloPayService,
-    StaticPixService,
+    DirectPixService,
     {
       provide: PIX_PROVIDER,
-      useExisting: StaticPixService,
+      useExisting: DirectPixService,
     },
   ],
   exports: [PaymentsService],

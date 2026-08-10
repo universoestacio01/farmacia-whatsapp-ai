@@ -1,6 +1,6 @@
 ﻿# farmacia-whatsapp-ai
 
-API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix estático.
+API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix direto.
 
 ## Stack
 
@@ -10,7 +10,7 @@ API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, 
 - OpenAI
 - BulaAPI
 - ViaCEP
-- Pix estático da conta da empresa com confirmação manual
+- Pix direto com valor e identificador gerados para cada pedido
 
 ## Requisitos
 
@@ -47,9 +47,10 @@ Copie `.env.example` para `.env` e ajuste:
 - `WHATSAPP_APP_SECRET`: segredo do app da Meta, usado para validar o header `X-Hub-Signature-256` nos webhooks recebidos.
 - `OPENAI_API_KEY`: chave da OpenAI.
 - `BULA_API_BASE_URL`: URL base da Bulapi, por padrão `https://bulapi.com.br/api/v1`.
-- `PIX_PROVIDER`: use `static_pix`.
-- `PIX_STATIC_KEY`: chave Pix aleatória da empresa.
-- `PIX_STATIC_COPY_PASTE`: código Pix estático enviado ao cliente.
+- `PIX_PROVIDER`: use `pix_direct`.
+- `PIX_KEY`: chave Pix aleatória da empresa.
+- `PIX_MERCHANT_NAME`: nome do recebedor usado no código Pix.
+- `PIX_MERCHANT_CITY`: cidade do recebedor usada no código Pix.
 
 ## Configuracao do webhook na Meta
 
@@ -112,7 +113,7 @@ src/
 
 ## Pix
 
-Quando o cliente confirma o pedido no WhatsApp, o sistema registra um pagamento pendente e envia o Pix estático da empresa. O código não inclui o valor do pedido, por isso o cliente deve informar no aplicativo do banco o total exibido no WhatsApp.
+Quando o cliente confirma o pedido no WhatsApp, o sistema registra um pagamento pendente e gera localmente um Pix Copia e Cola com o valor exato e um identificador único do pedido. Nenhuma API bancária ou gateway é chamada.
 
 ```text
 Pedido confirmado.
@@ -121,5 +122,5 @@ Total: R$ XX,XX
 Vou te enviar o Pix Copia e Cola na próxima mensagem.
 ```
 
-Como o Pix é estático, não existe callback de aprovação. Depois do pagamento, o cliente responde `paguei` e a equipe confere o recebimento. No painel administrativo, altere o status do pedido para `PAID`; o pagamento pendente será atualizado junto.
+Como não existe integração bancária para consulta do recebimento, a aprovação continua manual. Depois do pagamento, o cliente responde `paguei` e a equipe confere o recebimento. No painel administrativo, altere o status do pedido para `PAID`; o pagamento pendente será atualizado junto.
 

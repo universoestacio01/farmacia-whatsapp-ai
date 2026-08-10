@@ -2,11 +2,12 @@
 import { ConfigService } from "@nestjs/config";
 import { existsSync } from "node:fs";
 import { ModuleRef } from "@nestjs/core";
-import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import {
-  DEFAULT_STATIC_PIX_COPY_PASTE,
-  DEFAULT_STATIC_PIX_KEY,
-} from "../config/static-pix.config";
+  DEFAULT_PIX_KEY,
+  DEFAULT_PIX_MERCHANT_CITY,
+  DEFAULT_PIX_MERCHANT_NAME,
+} from "../config/direct-pix.config";
+import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Controller("health")
@@ -41,10 +42,11 @@ export class HealthController {
       status: "ok",
       primaryProvider,
       payments: {
-        provider: "static_pix",
+        provider: "pix_direct",
         enabled: true,
-        configured: this.isStaticPixConfigured(),
+        configured: this.isDirectPixConfigured(),
         confirmationMode: "manual",
+        amountEmbedded: true,
       },
       providers: {
         pharmadb: {
@@ -81,23 +83,29 @@ export class HealthController {
   @Get("payments")
   payments() {
     const pixKey = getEnvPreview(
-      this.getSanitizedEnv("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY,
+      this.getPixKey(),
     );
-    const copyPaste =
-      this.getSanitizedEnv("PIX_STATIC_COPY_PASTE") ||
-      DEFAULT_STATIC_PIX_COPY_PASTE;
 
     return {
       status: "ok",
-      provider: "static_pix",
+      provider: "pix_direct",
       enabled: true,
-      configured: this.isStaticPixConfigured(),
+      configured: this.isDirectPixConfigured(),
       confirmationMode: "manual",
       automaticConfirmation: false,
+      amountEmbedded: true,
+      copyPasteGeneratedPerOrder: true,
       pixKeyConfigured: pixKey.configured,
       pixKeyLength: pixKey.length,
       pixKeyPrefix: pixKey.prefix,
-      copyPasteConfigured: Boolean(copyPaste),
+      merchantNameConfigured: Boolean(
+        this.getSanitizedEnv("PIX_MERCHANT_NAME") ||
+          DEFAULT_PIX_MERCHANT_NAME,
+      ),
+      merchantCityConfigured: Boolean(
+        this.getSanitizedEnv("PIX_MERCHANT_CITY") ||
+          DEFAULT_PIX_MERCHANT_CITY,
+      ),
     };
   }
 
@@ -171,11 +179,21 @@ export class HealthController {
     return Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim());
   }
 
-  private isStaticPixConfigured() {
+  private isDirectPixConfigured() {
     return Boolean(
-      (this.getSanitizedEnv("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY) &&
-        (this.getSanitizedEnv("PIX_STATIC_COPY_PASTE") ||
-          DEFAULT_STATIC_PIX_COPY_PASTE),
+      this.getPixKey() &&
+        (this.getSanitizedEnv("PIX_MERCHANT_NAME") ||
+          DEFAULT_PIX_MERCHANT_NAME) &&
+        (this.getSanitizedEnv("PIX_MERCHANT_CITY") ||
+          DEFAULT_PIX_MERCHANT_CITY),
+    );
+  }
+
+  private getPixKey() {
+    return (
+      this.getSanitizedEnv("PIX_KEY") ||
+      this.getSanitizedEnv("PIX_STATIC_KEY") ||
+      DEFAULT_PIX_KEY
     );
   }
 
