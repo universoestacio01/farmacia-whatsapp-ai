@@ -259,7 +259,7 @@ function createEngine(conversation, options = {}) {
         return {
           orderId: "order_conversation_flow",
           totalCents,
-          provider: "sigilopay",
+          provider: "static_pix",
           status: "failed",
           manualFallback: false,
           pixCreationFailed: true,
@@ -269,21 +269,19 @@ function createEngine(conversation, options = {}) {
         id: "order_conversation_flow",
         payments: [
           {
-            provider: "sigilopay",
+            provider: "static_pix",
             status: options.paid ? "PAID" : "PENDING",
             amountCents: totalCents,
             pixCopyPaste: "000201PIXTESTE",
-            paymentUrl: "https://checkout.example/pagar",
           },
         ],
       };
       return {
         orderId: "order_conversation_flow",
         totalCents,
-        provider: "sigilopay",
+        provider: "static_pix",
         status: "pending",
         pixCopyPaste: "000201PIXTESTE",
-        paymentUrl: "https://checkout.example/pagar",
         manualFallback: false,
       };
     },
@@ -373,10 +371,12 @@ function assertPixMessageSet(reply) {
   assert.equal(Array.isArray(reply), true);
   assert.equal(reply.length, 3);
   assert.match(reply[0], /Pedido confirmado/);
-  assert.match(reply[0], /Basta tocar e copiar/);
+  assert.match(reply[0], /Pix estático/);
+  assert.match(reply[0], /valor acima/);
   assert.equal(reply[1], "000201PIXTESTE");
-  assert.doesNotMatch(reply[1], /\s/);
-  assert.match(reply[2], /checkout\.example/);
+  assert.doesNotMatch(reply[1], /[\r\n\t]/);
+  assert.match(reply[2], /responda “paguei”/);
+  assert.match(reply[2], /equipe vai conferir/);
   assert.match(reply[2], /Entrega gr/i);
   assert.match(reply[2], /Prazo estimado: até 30 minutos após a confirmação/);
 }
@@ -482,7 +482,8 @@ async function run() {
     "1",
     "ja paguei",
   ], (result) => {
-    assert.match(lastReplyText(result), /aguardando/i);
+    assert.match(lastReplyText(result), /recebi seu aviso/i);
+    assert.match(lastReplyText(result), /conferir o Pix/i);
   }));
 
   results.push(await runScenario("entrega gratis", ["quanto fica a entrega?"], (result) => {

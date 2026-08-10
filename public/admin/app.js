@@ -587,7 +587,7 @@ function renderProviders(data) {
     ["PharmaDB", data.medicines.pharmadbConfigured, `Principal: ${data.medicines.primaryProvider}`, true],
     ["BulAPI", data.medicines.bulapiConfigured, "Fallback de medicamentos", true],
     ["Cosmos", data.retailProducts.cosmosConfigured, `${data.retailProducts.cosmosTokenCount} token(s)`, true],
-    ["SigiloPay", data.payments.sigilopayConfigured, data.payments.provider, true],
+    ["Pix estático", data.payments.staticPixConfigured, "Confirmação manual", true],
     ["Painel", data.admin.protected, data.admin.protected ? "Protegido" : "Sem ADMIN_TOKEN", true],
   ];
 

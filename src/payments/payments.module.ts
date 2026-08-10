@@ -1,17 +1,17 @@
 import { Module } from "@nestjs/common";
 import { PIX_PROVIDER } from "./pix/pix-provider.interface";
 import { PaymentsService } from "./payments.service";
-import { SigiloPayWebhookController } from "./sigilopay-webhook.controller";
 import { SigiloPayService } from "./sigilopay.service";
+import { StaticPixService } from "./static-pix.service";
 
 @Module({
-  controllers: [SigiloPayWebhookController],
   providers: [
     PaymentsService,
     SigiloPayService,
+    StaticPixService,
     {
       provide: PIX_PROVIDER,
-      useExisting: SigiloPayService,
+      useExisting: StaticPixService,
     },
   ],
   exports: [PaymentsService],

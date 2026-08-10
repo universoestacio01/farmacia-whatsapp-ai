@@ -1,5 +1,4 @@
 ﻿import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
 import {
   OrderItemType,
   OrderStatus,
@@ -16,10 +15,10 @@ import {
 import {
   CreatePaymentResult,
   NormalizedPaymentStatus,
-  PaymentProductItem,
   SigiloPayWebhookEvent,
 } from "./payment.types";
 import { SigiloPayService } from "./sigilopay.service";
+import { StaticPixService } from "./static-pix.service";
 
 interface CheckoutCartItem {
   type?: "medicine" | "retail_product";
@@ -85,13 +84,13 @@ export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
     private readonly sigiloPayService: SigiloPayService,
+    private readonly staticPixService: StaticPixService,
   ) {}
 
   createPixPayment(input: CreatePixPaymentInput): Promise<PixPaymentResult> {
-    return this.sigiloPayService.createPayment(input);
+    return this.staticPixService.createPayment(input);
   }
 
   async confirmCheckout(
@@ -99,13 +98,6 @@ export class PaymentsService {
   ): Promise<ConfirmCheckoutResult> {
     const totalCents = this.calculateCartTotalCents(input.cart);
     const checkoutKey = this.createCheckoutKey(input, totalCents);
-    const customer = await this.prisma.safePrismaCall(
-      "payments.customer.findUnique",
-      (prisma) =>
-        prisma.customer.findUniqueOrThrow({
-          where: { id: input.customerId },
-        }),
-    );
     const order = input.existingOrderId
       ? await this.findOrder(input.existingOrderId, input.customerId)
       : await this.findOrCreateOrder(input, totalCents, checkoutKey);
@@ -116,7 +108,7 @@ export class PaymentsService {
       return {
         orderId: order.id,
         totalCents,
-        provider: "sigilopay",
+        provider: "static_pix",
         status: this.toNormalizedStatus(reusablePayment.status),
         providerTransactionId:
           reusablePayment.providerTransactionId ||
@@ -132,65 +124,45 @@ export class PaymentsService {
       };
     }
 
-    if (!this.shouldUseSigiloPay()) {
-      const message =
-        "SigiloPay não configurada. Verifique PIX_PROVIDER, SIGILOPAY_ENABLED e credenciais.";
-      this.logger.error(`SIGILOPAY PIX CREATION FAILED: ${message}`);
-      return this.pixFailureResult(order.id, totalCents, message);
-    }
-
-    let paymentIntent: { id: string };
-
-    try {
-      paymentIntent = await this.createPendingPaymentIntent(
-        order.id,
-        totalCents,
-        checkoutKey,
-      );
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "erro desconhecido";
-      this.logger.error(
-        `PAYMENT INTENT CREATION FAILED: ${message}`,
-        error instanceof Error ? error.stack : undefined,
-      );
+    if (!this.staticPixService.isConfigured()) {
+      const message = "Pix estatico nao configurado.";
+      this.logger.error(`STATIC PIX CONFIGURATION FAILED: ${message}`);
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
     let payment: PixPaymentResult;
 
     try {
-      payment = await this.sigiloPayService.createPayment({
+      payment = await this.staticPixService.createPayment({
         orderId: order.id,
         amountCents: totalCents,
-        customerName: customer.name || undefined,
-        customerPhone: customer.whatsappNumber,
-        items: this.toPaymentItems(input.cart),
-        callbackUrl: this.getCallbackUrl(),
       });
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "erro desconhecido";
       this.logger.error(
-        `SIGILOPAY PIX CREATION FAILED: ${message}`,
+        `STATIC PIX PREPARATION FAILED: ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
-      await this.markPaymentIntentFailed(paymentIntent.id, message);
-
       return this.pixFailureResult(order.id, totalCents, message);
     }
 
-    const persisted = await this.updateSigiloPayPaymentIntentSafely(
-      paymentIntent.id,
-      payment,
-    );
-
-    if (!persisted) {
-      return this.pixFailureResult(
+    try {
+      await this.createStaticPixPaymentIntent(
         order.id,
         totalCents,
-        "Pix criado, mas não foi possível registrar a cobrança localmente.",
+        checkoutKey,
+        payment,
       );
+      await this.markOrderAwaitingManualPayment(order.id);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "erro desconhecido";
+      this.logger.error(
+        `STATIC PIX PERSISTENCE FAILED: ${message}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return this.pixFailureResult(order.id, totalCents, message);
     }
 
     return this.pixSuccessResult(order.id, totalCents, payment);
@@ -389,7 +361,7 @@ export class PaymentsService {
         prisma.payment.findFirst({
           where: {
             orderId,
-            provider: "sigilopay",
+            provider: "static_pix",
             status: PaymentStatus.PENDING,
             OR: [
               { pixCopyPaste: { not: null } },
@@ -401,13 +373,14 @@ export class PaymentsService {
     );
   }
 
-  private async createPendingPaymentIntent(
+  private async createStaticPixPaymentIntent(
     orderId: string,
     totalCents: number,
     checkoutKey: string,
+    payment: PixPaymentResult,
   ) {
     return this.prisma.safePrismaCall(
-      "payments.payment.upsert.intent",
+      "payments.payment.upsert.static_pix",
       async (prisma) => {
         const paymentDelegate =
           prisma.payment as unknown as PaymentDelegateWithOptionalMethods;
@@ -417,14 +390,30 @@ export class PaymentsService {
           status: PaymentStatus.PENDING,
           amountCents: totalCents,
           amount: this.centsToMoney(totalCents),
-          provider: "sigilopay",
+          provider: "static_pix",
           idempotencyKey: checkoutKey,
+          pixPayload: payment.pixPayload || payment.pixCopyPaste,
+          pixCopyPaste: payment.pixCopyPaste || payment.pixPayload,
+          rawResponse: this.toJson(payment.rawResponse),
         };
 
         if (paymentDelegate.upsert) {
           return paymentDelegate.upsert({
             where: { idempotencyKey: checkoutKey },
-            update: {},
+            update: {
+              status: PaymentStatus.PENDING,
+              amountCents: totalCents,
+              amount: this.centsToMoney(totalCents),
+              provider: "static_pix",
+              providerPaymentId: null,
+              providerTransactionId: null,
+              pixPayload: payment.pixPayload || payment.pixCopyPaste,
+              pixCopyPaste: payment.pixCopyPaste || payment.pixPayload,
+              pixQrCode: null,
+              paymentUrl: null,
+              expiresAt: null,
+              rawResponse: this.toJson(payment.rawResponse),
+            },
             create,
           });
         }
@@ -446,56 +435,16 @@ export class PaymentsService {
     );
   }
 
-  private async updateSigiloPayPaymentIntentSafely(
-    paymentId: string,
-    payment: PixPaymentResult,
-  ) {
-    try {
-      await this.prisma.safePrismaCall(
-        "payments.payment.update.sigilopay",
-        (prisma) =>
-          prisma.payment.update({
-            where: { id: paymentId },
-            data: {
-              status: PaymentStatus.PENDING,
-              provider: "sigilopay",
-              providerPaymentId: payment.providerPaymentId,
-              providerTransactionId:
-                payment.providerTransactionId || payment.providerPaymentId,
-              pixPayload: payment.pixPayload || payment.pixCopyPaste,
-              pixCopyPaste: payment.pixCopyPaste || payment.pixPayload,
-              paymentUrl: payment.paymentUrl,
-              expiresAt: payment.expiresAt,
-              rawResponse: this.toJson(
-                this.minimizeSigiloPayRawResponse(payment.rawResponse),
-              ),
-            },
-          }),
-      );
-      return true;
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "erro desconhecido";
-      this.logger.error(
-        `SIGILOPAY PIX CREATED BUT PAYMENT PERSISTENCE FAILED: ${message}`,
-        error instanceof Error ? error.stack : undefined,
-      );
-      return false;
-    }
-  }
-
-  private async markPaymentIntentFailed(paymentId: string, errorMessage: string) {
+  private async markOrderAwaitingManualPayment(orderId: string) {
     await this.prisma.safePrismaCall(
-      "payments.payment.update.intent_failed",
+      "payments.order.update.awaiting_manual_payment",
       (prisma) =>
-        prisma.payment.update({
-          where: { id: paymentId },
+        prisma.order.update({
+          where: { id: orderId },
           data: {
-            status: PaymentStatus.FAILED,
-            rawResponse: this.toJson({ errorMessage }),
+            status: OrderStatus.PENDING_PAYMENT_MANUAL,
           },
         }),
-      undefined,
     );
   }
 
@@ -507,7 +456,7 @@ export class PaymentsService {
     return {
       orderId,
       totalCents,
-      provider: "sigilopay",
+      provider: "static_pix",
       status: "pending",
       providerTransactionId:
         payment.providerTransactionId || payment.providerPaymentId,
@@ -528,33 +477,12 @@ export class PaymentsService {
     return {
       orderId,
       totalCents,
-      provider: "sigilopay",
+      provider: "static_pix",
       status: "failed",
       manualFallback: false,
       pixCreationFailed: true,
       errorMessage,
     };
-  }
-
-  private shouldUseSigiloPay() {
-    return this.sigiloPayService.isEnabled() && this.sigiloPayService.isConfigured();
-  }
-
-  private getCallbackUrl() {
-    return (
-      this.configService.get<string>("SIGILOPAY_CALLBACK_URL")?.trim() ||
-      "https://farmaciadeliveryraia.com/webhook/sigilopay"
-    );
-  }
-
-  private toPaymentItems(cart: CheckoutCartItem[]): PaymentProductItem[] {
-    return cart.map((item, index) => ({
-      id: `item_${index + 1}`,
-      name: item.name,
-      quantity: item.quantity,
-      unitPrice: item.unitPrice || Number(((item.total || 0) / item.quantity).toFixed(2)),
-      physical: true,
-    }));
   }
 
   private calculateCartTotalCents(cart: CheckoutCartItem[]) {
@@ -683,43 +611,5 @@ export class PaymentsService {
     return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
   }
 
-  private minimizeSigiloPayRawResponse(value: unknown) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return value;
-    }
-
-    const response = value as Record<string, unknown>;
-    const pix = this.asRecord(response.pix);
-    const order = this.asRecord(response.order);
-
-    return {
-      responseType: response.responseType,
-      transactionId: response.transactionId,
-      status: response.status,
-      fee: response.fee,
-      order: order
-        ? {
-            id: order.id,
-            url: order.url,
-            receiptUrl: order.receiptUrl,
-          }
-        : undefined,
-      pix: pix
-        ? {
-            code: pix.code,
-            base64Exists: Boolean(pix.base64),
-            imageExists: Boolean(pix.image),
-          }
-        : undefined,
-    };
-  }
-
-  private asRecord(value: unknown) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return null;
-    }
-
-    return value as Record<string, unknown>;
-  }
 }
 

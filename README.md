@@ -1,6 +1,6 @@
 ﻿# farmacia-whatsapp-ai
 
-API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix via SigiloPay.
+API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix estático.
 
 ## Stack
 
@@ -10,7 +10,7 @@ API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, 
 - OpenAI
 - BulaAPI
 - ViaCEP
-- Pix SigiloPay com fallback manual
+- Pix estático da conta da empresa com confirmação manual
 
 ## Requisitos
 
@@ -35,7 +35,6 @@ Endpoints principais:
 - `GET /health/providers` mostra providers configurados sem chamar APIs externas
 - `GET /webhooks/whatsapp` verifica o webhook da Meta
 - `POST /webhooks/whatsapp` recebe mensagens do WhatsApp
-- `POST /webhook/sigilopay` recebe eventos de pagamento da SigiloPay
 
 ## Variáveis de ambiente
 
@@ -48,12 +47,9 @@ Copie `.env.example` para `.env` e ajuste:
 - `WHATSAPP_APP_SECRET`: segredo do app da Meta, usado para validar o header `X-Hub-Signature-256` nos webhooks recebidos.
 - `OPENAI_API_KEY`: chave da OpenAI.
 - `BULA_API_BASE_URL`: URL base da Bulapi, por padrão `https://bulapi.com.br/api/v1`.
-- `PIX_PROVIDER`: use `sigilopay` para Pix automático.
-- `SIGILOPAY_ENABLED`: `true` para habilitar criação automática de Pix.
-- `SIGILOPAY_API_BASE_URL`: por padrão `https://app.sigilopay.com.br/api/v1`.
-- `SIGILOPAY_CALLBACK_URL`: URL enviada no `callbackUrl` da cobrança Pix. Para produção atual, use `https://farmaciadeliveryraia.com/webhook/sigilopay`.
-- `SIGILOPAY_PUBLIC_KEY` e `SIGILOPAY_SECRET_KEY`: credenciais da API SigiloPay.
-- `SIGILOPAY_WEBHOOK_TOKEN`: token usado para validar o campo `token` dos webhooks da SigiloPay.
+- `PIX_PROVIDER`: use `static_pix`.
+- `PIX_STATIC_KEY`: chave Pix aleatória da empresa.
+- `PIX_STATIC_COPY_PASTE`: código Pix estático enviado ao cliente.
 
 ## Configuracao do webhook na Meta
 
@@ -116,20 +112,14 @@ src/
 
 ## Pix
 
-Quando o cliente confirma o pedido no WhatsApp, o sistema cria ou reutiliza uma cobrança Pix pendente na SigiloPay e envia o Pix copia e cola. Se `SIGILOPAY_ENABLED=false`, as credenciais estiverem ausentes ou a API falhar, o pedido continua confirmado e o bot usa fallback manual:
+Quando o cliente confirma o pedido no WhatsApp, o sistema registra um pagamento pendente e envia o Pix estático da empresa. O código não inclui o valor do pedido, por isso o cliente deve informar no aplicativo do banco o total exibido no WhatsApp.
 
 ```text
-Pedido confirmado ✅
+Pedido confirmado.
+Total: R$ XX,XX
 
-Não consegui gerar o Pix automaticamente agora.
-Nossa equipe vai te enviar os dados de pagamento em instantes.
+Vou te enviar o Pix Copia e Cola na próxima mensagem.
 ```
 
-O sistema envia o callback na criação da cobrança Pix:
-
-```text
-https://farmaciadeliveryraia.com/webhook/sigilopay
-```
-
-O endpoint valida o `token` do payload com `SIGILOPAY_WEBHOOK_TOKEN` quando a variável estiver configurada. Se o token não estiver configurado, o webhook é aceito e o sistema registra um aviso nos logs.
+Como o Pix é estático, não existe callback de aprovação. Depois do pagamento, o cliente responde `paguei` e a equipe confere o recebimento. No painel administrativo, altere o status do pedido para `PAID`; o pagamento pendente será atualizado junto.
 

@@ -12,6 +12,10 @@ import {
 } from "@prisma/client";
 import { sanitizeEnv } from "../config/env-sanitize";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
+import {
+  DEFAULT_STATIC_PIX_COPY_PASTE,
+  DEFAULT_STATIC_PIX_KEY,
+} from "../config/static-pix.config";
 import { MedicinePriorityRulesService } from "../integrations/medicine-priority-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
@@ -307,12 +311,40 @@ export class AdminService {
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus) {
-    return this.prisma.safePrismaCall("admin.order.update.status", (prisma) =>
-      prisma.order.update({
+    return this.prisma.safePrismaCall(
+      "admin.order.update.status",
+      async (prisma) => {
+        const order = await prisma.order.update({
         where: { id: orderId },
         data: { status },
         select: { id: true, status: true, updatedAt: true },
-      }),
+        });
+
+        if (status === OrderStatus.PAID) {
+          await prisma.payment.updateMany({
+            where: {
+              orderId,
+              status: PaymentStatus.PENDING,
+            },
+            data: {
+              status: PaymentStatus.PAID,
+              paidAt: new Date(),
+            },
+          });
+        }
+
+        if (status === OrderStatus.CANCELLED) {
+          await prisma.payment.updateMany({
+            where: {
+              orderId,
+              status: PaymentStatus.PENDING,
+            },
+            data: { status: PaymentStatus.CANCELLED },
+          });
+        }
+
+        return order;
+      },
     );
   }
 
@@ -558,11 +590,13 @@ export class AdminService {
         manualFallback: true,
       },
       payments: {
-        provider: this.env("PIX_PROVIDER") || "none",
-        sigilopayConfigured: Boolean(
-          this.env("SIGILOPAY_PUBLIC_KEY") && this.env("SIGILOPAY_SECRET_KEY"),
+        provider: "static_pix",
+        staticPixConfigured: Boolean(
+          (this.env("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY) &&
+            (this.env("PIX_STATIC_COPY_PASTE") ||
+              DEFAULT_STATIC_PIX_COPY_PASTE),
         ),
-        callbackUrlConfigured: Boolean(this.env("SIGILOPAY_CALLBACK_URL")),
+        confirmationMode: "manual",
       },
       admin: {
         protected: Boolean(this.env("ADMIN_TOKEN")),

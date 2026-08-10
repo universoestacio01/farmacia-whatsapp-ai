@@ -1,15 +1,15 @@
-﻿const assert = require("node:assert/strict");
+const assert = require("node:assert/strict");
 const { Logger } = require("@nestjs/common");
 const { OrderStatus, PaymentStatus } = require("@prisma/client");
 const { PaymentsService } = require("../dist/payments/payments.service");
-const {
-  SigiloPayWebhookController,
-} = require("../dist/payments/sigilopay-webhook.controller");
-const { SigiloPayService } = require("../dist/payments/sigilopay.service");
+const { StaticPixService } = require("../dist/payments/static-pix.service");
 
 Logger.overrideLogger(false);
 
-function config(values) {
+const STATIC_PIX =
+  "00020126580014BR.GOV.BCB.PIX0136c9d7eec2-539a-4d7a-86ec-078d2abf4d755204000053039865802BR5913RAIA FARMACIA6009SAO PAULO62070503***6304CA36";
+
+function config(values = {}) {
   return {
     get(key) {
       return values[key];
@@ -19,16 +19,8 @@ function config(values) {
 
 class FakePrisma {
   constructor() {
-    this.customerData = {
-      id: "customer_1",
-      whatsappNumber: "5511999999999",
-      name: "Cliente Teste",
-    };
     this.orders = [];
     this.payments = [];
-    this.customer = {
-      findUniqueOrThrow: async () => this.customerData,
-    };
     this.order = {
       create: async ({ data }) => {
         const order = {
@@ -66,53 +58,37 @@ class FakePrisma {
         return order;
       },
     };
+    this.orderItem = {
+      createMany: async () => ({ count: 1 }),
+    };
     this.payment = {
-      findFirst: async ({ where }) => {
-        const payment =
-          [...this.payments].reverse().find((item) => {
-            if (where.orderId && item.orderId !== where.orderId) return false;
-            if (where.provider && item.provider !== where.provider) return false;
-            if (where.status && item.status !== where.status) return false;
-            if (where.OR) {
-              return where.OR.some(
-                (condition) =>
-                  condition.providerTransactionId ===
-                    item.providerTransactionId ||
-                  condition.providerPaymentId === item.providerPaymentId ||
-                  (condition.pixCopyPaste?.not === null &&
-                    item.pixCopyPaste !== null &&
-                    item.pixCopyPaste !== undefined) ||
-                  (condition.pixPayload?.not === null &&
-                    item.pixPayload !== null &&
-                    item.pixPayload !== undefined),
-              );
-            }
-            return true;
-          }) || null;
-
-        if (!payment) return null;
-
-        const order = this.orders.find((item) => item.id === payment.orderId);
-
-        return {
-          ...payment,
-          order: order
-            ? {
-                ...order,
-                customer: this.customerData,
-              }
-            : undefined,
-        };
-      },
-      create: async ({ data }) => {
-        const payment = {
-          id: `payment_${this.payments.length + 1}`,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-          ...data,
-        };
-        this.payments.push(payment);
-        return payment;
+      findFirst: async ({ where }) =>
+        [...this.payments].reverse().find((item) => {
+          if (where.orderId && item.orderId !== where.orderId) return false;
+          if (where.provider && item.provider !== where.provider) return false;
+          if (where.status && item.status !== where.status) return false;
+          if (where.idempotencyKey && item.idempotencyKey !== where.idempotencyKey) {
+            return false;
+          }
+          if (where.OR) {
+            return where.OR.some(
+              (condition) =>
+                (condition.pixCopyPaste?.not === null && item.pixCopyPaste) ||
+                (condition.pixPayload?.not === null && item.pixPayload),
+            );
+          }
+          return true;
+        }) || null,
+      create: async ({ data }) => this.createPayment(data),
+      upsert: async ({ where, update, create }) => {
+        const existing = this.payments.find(
+          (item) => item.idempotencyKey === where.idempotencyKey,
+        );
+        if (existing) {
+          Object.assign(existing, update);
+          return existing;
+        }
+        return this.createPayment(create);
       },
       update: async ({ where, data }) => {
         const payment = this.payments.find((item) => item.id === where.id);
@@ -122,38 +98,37 @@ class FakePrisma {
     };
   }
 
+  createPayment(data) {
+    const payment = {
+      id: `payment_${this.payments.length + 1}`,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...data,
+    };
+    this.payments.push(payment);
+    return payment;
+  }
+
   async safePrismaCall(_operationName, callback) {
     return callback(this);
   }
 }
 
-function fakeSigiloPay(enabled = true, calls = [], options = {}) {
+function legacySigiloPayStub() {
   return {
-    isEnabled: () => enabled,
-    isConfigured: () => enabled,
-    async createPayment(input) {
-      calls.push(input);
-      if (options.fail) {
-        throw new Error("SigiloPay indisponível");
-      }
-      return {
-        provider: "sigilopay",
-        providerPaymentId: `tx_${input.orderId}`,
-        providerTransactionId: `tx_${input.orderId}`,
-        pixPayload: "000201PIXTESTE",
-        pixCopyPaste: "000201PIXTESTE",
-        paymentUrl: "https://checkout.example/pagar",
-        rawResponse: {
-          transactionId: `tx_${input.orderId}`,
-          status: "OK",
-          pix: { code: "000201PIXTESTE" },
-        },
-      };
-    },
     mapStatus(status) {
       return status === "COMPLETED" ? "paid" : "pending";
     },
   };
+}
+
+function staticPixService() {
+  return new StaticPixService(
+    config({
+      PIX_STATIC_KEY: "c9d7eec2-539a-4d7a-86ec-078d2abf4d75",
+      PIX_STATIC_COPY_PASTE: STATIC_PIX,
+    }),
+  );
 }
 
 async function run() {
@@ -166,229 +141,69 @@ async function run() {
       total: 9.98,
     },
   ];
-
-  const disabledPrisma = new FakePrisma();
-  const disabledService = new PaymentsService(
-    config({ PIX_PROVIDER: "sigilopay", SIGILOPAY_ENABLED: false }),
-    disabledPrisma,
-    fakeSigiloPay(false),
-  );
-  const disabled = await disabledService.confirmCheckout({
-    conversationId: "conv_1",
-    customerId: "customer_1",
-    cart,
-  });
-  assert.equal(disabled.manualFallback, false);
-  assert.equal(disabled.pixCreationFailed, true);
-  assert.equal(disabled.provider, "sigilopay");
-  assert.equal(disabledPrisma.payments.length, 0);
-  assert.equal(disabledPrisma.orders[0].status, OrderStatus.CONFIRMED);
-
-  const failingPrisma = new FakePrisma();
-  const failingCalls = [];
-  const failingService = new PaymentsService(
-    config({ PIX_PROVIDER: "sigilopay", SIGILOPAY_ENABLED: true }),
-    failingPrisma,
-    fakeSigiloPay(true, failingCalls, { fail: true }),
-  );
-  const failedPix = await failingService.confirmCheckout({
-    conversationId: "conv_fail",
-    customerId: "customer_1",
-    cart,
-  });
-  assert.equal(failedPix.pixCreationFailed, true);
-  assert.equal(failedPix.manualFallback, false);
-  assert.equal(failingPrisma.payments.length, 1);
-  assert.equal(failingPrisma.payments[0].status, PaymentStatus.FAILED);
-
   const prisma = new FakePrisma();
-  const pixCalls = [];
   const service = new PaymentsService(
-    config({
-      PIX_PROVIDER: "sigilopay",
-      SIGILOPAY_ENABLED: true,
-      SIGILOPAY_CALLBACK_URL: "https://farmaciadeliveryraia.com/webhook/sigilopay",
-    }),
     prisma,
-    fakeSigiloPay(true, pixCalls),
+    legacySigiloPayStub(),
+    staticPixService(),
   );
-  const pix = await service.confirmCheckout({
-    conversationId: "conv_2",
+
+  const payment = await service.confirmCheckout({
+    conversationId: "conv_static_pix",
     customerId: "customer_1",
     cart,
   });
-  assert.equal(pix.manualFallback, false);
-  assert.equal(pix.pixCopyPaste, "000201PIXTESTE");
-  assert.equal(prisma.payments[0].status, PaymentStatus.PENDING);
-  assert.equal(prisma.payments[0].pixQrCode, undefined);
-  assert.equal(prisma.payments[0].rawResponse.pix.base64Exists, false);
-  assert.equal(pixCalls[0].callbackUrl, "https://farmaciadeliveryraia.com/webhook/sigilopay");
 
-  const persistenceFailPrisma = new FakePrisma();
-  persistenceFailPrisma.payment.create = async () => {
-    const error = new Error("PANIC: timer has gone away");
-    error.name = "PrismaClientRustPanicError";
-    throw error;
-  };
-  const persistenceFailService = new PaymentsService(
-    config({
-      PIX_PROVIDER: "sigilopay",
-      SIGILOPAY_ENABLED: true,
-      SIGILOPAY_CALLBACK_URL: "https://farmaciadeliveryraia.com/webhook/sigilopay",
-    }),
-    persistenceFailPrisma,
-    fakeSigiloPay(true),
-  );
-  const pixWithPersistenceFailure =
-    await persistenceFailService.confirmCheckout({
-      conversationId: "conv_db_fail",
-      customerId: "customer_1",
-      cart,
-    });
-  assert.equal(pixWithPersistenceFailure.manualFallback, false);
-  assert.equal(pixWithPersistenceFailure.pixCreationFailed, true);
-  assert.equal(pixWithPersistenceFailure.pixCopyPaste, undefined);
-  assert.equal(persistenceFailPrisma.payments.length, 0);
+  assert.equal(payment.provider, "static_pix");
+  assert.equal(payment.status, "pending");
+  assert.equal(payment.pixCopyPaste, STATIC_PIX);
+  assert.equal(payment.paymentUrl, undefined);
+  assert.equal(payment.providerTransactionId, undefined);
+  assert.equal(prisma.payments.length, 1);
+  assert.equal(prisma.payments[0].provider, "static_pix");
+  assert.equal(prisma.payments[0].status, PaymentStatus.PENDING);
+  assert.equal(prisma.orders[0].status, OrderStatus.PENDING_PAYMENT_MANUAL);
 
   const reused = await service.confirmCheckout({
-    conversationId: "conv_2",
+    conversationId: "conv_static_pix",
     customerId: "customer_1",
     cart,
-    existingOrderId: pix.orderId,
+    existingOrderId: payment.orderId,
   });
-  assert.equal(reused.pixCopyPaste, "000201PIXTESTE");
+
+  assert.equal(reused.pixCopyPaste, STATIC_PIX);
   assert.equal(prisma.payments.length, 1);
 
-  const approved = await service.handleSigiloPayWebhook({
-    event: "TRANSACTION_PAID",
-    transaction: {
-      id: `tx_${pix.orderId}`,
-      status: "COMPLETED",
-      amount: 9.98,
-      paymentMethod: "PIX",
-      payedAt: "2026-06-18T12:00:00.000Z",
-    },
+  const directStaticPix = await staticPixService().createPayment({
+    orderId: "order_direct",
+    amountCents: 200,
   });
-  assert.equal(approved.notified, true);
-  assert.equal(prisma.payments[0].status, PaymentStatus.PAID);
-  assert.equal(prisma.orders[0].status, OrderStatus.PAID);
-  assert.match(approved.message, /Entrega grátis por motoboy/);
-  assert.match(approved.message, /Após a confirmação do pagamento/);
+  assert.equal(directStaticPix.provider, "static_pix");
+  assert.equal(directStaticPix.pixCopyPaste, STATIC_PIX);
+  assert.equal(directStaticPix.rawResponse.automaticConfirmation, false);
 
-  const duplicated = await service.handleSigiloPayWebhook({
-    event: "TRANSACTION_PAID",
-    transaction: {
-      id: `tx_${pix.orderId}`,
-      status: "COMPLETED",
-      amount: 9.98,
-      paymentMethod: "PIX",
-    },
-  });
-  assert.equal(duplicated.notified, false);
-
-  const sigiloPayService = new SigiloPayService(
-    config({
-      SIGILOPAY_WEBHOOK_TOKEN: "token-correto",
-      SIGILOPAY_API_BASE_URL: "https://app.sigilopay.com.br/api/v1",
-    }),
-  );
-  const controller = new SigiloPayWebhookController(
-    {
-      handleSigiloPayWebhook: async () => ({
-        notified: false,
-        whatsappNumber: null,
-        message: null,
-      }),
-    },
-    sigiloPayService,
-    { get: () => ({ sendTextMessage: async () => undefined }) },
-    {},
-  );
-  await assert.rejects(
-    async () =>
-      controller.receive({
-        event: "TRANSACTION_PAID",
-        token: "token-errado",
-        transaction: { id: "tx_invalid", status: "COMPLETED" },
-      }),
-    /SigiloPay/,
-  );
-
-  const panicController = new SigiloPayWebhookController(
-    {
-      handleSigiloPayWebhook: async () => {
-        const error = new Error("PANIC: timer has gone away");
-        error.name = "PrismaClientRustPanicError";
-        throw error;
-      },
-    },
-    new SigiloPayService(config({ SIGILOPAY_WEBHOOK_TOKEN: "token-correto" })),
-    { get: () => ({ sendTextMessage: async () => undefined }) },
-    {},
-  );
-  assert.deepEqual(
-    await panicController.receive({
-      event: "TRANSACTION_PAID",
-      token: "token-correto",
-      transaction: { id: "tx_panic", status: "COMPLETED" },
-    }),
-    { received: true, duplicate: true },
-  );
-
-  const originalFetch = global.fetch;
-  let sigiloPayPayload;
-
-  global.fetch = async (_url, init) => {
-    sigiloPayPayload = JSON.parse(init.body);
-    return new Response(
-      JSON.stringify({
-        transactionId: "tx_phone_fallback",
-        status: "OK",
-        order: { url: "https://checkout.example/tx_phone_fallback" },
-        pix: { code: "000201PIXPHONE" },
-      }),
-      {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      },
-    );
+  const failingPrisma = new FakePrisma();
+  failingPrisma.payment.upsert = async () => {
+    throw new Error("database unavailable");
   };
+  const failingService = new PaymentsService(
+    failingPrisma,
+    legacySigiloPayStub(),
+    staticPixService(),
+  );
+  const failed = await failingService.confirmCheckout({
+    conversationId: "conv_failure",
+    customerId: "customer_1",
+    cart,
+  });
+  assert.equal(failed.provider, "static_pix");
+  assert.equal(failed.pixCreationFailed, true);
+  assert.equal(failed.pixCopyPaste, undefined);
 
-  try {
-    const directSigiloPayService = new SigiloPayService(
-      config({
-        SIGILOPAY_PUBLIC_KEY: "pk_test_123",
-        SIGILOPAY_SECRET_KEY: "sk_test_123",
-        SIGILOPAY_API_BASE_URL: "https://app.sigilopay.com.br/api/v1",
-      }),
-    );
-    const directPayment = await directSigiloPayService.createPayment({
-      orderId: "order_phone_fallback",
-      amountCents: 200,
-      customerPhone: "15556714740",
-      items: [
-        {
-          id: "item_1",
-          name: "Novalgina Comprimido 1g",
-          quantity: 1,
-          unitPrice: 2,
-        },
-      ],
-      callbackUrl: "https://farmaciadeliveryraia.com/webhook/sigilopay",
-    });
-
-    assert.equal(directPayment.pixCopyPaste, "000201PIXPHONE");
-    assert.equal(sigiloPayPayload.client.phone, "11999999999");
-    assert.equal(sigiloPayPayload.metadata.phoneFallbackApplied, true);
-  } finally {
-    global.fetch = originalFetch;
-  }
-
-  console.log("Payment flow validations passed.");
+  console.log("Static Pix payment flow validations passed.");
 }
 
 run().catch((error) => {
   console.error(error);
   process.exit(1);
 });
-

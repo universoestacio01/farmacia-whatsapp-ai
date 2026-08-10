@@ -3,6 +3,10 @@ import { ConfigService } from "@nestjs/config";
 import { existsSync } from "node:fs";
 import { ModuleRef } from "@nestjs/core";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
+import {
+  DEFAULT_STATIC_PIX_COPY_PASTE,
+  DEFAULT_STATIC_PIX_KEY,
+} from "../config/static-pix.config";
 import { PrismaService } from "../prisma/prisma.service";
 
 @Controller("health")
@@ -37,13 +41,10 @@ export class HealthController {
       status: "ok",
       primaryProvider,
       payments: {
-        provider: this.getSanitizedEnv("PIX_PROVIDER") || "none",
-        enabled: this.isSigiloPayEnabled(),
-        configured: this.isSigiloPayConfigured(),
-        callbackUrlConfigured: Boolean(
-          this.getSanitizedEnv("SIGILOPAY_CALLBACK_URL"),
-        ),
-        webhookTokenConfigured: this.isSigiloPayWebhookTokenConfigured(),
+        provider: "static_pix",
+        enabled: true,
+        configured: this.isStaticPixConfigured(),
+        confirmationMode: "manual",
       },
       providers: {
         pharmadb: {
@@ -79,28 +80,24 @@ export class HealthController {
 
   @Get("payments")
   payments() {
-    const publicKey = getEnvPreview(
-      this.getSanitizedEnv("SIGILOPAY_PUBLIC_KEY"),
+    const pixKey = getEnvPreview(
+      this.getSanitizedEnv("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY,
     );
-    const secretKey = getEnvPreview(
-      this.getSanitizedEnv("SIGILOPAY_SECRET_KEY"),
-    );
+    const copyPaste =
+      this.getSanitizedEnv("PIX_STATIC_COPY_PASTE") ||
+      DEFAULT_STATIC_PIX_COPY_PASTE;
 
     return {
-      provider: this.getSanitizedEnv("PIX_PROVIDER") || "none",
-      enabled: this.isSigiloPayEnabled(),
-      apiBaseUrl:
-        this.getSanitizedEnv("SIGILOPAY_API_BASE_URL") ||
-        "https://app.sigilopay.com.br/api/v1",
-      publicKeyConfigured: publicKey.configured,
-      publicKeyLength: publicKey.length,
-      publicKeyPrefix: publicKey.prefix,
-      secretKeyConfigured: secretKey.configured,
-      secretKeyLength: secretKey.length,
-      secretKeyPrefix: secretKey.prefix,
-      callbackUrl:
-        this.getSanitizedEnv("SIGILOPAY_CALLBACK_URL") ||
-        "https://farmaciadeliveryraia.com/webhook/sigilopay",
+      status: "ok",
+      provider: "static_pix",
+      enabled: true,
+      configured: this.isStaticPixConfigured(),
+      confirmationMode: "manual",
+      automaticConfirmation: false,
+      pixKeyConfigured: pixKey.configured,
+      pixKeyLength: pixKey.length,
+      pixKeyPrefix: pixKey.prefix,
+      copyPasteConfigured: Boolean(copyPaste),
     };
   }
 
@@ -174,31 +171,11 @@ export class HealthController {
     return Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim());
   }
 
-  private isSigiloPayEnabled() {
-    const explicitEnabled = this.getSanitizedEnv(
-      "SIGILOPAY_ENABLED",
-    ).toLowerCase();
-
-    return (
-      this.configService.get<boolean>("SIGILOPAY_ENABLED") === true ||
-      ["true", "1", "yes", "sim"].includes(explicitEnabled) ||
-      this.getSanitizedEnv("PIX_PROVIDER").toLowerCase() === "sigilopay" ||
-      (!["false", "0", "no", "nao", "não"].includes(explicitEnabled) &&
-        this.isSigiloPayConfigured())
-    );
-  }
-
-  private isSigiloPayConfigured() {
+  private isStaticPixConfigured() {
     return Boolean(
-      this.getSanitizedEnv("SIGILOPAY_PUBLIC_KEY") &&
-        this.getSanitizedEnv("SIGILOPAY_SECRET_KEY"),
-    );
-  }
-
-  private isSigiloPayWebhookTokenConfigured() {
-    return Boolean(
-      this.getSanitizedEnv("SIGILOPAY_WEBHOOK_TOKEN") ||
-        this.getSanitizedEnv("SIGILOPAY_WEBHOOK_SECRET"),
+      (this.getSanitizedEnv("PIX_STATIC_KEY") || DEFAULT_STATIC_PIX_KEY) &&
+        (this.getSanitizedEnv("PIX_STATIC_COPY_PASTE") ||
+          DEFAULT_STATIC_PIX_COPY_PASTE),
     );
   }
 

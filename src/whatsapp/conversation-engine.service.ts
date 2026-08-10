@@ -771,7 +771,7 @@ export class ConversationEngineService {
 
     const pixCopyPaste = payment.pixCopyPaste || payment.pixPayload;
 
-    if (payment.provider === "sigilopay" && pixCopyPaste) {
+    if (payment.provider === "static_pix" && pixCopyPaste) {
       return this.formatPixResendReply(pixCopyPaste);
     }
 
@@ -781,7 +781,7 @@ export class ConversationEngineService {
   private formatPixPaymentReply(
     totalCents: number,
     pixCopyPaste: string,
-    paymentUrl?: string,
+    _paymentUrl?: string,
   ) {
     const paymentInfo = [
       "Pedido confirmado.",
@@ -790,26 +790,16 @@ export class ConversationEngineService {
       "",
       "Vou te enviar o Pix Copia e Cola na próxima mensagem.",
       "",
-      "Basta tocar e copiar.",
+      "Como este é um Pix estático, informe no aplicativo do banco exatamente o valor acima.",
     ].join("\n");
 
     const deliveryInfo = [
-      "Após o pagamento, eu aviso você automaticamente por aqui.",
+      "Depois de pagar, responda “paguei” por aqui.",
+      "Nossa equipe vai conferir e confirmar o pagamento.",
       "",
-    ];
-
-    if (paymentUrl) {
-      deliveryInfo.push(
-        "Se preferir, você também pode pagar por este link:",
-        paymentUrl,
-        "",
-      );
-    }
-
-    deliveryInfo.push(
       "Entrega grátis por motoboy.",
       "Prazo estimado: até 30 minutos após a confirmação.",
-    );
+    ];
 
     return [
       paymentInfo,
@@ -823,19 +813,18 @@ export class ConversationEngineService {
       [
         "Claro, vou reenviar o Pix Copia e Cola na próxima mensagem.",
         "",
-        "Basta tocar e copiar.",
+        "Informe no aplicativo do banco o valor exato do pedido.",
       ].join("\n"),
       this.normalizePixCopyPaste(pixCopyPaste),
-      "Após o pagamento, eu aviso você automaticamente por aqui.",
+      "Depois de pagar, responda “paguei”. Nossa equipe vai conferir o pagamento.",
     ];
   }
 
   private formatWaitingPaymentConfirmationReply() {
     return [
-      "Perfeito.",
+      "Certo, recebi seu aviso.",
       "",
-      "Estou aguardando a confirmação automática do pagamento.",
-      "Assim que for confirmado, aviso você por aqui.",
+      "Nossa equipe vai conferir o Pix e confirmar o pedido por aqui.",
     ].join("\n");
   }
 
@@ -2613,7 +2602,7 @@ export class ConversationEngineService {
   }
 
   private normalizePixCopyPaste(value: string) {
-    return value.replace(/\s+/g, "");
+    return value.trim().replace(/[\r\n\t]/g, "");
   }
 
   private formatPresentationText(value: string) {
