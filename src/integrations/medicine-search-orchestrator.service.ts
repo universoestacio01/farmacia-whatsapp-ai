@@ -46,6 +46,7 @@ export class MedicineSearchOrchestratorService {
     const canonicalQuery =
       parsedQuery.canonicalName ||
       this.selector.getCanonicalMedicineName(normalizedQuery);
+    const cacheQuery = this.buildSearchCacheQuery(parsedQuery, normalizedQuery);
     const provider =
       this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") ||
       "pharmadb";
@@ -53,7 +54,7 @@ export class MedicineSearchOrchestratorService {
       provider === "bulapi" ? ["bulapi", "pharmadb"] : ["pharmadb", "bulapi"];
 
     for (const providerName of orderedProviders) {
-      const cached = this.getFromCache(`${providerName}:${normalizedQuery}`);
+      const cached = this.getFromCache(`${providerName}:${cacheQuery}`);
 
       if (cached) {
         return cached;
@@ -65,10 +66,10 @@ export class MedicineSearchOrchestratorService {
         if (summary && summary.options.length > 0) {
           const enhanced = await this.enhanceWithManualOptions(
             canonicalQuery,
-            normalizedQuery,
+            query,
             summary,
           );
-          this.setCache(`pharmadb:${normalizedQuery}`, enhanced, 300);
+          this.setCache(`pharmadb:${cacheQuery}`, enhanced, 300);
           return enhanced;
         }
       }
@@ -79,18 +80,18 @@ export class MedicineSearchOrchestratorService {
         if (summary && summary.options.length > 0) {
           const enhanced = await this.enhanceWithManualOptions(
             canonicalQuery,
-            normalizedQuery,
+            query,
             summary,
           );
-          this.setCache(`bulapi:${normalizedQuery}`, enhanced, 300);
+          this.setCache(`bulapi:${cacheQuery}`, enhanced, 300);
           return enhanced;
         }
       }
     }
 
-    const manualSummary = await this.searchManual(normalizedQuery, canonicalQuery);
+    const manualSummary = await this.searchManual(query, canonicalQuery);
     this.setCache(
-      `popular_manual:${normalizedQuery}`,
+      `popular_manual:${cacheQuery}`,
       manualSummary,
       manualSummary.options.length > 0 ? 300 : 60,
     );
@@ -220,10 +221,6 @@ export class MedicineSearchOrchestratorService {
     summary: MedicineLookupSummary,
   ) {
     const manualOptions = await this.popularManualService.search(manualQuery);
-
-    if (manualOptions.length === 0) {
-      return summary;
-    }
 
     const manualSelected = await this.selectNormalized(
       this.selector.parseMedicineQuery(manualQuery),
@@ -619,6 +616,20 @@ export class MedicineSearchOrchestratorService {
     }
 
     return cached.value;
+  }
+
+  private buildSearchCacheQuery(
+    query: ParsedMedicineQuery,
+    normalizedQuery: string,
+  ) {
+    return [
+      normalizedQuery,
+      query.dosageMg !== undefined ? `${query.dosageMg}mg` : "qualquer_dosagem",
+      query.formGroup || "qualquer_forma",
+      query.packageQuantity !== undefined
+        ? `${query.packageQuantity}un`
+        : "qualquer_embalagem",
+    ].join(":");
   }
 
   private setCache(key: string, value: MedicineLookupSummary, ttlSeconds: number) {

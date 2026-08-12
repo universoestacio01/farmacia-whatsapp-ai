@@ -130,7 +130,7 @@ async function testRetailCurationPreferredOverRawApi() {
   const labels = summary.options.map((item) => item.label).join(" | ");
 
   assert.match(labels, /Novalgina Comprimido 500mg/i);
-  assert.match(labels, /Dipirona Genérica Comprimido 500mg/i);
+  assert.match(labels, /Novalgina Comprimido 1g/i);
   assert.match(labels, /Gotas|solução oral/i);
   assert.doesNotMatch(labels, /Lqfex|Sol Inj|Amp/i);
 }
@@ -334,6 +334,14 @@ async function testConfigurableCommercialRanking() {
       formGroup: "comprimido",
       priority: 1000,
     },
+    {
+      principleActive: "dipirona",
+      brand: "Novalgina",
+      dosageMg: 1000,
+      quantity: 10,
+      formGroup: "comprimido",
+      priority: 100,
+    },
   ];
   const options = [
     {
@@ -376,11 +384,22 @@ async function testConfigurableCommercialRanking() {
       packageInfo: selector.extractPackageInfo("comprimido 500mg caixa com 10 comprimidos"),
       pricePf: 6.9,
     },
+    {
+      productName: "Novalgina",
+      medicineName: "dipirona",
+      label: "Novalgina Comprimido 1g - caixa com 10 unidades",
+      formGroup: "comprimido",
+      strength: "1g",
+      presentationId: 5,
+      packageInfo: selector.extractPackageInfo("comprimido 1g caixa com 10 comprimidos"),
+      pricePf: 18.9,
+    },
   ];
 
   const ranked = selector.rankCommercialOptions("dipirona", options, rules);
   assert.equal(ranked.selected.length, 3);
   assert.match(ranked.selected[0].label, /Novalgina/i);
+  assert.match(ranked.selected.map((item) => item.label).join(" | "), /1g/i);
   assert.ok(ranked.scored.some((item) => item.quantity === 30));
   assert.ok(
     new Set(
@@ -417,7 +436,7 @@ async function testVenvanseDosageDiversity() {
     ],
   };
 
-  const summary = await orchestrator.searchMedicine("Tem venvanse de 70mg?");
+  const summary = await orchestrator.searchMedicine("Tem venvanse?");
   const labels = summary.options.map((item) => item.label).join(" | ");
 
   assert.match(labels, /30mg/i);
@@ -427,6 +446,10 @@ async function testVenvanseDosageDiversity() {
     new Set(summary.options.map((item) => item.strength?.toLowerCase())).size,
     3,
   );
+
+  const exactSummary = await orchestrator.searchMedicine("Tem venvanse de 70mg?");
+  assert.equal(exactSummary.options.length, 1);
+  assert.match(exactSummary.options[0].label, /70mg/i);
 }
 
 function response(body, status = 200) {

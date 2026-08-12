@@ -172,9 +172,16 @@ export class ConversationEngineService {
     }
 
     const selectedOption = this.getSelectedOption(conversation);
-    const dosageChangeReply = selectedOption
-      ? await this.handleDosageChangeFromContext(conversation, text, selectedOption)
-      : null;
+    const dosageContextOption =
+      selectedOption ||
+      this.getCandidateOptions(conversation.candidateOptions).find(
+        (option) => option.type !== "retail_product",
+      );
+    const dosageChangeReply = await this.handleDosageChangeFromContext(
+      conversation,
+      text,
+      dosageContextOption,
+    );
 
     if (dosageChangeReply) {
       return dosageChangeReply;
@@ -979,6 +986,7 @@ export class ConversationEngineService {
     const medicineName =
       this.bulaApiService.normalizeMedicineName(question.medicineName) ||
       question.medicineName;
+    const searchQuery = question.searchQuery || medicineName;
     this.logger.log(`Nova busca de medicamento: ${medicineName}`);
 
     await this.prisma.conversation.update({
@@ -992,7 +1000,7 @@ export class ConversationEngineService {
     });
     this.logger.log("Contexto anterior limpo");
 
-    const summary = await this.medicineSearch.searchMedicine(medicineName);
+    const summary = await this.medicineSearch.searchMedicine(searchQuery);
 
     if (!summary) {
       return this.aiService.generatePharmacyReply(medicineName);
@@ -1787,7 +1795,7 @@ export class ConversationEngineService {
   private async handleDosageChangeFromContext(
     conversation: Conversation,
     text: string,
-    selectedOption: CommercialMedicineOption,
+    selectedOption?: CommercialMedicineOption,
   ) {
     const dosage = this.extractDosageChange(text);
 
@@ -1798,8 +1806,8 @@ export class ConversationEngineService {
     const baseMedicine =
       conversation.currentMedicineQuery ||
       conversation.lastMedicine ||
-      selectedOption.medicineName ||
-      selectedOption.productName;
+      selectedOption?.medicineName ||
+      selectedOption?.productName;
 
     if (!baseMedicine) {
       return null;
@@ -1808,33 +1816,87 @@ export class ConversationEngineService {
     this.logger.log(
       `TROCA DE DOSAGEM DETECTADA: medicamento=${baseMedicine} dosagem=${dosage.label}`,
     );
+    const normalizedMedicine =
+      this.bulaApiService.normalizeMedicineName(baseMedicine) || baseMedicine;
     const summary = await this.medicineSearch.searchMedicine(
-      `${baseMedicine} ${dosage.label}`,
+      `${normalizedMedicine} ${dosage.label}`,
     );
-    const matchingOptions = (summary?.options || []).filter((option) =>
-      this.optionMatchesDosage(option, dosage.mg),
-    );
-    const options = matchingOptions.length > 0 ? matchingOptions : summary?.options || [];
+    const matchingOptions = (summary?.options || [])
+      .filter((option) => this.optionMatchesDosage(option, dosage.mg))
+      .map((option, index) => ({ ...option, optionId: index + 1 }));
 
-    if (options.length === 0) {
+    if (matchingOptions.length === 0) {
+      const alternatives = (summary?.options || []).map((option, index) => ({
+        ...option,
+        optionId: index + 1,
+      }));
+
+      if (alternatives.length > 0) {
+        await this.prisma.conversation.update({
+          where: { id: conversation.id },
+          data: {
+            lastIntent: "DOSAGE_NOT_FOUND",
+            pendingAction: ConversationState.WAITING_PRESENTATION,
+            lastMedicine: normalizedMedicine,
+            currentMedicineQuery: normalizedMedicine,
+            currentRetailCategory: null,
+            candidateOptions: this.toJson(alternatives),
+            selectedPresentation: Prisma.JsonNull,
+          },
+        });
+
+        return [
+          `Não encontrei ${formatProductDisplayName(normalizedMedicine)} ${dosage.label}.`,
+          "",
+          "Encontrei estas opções em outras dosagens:",
+          "",
+          this.formatCandidateOptions(alternatives),
+          "",
+          choicePrompt(),
+        ].join("\n");
+      }
+
       return [
-        `Não encontrei ${formatProductDisplayName(baseMedicine)} ${dosage.label} agora.`,
+        `Não encontrei ${formatProductDisplayName(normalizedMedicine)} ${dosage.label} agora.`,
         "",
         "Pode conferir a dosagem ou enviar uma foto da embalagem?",
       ].join("\n");
     }
 
-    const selected = await this.ensureSelectedOptionPrice(options[0]);
+    if (matchingOptions.length > 1) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          lastIntent: "DOSAGE_CHANGE",
+          pendingAction: ConversationState.WAITING_PRESENTATION,
+          lastMedicine: normalizedMedicine,
+          currentMedicineQuery: normalizedMedicine,
+          currentRetailCategory: null,
+          candidateOptions: this.toJson(matchingOptions),
+          selectedPresentation: Prisma.JsonNull,
+        },
+      });
+
+      return [
+        `Encontrei ${formatProductDisplayName(normalizedMedicine)} ${dosage.label}:`,
+        "",
+        this.formatCandidateOptions(matchingOptions),
+        "",
+        choicePrompt(),
+      ].join("\n");
+    }
+
+    const selected = await this.ensureSelectedOptionPrice(matchingOptions[0]);
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         lastIntent: "DOSAGE_CHANGE",
         pendingAction: ConversationState.WAITING_QUANTITY,
-        lastMedicine: baseMedicine,
-        currentMedicineQuery: baseMedicine,
+        lastMedicine: normalizedMedicine,
+        currentMedicineQuery: normalizedMedicine,
         currentRetailCategory: null,
-        candidateOptions: this.toJson(options),
+        candidateOptions: this.toJson(matchingOptions),
         selectedPresentation: this.toJson(selected),
       },
     });

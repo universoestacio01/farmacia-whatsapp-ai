@@ -25,6 +25,7 @@ export type MedicineIntent =
 export interface MedicineQuestion {
   intent: MedicineIntent;
   medicineName: string;
+  searchQuery?: string;
 }
 
 export interface CommercialMedicineOption {
@@ -200,7 +201,11 @@ export class BulaApiService {
           this.cleanMedicineName(match?.[1]);
 
         if (medicineName) {
-          return { intent, medicineName };
+          return {
+            intent,
+            medicineName,
+            searchQuery: match?.[1]?.trim() || medicineName,
+          };
         }
       }
     }
@@ -209,12 +214,20 @@ export class BulaApiService {
     const medicineFromIntent = this.normalizeMedicineName(message);
 
     if (commercialIntent && medicineFromIntent) {
-      return { intent: commercialIntent, medicineName: medicineFromIntent };
+      return {
+        intent: commercialIntent,
+        medicineName: medicineFromIntent,
+        searchQuery: message.trim(),
+      };
     }
 
     const bareMedicine = this.detectBareMedicineName(compact);
     return bareMedicine
-      ? { intent: "purchase", medicineName: bareMedicine }
+      ? {
+          intent: "purchase",
+          medicineName: bareMedicine,
+          searchQuery: compact.trim(),
+        }
       : null;
   }
 

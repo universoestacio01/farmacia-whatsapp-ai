@@ -121,6 +121,15 @@ export class PopularManualMedicineService implements MedicineProvider {
         "500 MG COM CT BL X 10",
       ),
       this.option(
+        "Novalgina",
+        "Novalgina Comprimido 1g",
+        "comprimido",
+        "dipirona",
+        18.9,
+        "1g",
+        "1 G COM CT BL X 10",
+      ),
+      this.option(
         "Dipirona",
         "Dipirona genérica Comprimido 500mg",
         "comprimido",

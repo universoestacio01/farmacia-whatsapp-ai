@@ -39,8 +39,9 @@ const medicines = {
   ],
   dipirona: [
     option(1, "medicine", "dipirona", "Novalgina Comprimido 500mg", 22, "comprimido", "Novalgina"),
-    option(2, "medicine", "dipirona", "Dipirona genérica comprimido 500mg", 13, "comprimido"),
-    option(3, "medicine", "dipirona", "Dipirona gotas solução oral", 11.9, "gotas"),
+    option(2, "medicine", "dipirona", "Novalgina Comprimido 1g", 28.9, "comprimido", "Novalgina"),
+    option(3, "medicine", "dipirona", "Dipirona genérica comprimido 500mg", 13, "comprimido"),
+    option(4, "medicine", "dipirona", "Dipirona gotas solução oral", 11.9, "gotas"),
   ],
   ibuprofeno: [
     option(1, "medicine", "ibuprofeno", "Ibuprofeno generico comprimido 400mg", 18.9, "comprimido"),
@@ -145,6 +146,7 @@ function createEngine(conversation, options = {}) {
             ? "price"
             : "purchase",
         medicineName: name,
+        searchQuery: text,
       };
     },
     extractMedicineName: medicineName,
@@ -153,10 +155,14 @@ function createEngine(conversation, options = {}) {
       return !query || normalize(item.medicineName).includes(normalize(query));
     },
     formatPriceReply(summary) {
-      return `Preço de ${summary.medicineName}`;
+      return summary.options
+        .map((option) => `${option.optionId}. ${option.label}`)
+        .join("\n");
     },
     formatPresentationChoiceReply(summary) {
-      return `Opções de ${summary.medicineName}`;
+      return summary.options
+        .map((option) => `${option.optionId}. ${option.label}`)
+        .join("\n");
     },
     findOptionByReply(text, options) {
       if (/generico/.test(normalize(text))) {
@@ -172,15 +178,30 @@ function createEngine(conversation, options = {}) {
       const key =
         Object.keys(medicines).find((item) => normalizedName.includes(item)) ||
         normalizedName;
-      const dosage = normalizedName.match(/\b(\d+)\s*mg\b/)?.[1];
       const options = medicines[key] || [];
+      const dosageMatch = normalizedName.match(/\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/);
+      const requestedMg = dosageMatch
+        ? Number(dosageMatch[1].replace(",", ".")) *
+          (dosageMatch[2] === "g" ? 1000 : 1)
+        : null;
+      const matchingOptions = requestedMg
+        ? options.filter((item) => {
+            const optionMatch = normalize(item.label).match(
+              /\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/,
+            );
+
+            if (!optionMatch) return false;
+            const optionMg =
+              Number(optionMatch[1].replace(",", ".")) *
+              (optionMatch[2] === "g" ? 1000 : 1);
+            return Math.abs(optionMg - requestedMg) < 0.01;
+          })
+        : [];
 
       return {
         medicineName: name,
         products: [],
-        options: dosage
-          ? options.filter((item) => normalize(item.label).includes(`${dosage}mg`))
-          : options,
+        options: requestedMg && matchingOptions.length > 0 ? matchingOptions : options,
       };
     },
     findSymptomOptions: () => null,
@@ -621,6 +642,40 @@ async function run() {
     assert.equal(result.conversation.pendingAction, ConversationState.WAITING_QUANTITY);
     assert.match(lastReplyText(result), /50mg/);
     assert.doesNotMatch(lastReplyText(result), /Não localizei|Nao localizei/);
+  }));
+
+  results.push(await runScenario("dipirona mostra dosagem de 1g", [
+    "Tem dipirona?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
+    assert.match(lastReplyText(result), /500mg/i);
+    assert.match(lastReplyText(result), /1g/i);
+  }));
+
+  results.push(await runScenario("dipirona troca para 1g antes da selecao", [
+    "Tem dipirona?",
+    "Tem de 1g?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_QUANTITY);
+    assert.match(lastReplyText(result), /1g/i);
+    assert.doesNotMatch(lastReplyText(result), /Não localizei|Nao localizei/);
+  }));
+
+  results.push(await runScenario("dosagem inexistente mantem contexto", [
+    "Tem dipirona?",
+    "Tem de 1mg?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PRESENTATION);
+    assert.match(lastReplyText(result), /Não encontrei Dipirona 1mg/i);
+    assert.match(lastReplyText(result), /outras dosagens/i);
+    assert.match(lastReplyText(result), /1g/i);
+  }));
+
+  results.push(await runScenario("busca inicial preserva dosagem", [
+    "Tem dipirona de 1g?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_QUANTITY);
+    assert.match(lastReplyText(result), /1g/i);
   }));
 
   const retailQueries = [

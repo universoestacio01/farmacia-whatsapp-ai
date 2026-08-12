@@ -448,12 +448,17 @@ export class CommercialMedicineSelector {
       return { selected: [] as T[], scored: [] };
     }
 
+    const requestedScored = this.filterByRequestedAttributes(scored, parsedQuery);
     const selectedScored =
       parsedQuery.dosageMg !== undefined ||
       parsedQuery.formGroup ||
       parsedQuery.packageQuantity !== undefined
-        ? this.selectRequestedQueryOptions(scored, parsedQuery)
-        : this.selectBalancedOptions(scored, priorityRules.length > 0);
+        ? this.selectRequestedQueryOptions(
+            requestedScored,
+            parsedQuery,
+            priorityRules,
+          )
+        : this.selectBalancedOptions(scored, priorityRules);
 
     return {
       selected: selectedScored.map(
@@ -478,10 +483,51 @@ export class CommercialMedicineSelector {
     };
   }
 
+  private filterByRequestedAttributes<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    parsedQuery: ParsedMedicineQuery,
+  ) {
+    let filtered = scored;
+
+    if (parsedQuery.dosageMg !== undefined) {
+      const dosageMatches = filtered.filter((item) =>
+        this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number),
+      );
+
+      if (dosageMatches.length > 0) {
+        filtered = dosageMatches;
+      }
+    }
+
+    if (parsedQuery.formGroup) {
+      const formMatches = filtered.filter(
+        (item) => item.option.formGroup === parsedQuery.formGroup,
+      );
+
+      if (formMatches.length > 0) {
+        filtered = formMatches;
+      }
+    }
+
+    if (parsedQuery.packageQuantity !== undefined) {
+      const quantityMatches = filtered.filter(
+        (item) =>
+          item.option.packageInfo?.unitCount === parsedQuery.packageQuantity,
+      );
+
+      if (quantityMatches.length > 0) {
+        filtered = quantityMatches;
+      }
+    }
+
+    return filtered;
+  }
+
   private selectBalancedOptions<T extends SelectorOption>(
     scored: Array<RankedOption<T>>,
-    hasConfiguredRules: boolean,
+    priorityRules: MedicinePriorityRuleConfig[],
   ) {
+    const hasConfiguredRules = priorityRules.length > 0;
     const selected: Array<RankedOption<T>> = [];
     const pick = (item: RankedOption<T> | undefined, category: string, reason: string) => {
       if (!item || this.isAlreadyPicked(selected, item)) {
@@ -498,6 +544,46 @@ export class CommercialMedicineSelector {
       hasConfiguredRules
         ? "apresentação priorizada na configuração comercial"
         : "maior aderência ao produto pesquisado",
+    );
+
+    const dosageCandidates = this.dosageSelectionPool(scored, priorityRules);
+    const dosageCount = new Set(
+      dosageCandidates
+        .map((item) => this.extractDosageSignature(item.option))
+        .filter(Boolean),
+    ).size;
+
+    while (selected.length < 3) {
+      const selectedDosages = new Set(
+        selected
+          .map((item) => this.extractDosageSignature(item.option))
+          .filter(Boolean),
+      );
+
+      if (selectedDosages.size >= Math.min(3, dosageCount)) {
+        break;
+      }
+
+      const differentDosage = dosageCandidates.find((item) => {
+        const dosage = this.extractDosageSignature(item.option);
+        return dosage && !selectedDosages.has(dosage);
+      });
+
+      if (!differentDosage) {
+        break;
+      }
+
+      pick(
+        differentDosage,
+        "dosagem_alternativa",
+        "dosagem diferente entre as opções comerciais disponíveis",
+      );
+    }
+
+    pick(
+      this.findDifferentForm(scored, selected),
+      "forma_alternativa",
+      "forma farmacêutica diferente entre as opções comerciais disponíveis",
     );
 
     if (hasConfiguredRules) {
@@ -534,6 +620,7 @@ export class CommercialMedicineSelector {
   private selectRequestedQueryOptions<T extends SelectorOption>(
     scored: Array<RankedOption<T>>,
     parsedQuery: ParsedMedicineQuery,
+    priorityRules: MedicinePriorityRuleConfig[],
   ) {
     const selected: Array<RankedOption<T>> = [];
     const pick = (item: RankedOption<T> | undefined, category: string, reason: string) => {
@@ -573,12 +660,54 @@ export class CommercialMedicineSelector {
       );
     }
 
-    for (const item of this.sortByDistinctDosage(scored, selected)) {
+    const dosageCandidates = this.dosageSelectionPool(scored, priorityRules);
+    for (const item of this.sortByDistinctDosage(dosageCandidates, selected)) {
       if (selected.length >= 3) break;
       pick(item, "variacao_relevante", "outra dosagem ou apresentação relevante");
     }
 
+    for (const item of scored) {
+      if (selected.length >= 3) break;
+      pick(item, "variacao_relevante", "outra apresentação comercial relevante");
+    }
+
     return selected.slice(0, 3);
+  }
+
+  private dosageSelectionPool<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    priorityRules: MedicinePriorityRuleConfig[],
+  ) {
+    if (!priorityRules.length) {
+      return scored.filter((item) => this.extractDosageSignature(item.option));
+    }
+
+    const configuredDosages = new Set(
+      priorityRules
+        .map((rule) => this.priorityRuleDosageSignature(rule))
+        .filter((dosage): dosage is string => Boolean(dosage)),
+    );
+
+    if (!configuredDosages.size) {
+      return [];
+    }
+
+    return scored.filter((item) =>
+      configuredDosages.has(this.extractDosageSignature(item.option)),
+    );
+  }
+
+  private priorityRuleDosageSignature(rule: MedicinePriorityRuleConfig) {
+    if (rule.dosageMg !== undefined) {
+      return `${rule.dosageMg}mg`;
+    }
+
+    if (!rule.dosageText) {
+      return "";
+    }
+
+    const parsed = this.extractRequestedDosage(rule.dosageText);
+    return parsed.mg !== undefined ? `${parsed.mg}mg` : "";
   }
 
   private sortByDistinctDosage<T extends SelectorOption>(
@@ -838,6 +967,20 @@ export class CommercialMedicineSelector {
     selected: Array<RankedOption<T>>,
   ) {
     return this.selectableCandidates(scored, selected)[0];
+  }
+
+  private findDifferentForm<T extends SelectorOption>(
+    scored: Array<RankedOption<T>>,
+    selected: Array<RankedOption<T>>,
+  ) {
+    const selectedForms = new Set(
+      selected.map((item) => item.option.formGroup).filter(Boolean),
+    );
+
+    return this.selectableCandidates(scored, selected).find(
+      (item) =>
+        item.option.formGroup && !selectedForms.has(item.option.formGroup),
+    );
   }
 
   private selectableCandidates<T extends SelectorOption>(
