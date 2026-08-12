@@ -481,8 +481,24 @@ async function run() {
     "1",
     "ja paguei",
   ], (result) => {
-    assert.match(lastReplyText(result), /recebi seu aviso/i);
+    assert.match(lastReplyText(result), /foto ou PDF do comprovante/i);
     assert.match(lastReplyText(result), /conferir o Pix/i);
+  }));
+
+  results.push(await runScenario("pergunta depois do pix", [
+    "Tem Dorflex?",
+    "1",
+    "1",
+    "01001000",
+    "123",
+    "nao",
+    "1",
+    "qual o prazo da entrega?",
+  ], (result) => {
+    assert.equal(result.conversation.pendingAction, ConversationState.WAITING_PIX);
+    assert.match(lastReplyText(result), /aguardando a confirmação do Pix/i);
+    assert.match(lastReplyText(result), /foto ou PDF do comprovante/i);
+    assert.match(lastReplyText(result), /escreva “pix”/i);
   }));
 
   results.push(await runScenario("entrega gratis", ["quanto fica a entrega?"], (result) => {

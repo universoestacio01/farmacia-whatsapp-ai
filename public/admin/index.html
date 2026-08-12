@@ -3,33 +3,38 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Painel Administrativo | Raia Delivery</title>
-    <link rel="stylesheet" href="/admin/styles.css" />
+    <meta name="color-scheme" content="light" />
+    <title>Operação | Raia Delivery</title>
+    <link rel="stylesheet" href="/admin/styles.css?v=20260812-4" />
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">RD</div>
+          <div class="brand-mark" aria-hidden="true">RD</div>
           <div>
             <strong>Raia Delivery</strong>
-            <span>Painel administrativo</span>
+            <span>Central de operação</span>
           </div>
         </div>
 
         <nav class="nav" aria-label="Navegação principal">
-          <button class="nav-item active" data-section="overview">Visão geral</button>
-          <button class="nav-item" data-section="attention">Atenção</button>
-          <button class="nav-item" data-section="conversations">Conversas</button>
-          <button class="nav-item" data-section="orders">Pedidos</button>
-          <button class="nav-item" data-section="medicine-priorities">Prioridades</button>
-          <button class="nav-item" data-section="providers">APIs</button>
-          <button class="nav-item" data-section="errors">Erros</button>
+          <button class="nav-item active" data-section="overview" type="button">Visão geral</button>
+          <button class="nav-item" data-section="payments" type="button">
+            Compensações
+            <span id="pending-nav-count" class="nav-count hidden">0</span>
+          </button>
+          <button class="nav-item" data-section="conversations" type="button">Conversas</button>
+          <button class="nav-item" data-section="orders" type="button">Pedidos</button>
+          <button class="nav-item" data-section="attention" type="button">Atenção</button>
+          <button class="nav-item" data-section="medicine-priorities" type="button">Medicamentos</button>
+          <button class="nav-item" data-section="providers" type="button">Integrações</button>
+          <button class="nav-item" data-section="errors" type="button">Erros</button>
         </nav>
 
         <div class="sidebar-footer">
           <span id="auth-state">Verificando acesso...</span>
-          <button id="logout-button" class="ghost-button" type="button">Sair</button>
+          <button id="logout-button" class="ghost-button" type="button">Sair do painel</button>
         </div>
       </aside>
 
@@ -40,30 +45,41 @@
             <h1 id="page-title">Visão geral</h1>
           </div>
           <div class="topbar-actions">
-            <span id="last-updated" class="muted">Ainda não atualizado</span>
-            <button id="refresh-button" class="primary-button" type="button">
-              <span aria-hidden="true">↻</span>
-              Atualizar
-            </button>
+            <div class="update-state">
+              <span class="live-dot" aria-hidden="true"></span>
+              <span id="last-updated">Carregando dados</span>
+            </div>
+            <button id="refresh-button" class="primary-button" type="button">Atualizar</button>
           </div>
         </header>
 
-        <section id="overview" class="section active" aria-labelledby="overview-title">
+        <section id="overview" class="section active" aria-label="Visão geral">
           <div class="metrics-grid" id="metrics-grid"></div>
+
+          <article class="panel payment-queue-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Prioridade operacional</p>
+                <h2>Pix aguardando compensação</h2>
+              </div>
+              <button class="link-button" data-section-target="payments" type="button">Ver fila completa</button>
+            </div>
+            <div id="overview-payment-queue" class="payment-queue"></div>
+          </article>
 
           <div class="grid-two">
             <article class="panel">
               <div class="panel-header">
                 <h2>Precisa de atenção</h2>
-                <button class="link-button" data-section-target="attention" type="button">Ver fila</button>
+                <button class="link-button" data-section-target="attention" type="button">Abrir fila</button>
               </div>
               <div id="latest-attention" class="list"></div>
             </article>
 
             <article class="panel">
               <div class="panel-header">
-                <h2 id="overview-title">Conversas recentes</h2>
-                <button class="link-button" data-section-target="conversations" type="button">Ver todas</button>
+                <h2>Conversas recentes</h2>
+                <button class="link-button" data-section-target="conversations" type="button">Ver conversas</button>
               </div>
               <div id="latest-conversations" class="list"></div>
             </article>
@@ -71,29 +87,32 @@
             <article class="panel full-span">
               <div class="panel-header">
                 <h2>Pedidos recentes</h2>
-                <button class="link-button" data-section-target="orders" type="button">Ver pedidos</button>
+                <button class="link-button" data-section-target="orders" type="button">Ver todos os pedidos</button>
               </div>
               <div id="latest-orders" class="list"></div>
             </article>
           </div>
         </section>
 
-        <section id="attention" class="section" aria-labelledby="attention-title">
+        <section id="payments" class="section" aria-labelledby="payments-title">
           <article class="panel">
             <div class="panel-header">
-              <h2 id="attention-title">Fila de atenção</h2>
-              <span class="muted">Conversas travadas, antigas ou com falha</span>
+              <div>
+                <p class="section-kicker">Conferência manual</p>
+                <h2 id="payments-title">Pagamentos aguardando compensação</h2>
+              </div>
+              <span id="pending-payments-summary" class="muted"></span>
             </div>
-            <div id="attention-list" class="list selectable"></div>
+            <div id="pending-payments-list" class="payment-queue payment-queue-full"></div>
           </article>
         </section>
 
         <section id="conversations" class="section" aria-labelledby="conversations-title">
-          <div class="filters">
-            <input id="conversation-search" type="search" placeholder="Buscar por telefone, produto ou mensagem" />
-            <select id="conversation-state">
-              <option value="">Todos os estados</option>
-              <option value="IDLE">IDLE</option>
+          <div class="filters conversation-filters">
+            <input id="conversation-search" type="search" placeholder="Buscar cliente, telefone ou mensagem" />
+            <select id="conversation-state" aria-label="Filtrar por etapa">
+              <option value="">Todas as etapas</option>
+              <option value="IDLE">Atendimento livre</option>
               <option value="WAITING_MEDICINE_NAME">Aguardando produto</option>
               <option value="WAITING_PRESENTATION">Aguardando opção</option>
               <option value="WAITING_QUANTITY">Aguardando quantidade</option>
@@ -101,8 +120,8 @@
               <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
               <option value="WAITING_PIX">Aguardando Pix</option>
             </select>
-            <select id="conversation-status">
-              <option value="">Todas</option>
+            <select id="conversation-status" aria-label="Filtrar por status">
+              <option value="">Abertas e fechadas</option>
               <option value="OPEN">Abertas</option>
               <option value="CLOSED">Fechadas</option>
             </select>
@@ -112,54 +131,89 @@
             <article class="panel list-panel">
               <div class="panel-header">
                 <h2 id="conversations-title">Conversas</h2>
-                <span class="muted">Últimas atualizadas</span>
+                <span class="muted">Mais recentes primeiro</span>
               </div>
               <div id="conversation-list" class="list selectable"></div>
             </article>
 
-            <article class="panel detail-panel">
+            <article class="panel detail-panel conversation-detail-panel">
               <div class="panel-header">
-                <h2>Histórico</h2>
-                <span id="conversation-context" class="muted">Selecione uma conversa</span>
-              </div>
-              <div id="conversation-actions" class="action-row hidden">
-                <button id="reset-conversation-button" class="secondary-button" type="button">Resetar conversa</button>
-                <button id="close-conversation-button" class="secondary-button" type="button">Fechar conversa</button>
+                <div>
+                  <h2>Histórico</h2>
+                  <span id="conversation-context" class="muted">Selecione uma conversa</span>
+                </div>
+                <div id="conversation-actions" class="action-row hidden">
+                  <button id="reset-conversation-button" class="secondary-button" type="button">Reiniciar</button>
+                  <button id="close-conversation-button" class="secondary-button danger-text" type="button">Encerrar</button>
+                </div>
               </div>
               <div id="message-thread" class="message-thread empty-state">
-                Selecione uma conversa para ver as mensagens.
+                Selecione uma conversa para acompanhar o atendimento.
               </div>
               <form id="manual-message-form" class="manual-message hidden">
-                <textarea id="manual-message-text" rows="3" placeholder="Responder manualmente pelo WhatsApp"></textarea>
-                <button class="primary-button" type="submit">Enviar resposta</button>
+                <textarea id="manual-message-text" rows="3" placeholder="Escreva uma resposta para o cliente"></textarea>
+                <div class="form-actions">
+                  <span class="muted">A mensagem será enviada pelo WhatsApp.</span>
+                  <button class="primary-button" type="submit">Enviar mensagem</button>
+                </div>
               </form>
             </article>
           </div>
         </section>
 
         <section id="orders" class="section" aria-labelledby="orders-title">
+          <div class="filters order-filters">
+            <input id="order-search" type="search" placeholder="Buscar cliente, telefone, item ou pedido" />
+            <select id="order-status-filter" aria-label="Filtrar status do pedido">
+              <option value="">Todos os pedidos</option>
+              <option value="PENDING_PAYMENT_MANUAL">Aguardando Pix</option>
+              <option value="PAID">Pagos</option>
+              <option value="DELIVERED">Entregues</option>
+              <option value="CANCELLED">Cancelados</option>
+            </select>
+            <select id="payment-status-filter" aria-label="Filtrar status do pagamento">
+              <option value="">Todos os pagamentos</option>
+              <option value="PENDING">Pagamento pendente</option>
+              <option value="PAID">Pagamento compensado</option>
+              <option value="FAILED">Pagamento com falha</option>
+            </select>
+          </div>
+
           <div class="workspace orders-workspace">
             <article class="panel list-panel">
               <div class="panel-header">
-                <h2 id="orders-title">Pedidos</h2>
-                <span class="muted">Status, pagamento e cliente</span>
+                <h2 id="orders-title">Todos os pedidos</h2>
+                <span id="orders-result-count" class="muted"></span>
               </div>
               <div id="orders-table" class="table selectable"></div>
             </article>
-            <article class="panel detail-panel">
+            <article class="panel detail-panel order-detail-panel">
               <div class="panel-header">
                 <h2>Detalhe do pedido</h2>
-                <select id="order-status-select" class="hidden">
+                <select id="order-status-select" class="hidden" aria-label="Alterar status do pedido">
                   <option value="CONFIRMED">Confirmado</option>
                   <option value="PENDING_PAYMENT_MANUAL">Aguardando conferência do Pix</option>
-                  <option value="PAID">Pago</option>
+                  <option value="PAID" disabled>Pagamento confirmado</option>
                   <option value="DELIVERED">Entregue</option>
                   <option value="CANCELLED">Cancelado</option>
                 </select>
               </div>
-              <div id="order-detail" class="empty-state">Selecione um pedido.</div>
+              <div id="order-detail" class="empty-state">Selecione um pedido para ver os detalhes.</div>
             </article>
           </div>
+        </section>
+
+        <section id="attention" class="section" aria-labelledby="attention-title">
+          <article class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-kicker">Revisão humana</p>
+                <h2 id="attention-title">Fila de atenção</h2>
+              </div>
+              <span class="muted">Conversas travadas, antigas ou com falha</span>
+            </div>
+            <div id="attention-list" class="list selectable"></div>
+          </article>
         </section>
 
         <section id="medicine-priorities" class="section" aria-labelledby="medicine-priorities-title">
@@ -167,29 +221,23 @@
             <div class="panel-header">
               <div>
                 <h2 id="medicine-priorities-title">Prioridades de medicamentos</h2>
-                <p class="muted">Edite a ordem comercial por princípio ativo. Prioridade maior aparece antes.</p>
+                <p class="muted">Ajuste a ordem comercial por princípio ativo. Prioridades maiores aparecem primeiro.</p>
               </div>
-              <button id="save-medicine-priorities-button" class="primary-button" type="button">Salvar prioridades</button>
+              <button id="save-medicine-priorities-button" class="primary-button" type="button">Salvar alterações</button>
             </div>
             <div id="medicine-priorities-meta" class="item-meta"></div>
-            <textarea
-              id="medicine-priorities-editor"
-              class="json-editor"
-              rows="18"
-              spellcheck="false"
-              aria-label="Regras de prioridade em JSON"
-            ></textarea>
+            <textarea id="medicine-priorities-editor" class="json-editor" rows="18" spellcheck="false" aria-label="Regras de prioridade em JSON"></textarea>
           </article>
         </section>
 
         <section id="providers" class="section" aria-labelledby="providers-title">
           <article class="panel">
             <div class="panel-header">
-              <h2 id="providers-title">Status das APIs</h2>
-              <button id="database-check-button" class="secondary-button" type="button">
-                <span aria-hidden="true">✓</span>
-                Testar banco
-              </button>
+              <div>
+                <p class="section-kicker">Diagnóstico</p>
+                <h2 id="providers-title">Status das integrações</h2>
+              </div>
+              <button id="database-check-button" class="secondary-button" type="button">Testar banco</button>
             </div>
             <div id="providers-grid" class="providers-grid"></div>
             <div id="database-result" class="database-result"></div>
@@ -199,7 +247,10 @@
         <section id="errors" class="section" aria-labelledby="errors-title">
           <article class="panel">
             <div class="panel-header">
-              <h2 id="errors-title">Controle de erros</h2>
+              <div>
+                <p class="section-kicker">Saúde da operação</p>
+                <h2 id="errors-title">Controle de erros</h2>
+              </div>
               <span class="muted">Mensagens e pagamentos com falha</span>
             </div>
             <div id="errors-summary" class="metrics-grid compact"></div>
@@ -218,10 +269,26 @@
       </main>
     </div>
 
+    <dialog id="confirm-payment-dialog" class="confirmation-dialog">
+      <form method="dialog" class="dialog-content">
+        <div class="dialog-icon" aria-hidden="true">R$</div>
+        <div>
+          <p class="section-kicker">Confirmação de recebimento</p>
+          <h2>O Pix compensou?</h2>
+          <p id="confirm-payment-description" class="dialog-description"></p>
+          <div id="confirm-payment-summary" class="confirmation-summary"></div>
+        </div>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel" type="submit">Voltar</button>
+          <button id="confirm-payment-submit" class="primary-button" value="default" type="button">Sim, compensou</button>
+        </div>
+      </form>
+    </dialog>
+
     <div id="auth-modal" class="auth-modal hidden" role="dialog" aria-modal="true">
       <form id="auth-form" class="auth-card">
         <div class="brand-mark">RD</div>
-        <h2>Acesso ao painel</h2>
+        <h2>Acesso à operação</h2>
         <p>Digite o token administrativo configurado na Hostinger.</p>
         <label for="admin-token">Token administrativo</label>
         <input id="admin-token" name="admin-token" type="password" autocomplete="current-password" />
@@ -231,6 +298,6 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/admin/app.js" defer></script>
+    <script src="/admin/app.js?v=20260812-4" defer></script>
   </body>
 </html>

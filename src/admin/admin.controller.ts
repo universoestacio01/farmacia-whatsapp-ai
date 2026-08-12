@@ -81,6 +81,15 @@ export class AdminController {
     return this.adminService.listOrders(Number(limit) || 20);
   }
 
+  @Get("orders/pending-payments")
+  pendingPayments(
+    @Headers("x-admin-token") token?: string,
+    @Query("limit") limit?: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.pendingPaymentOrders(Number(limit) || 50);
+  }
+
   @Get("orders/:id")
   orderDetails(
     @Headers("x-admin-token") token: string | undefined,
@@ -103,6 +112,15 @@ export class AdminController {
     }
 
     return this.adminService.updateOrderStatus(id, status);
+  }
+
+  @Post("orders/:id/confirm-payment")
+  confirmPayment(
+    @Headers("x-admin-token") token: string | undefined,
+    @Param("id") id: string,
+  ) {
+    this.assertAuthorized(token);
+    return this.adminService.confirmPayment(id);
   }
 
   @Post("conversations/:id/messages")

@@ -1,4 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
   ConversationStatus,
@@ -23,6 +28,8 @@ import { WhatsappService } from "../whatsapp/whatsapp.service";
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -82,6 +89,7 @@ export class AdminService {
       },
       latestConversations,
       latestOrders,
+      pendingPaymentsQueue: await this.pendingPaymentOrders(8),
       attention: await this.attentionQueue(8),
       providers: this.providers(),
     };
@@ -198,7 +206,7 @@ export class AdminService {
   }
 
   async listOrders(limit = 20) {
-    const take = this.clampLimit(limit);
+    const take = this.clampLimit(limit, 200);
     const orders = await this.prisma.safePrismaCall(
       "admin.order.findMany",
       (prisma) =>
@@ -219,6 +227,7 @@ export class AdminService {
 
     return orders.map((order) => ({
       id: order.id,
+      conversationId: order.conversationId,
       status: order.status,
       totalCents: order.totalCents,
       notes: this.parseOrderNotes(order.notes),
@@ -254,6 +263,114 @@ export class AdminService {
     }));
   }
 
+  async pendingPaymentOrders(limit = 50) {
+    const take = this.clampLimit(limit, 200);
+    const orders = await this.prisma.safePrismaCall(
+      "admin.order.findMany.pending_payments",
+      (prisma) =>
+        prisma.order.findMany({
+          where: {
+            status: {
+              in: [OrderStatus.CONFIRMED, OrderStatus.PENDING_PAYMENT_MANUAL],
+            },
+            payments: { some: { status: PaymentStatus.PENDING } },
+          },
+          orderBy: { createdAt: "asc" },
+          take,
+          include: {
+            customer: true,
+            items: true,
+            payments: {
+              where: { status: PaymentStatus.PENDING },
+              orderBy: { createdAt: "desc" },
+              take: 1,
+            },
+          },
+        }),
+      [],
+    );
+
+    const conversationIds = orders
+      .map((order) => order.conversationId)
+      .filter((id): id is string => Boolean(id));
+    const conversations = conversationIds.length
+      ? await this.prisma.safePrismaCall(
+          "admin.conversation.findMany.payment_proofs",
+          (prisma) =>
+            prisma.conversation.findMany({
+              where: { id: { in: conversationIds } },
+              select: {
+                id: true,
+                lastIntent: true,
+                messages: {
+                  where: {
+                    content: { contains: "comprovante de pagamento recebido" },
+                  },
+                  orderBy: { createdAt: "desc" },
+                  take: 1,
+                  select: { createdAt: true },
+                },
+              },
+            }),
+          [],
+        )
+      : [];
+    const proofByConversation = new Map(
+      conversations.map((conversation) => [conversation.id, conversation]),
+    );
+
+    return orders
+      .map((order) => {
+        const proofConversation = order.conversationId
+          ? proofByConversation.get(order.conversationId)
+          : undefined;
+        const proofReceived = Boolean(
+          proofConversation?.lastIntent === "PAYMENT_PROOF_RECEIVED" ||
+            proofConversation?.messages.length,
+        );
+
+        return {
+          id: order.id,
+          conversationId: order.conversationId,
+          status: order.status,
+          totalCents: order.totalCents,
+          proofReceived,
+          proofReceivedAt: proofConversation?.messages[0]?.createdAt || null,
+          customer: {
+            name: order.customer.name,
+            whatsappNumber: order.customer.whatsappNumber,
+          },
+          items: order.items.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+            totalCents: item.totalCents,
+          })),
+          payment: order.payments[0]
+            ? {
+                id: order.payments[0].id,
+                status: order.payments[0].status,
+                amountCents: order.payments[0].amountCents,
+                providerTransactionId:
+                  order.payments[0].providerTransactionId,
+                createdAt: order.payments[0].createdAt,
+              }
+            : null,
+          createdAt: order.createdAt,
+          waitingMinutes: Math.max(
+            0,
+            Math.floor((Date.now() - order.createdAt.getTime()) / 60000),
+          ),
+        };
+      })
+      .sort((left, right) => {
+        if (left.proofReceived !== right.proofReceived) {
+          return left.proofReceived ? -1 : 1;
+        }
+
+        return left.createdAt.getTime() - right.createdAt.getTime();
+      });
+  }
+
   async orderDetails(orderId: string) {
     const order = await this.prisma.safePrismaCall(
       "admin.order.findUnique.details",
@@ -275,6 +392,7 @@ export class AdminService {
 
     return {
       id: order.id,
+      conversationId: order.conversationId,
       status: order.status,
       totalCents: order.totalCents,
       notes: this.parseOrderNotes(order.notes),
@@ -312,27 +430,18 @@ export class AdminService {
   }
 
   async updateOrderStatus(orderId: string, status: OrderStatus) {
+    if (status === OrderStatus.PAID) {
+      return this.confirmPayment(orderId);
+    }
+
     return this.prisma.safePrismaCall(
       "admin.order.update.status",
       async (prisma) => {
         const order = await prisma.order.update({
-        where: { id: orderId },
-        data: { status },
-        select: { id: true, status: true, updatedAt: true },
+          where: { id: orderId },
+          data: { status },
+          select: { id: true, status: true, updatedAt: true },
         });
-
-        if (status === OrderStatus.PAID) {
-          await prisma.payment.updateMany({
-            where: {
-              orderId,
-              status: PaymentStatus.PENDING,
-            },
-            data: {
-              status: PaymentStatus.PAID,
-              paidAt: new Date(),
-            },
-          });
-        }
 
         if (status === OrderStatus.CANCELLED) {
           await prisma.payment.updateMany({
@@ -347,6 +456,156 @@ export class AdminService {
         return order;
       },
     );
+  }
+
+  async confirmPayment(orderId: string) {
+    const confirmedAt = new Date();
+    const result = await this.prisma.safePrismaCall(
+      "admin.payment.confirm_manual",
+      async (prisma) => {
+        const order = await prisma.order.findUnique({
+          where: { id: orderId },
+          include: {
+            customer: true,
+            payments: { orderBy: { createdAt: "desc" } },
+          },
+        });
+
+        if (!order) {
+          throw new NotFoundException("Pedido não encontrado.");
+        }
+
+        if (order.status === OrderStatus.CANCELLED) {
+          throw new ConflictException(
+            "Não é possível confirmar o pagamento de um pedido cancelado.",
+          );
+        }
+
+        const pendingPayment = order.payments.find(
+          (payment) => payment.status === PaymentStatus.PENDING,
+        );
+
+        if (!pendingPayment) {
+          if (
+            order.status === OrderStatus.PAID ||
+            order.status === OrderStatus.DELIVERED ||
+            order.payments.some(
+              (payment) => payment.status === PaymentStatus.PAID,
+            )
+          ) {
+            return {
+              alreadyConfirmed: true,
+              orderId: order.id,
+              conversationId: order.conversationId,
+              whatsappNumber: order.customer.whatsappNumber,
+              totalCents: order.totalCents,
+              paidAt:
+                order.payments.find(
+                  (payment) => payment.status === PaymentStatus.PAID,
+                )?.paidAt || null,
+            };
+          }
+
+          throw new ConflictException(
+            "Este pedido não possui um pagamento Pix pendente.",
+          );
+        }
+
+        const paymentUpdate = await prisma.payment.updateMany({
+          where: {
+            id: pendingPayment.id,
+            status: PaymentStatus.PENDING,
+          },
+          data: {
+            status: PaymentStatus.PAID,
+            paidAt: confirmedAt,
+          },
+        });
+
+        if (paymentUpdate.count === 0) {
+          return {
+            alreadyConfirmed: true,
+            orderId: order.id,
+            conversationId: order.conversationId,
+            whatsappNumber: order.customer.whatsappNumber,
+            totalCents: order.totalCents,
+            paidAt: confirmedAt,
+          };
+        }
+
+        await prisma.order.update({
+          where: { id: order.id },
+          data: { status: OrderStatus.PAID },
+        });
+
+        if (order.conversationId) {
+          await prisma.conversation.updateMany({
+            where: { id: order.conversationId },
+            data: {
+              status: ConversationStatus.OPEN,
+              pendingAction: ConversationState.IDLE,
+              lastIntent: `PAYMENT_CONFIRMED:${order.id}`,
+              currentMedicineQuery: null,
+              currentRetailCategory: null,
+              selectedPresentation: Prisma.JsonNull,
+              candidateOptions: Prisma.JsonNull,
+              cart: Prisma.JsonNull,
+              pendingAddress: Prisma.JsonNull,
+            },
+          });
+        }
+
+        return {
+          alreadyConfirmed: false,
+          orderId: order.id,
+          conversationId: order.conversationId,
+          whatsappNumber: order.customer.whatsappNumber,
+          totalCents: order.totalCents,
+          paidAt: confirmedAt,
+        };
+      },
+    );
+
+    if (result.alreadyConfirmed) {
+      return {
+        ...result,
+        status: OrderStatus.PAID,
+        notificationQueued: false,
+        notificationStatus: "ALREADY_CONFIRMED",
+      };
+    }
+
+    let notificationQueued = false;
+    let notificationStatus = "NO_CONVERSATION";
+
+    if (result.conversationId) {
+      try {
+        const outbox = await this.whatsappService.queueTextMessage(
+          result.conversationId,
+          result.whatsappNumber,
+          this.paymentConfirmedMessage(),
+        );
+        notificationQueued = true;
+        notificationStatus = outbox?.status || "PENDING";
+      } catch (error) {
+        notificationStatus = "FAILED_TO_QUEUE";
+        this.logger.error(
+          `PAYMENT CONFIRMED, WHATSAPP NOTIFICATION FAILED: order=${orderId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
+    this.logger.log(
+      `PAYMENT MANUALLY CONFIRMED: order=${orderId}, notification=${notificationStatus}`,
+    );
+
+    return {
+      ...result,
+      status: OrderStatus.PAID,
+      notificationQueued,
+      notificationStatus,
+    };
   }
 
   async sendManualMessage(conversationId: string, text: string) {
@@ -714,6 +973,15 @@ export class AdminService {
     } catch {
       return { items: [], address: null, conversationId: null, raw: notes };
     }
+  }
+
+  private paymentConfirmedMessage() {
+    return [
+      "Pagamento confirmado.",
+      "",
+      "Seu pedido já foi encaminhado para separação pela Raia Delivery.",
+      "Nossa equipe seguirá com a entrega e avisará você por aqui.",
+    ].join("\n");
   }
 
   private resolveAttentionReason(conversation: {

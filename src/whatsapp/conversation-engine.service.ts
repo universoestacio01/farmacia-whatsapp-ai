@@ -77,6 +77,10 @@ export class ConversationEngineService {
       return WhatsappCopy.resetConversation();
     }
 
+    if (conversation.pendingAction === ConversationState.WAITING_PIX) {
+      return this.handleWaitingPix(conversation, text);
+    }
+
     if (this.isGreetingOnly(text)) {
       return this.handleGreeting(conversation);
     }
@@ -219,11 +223,6 @@ export class ConversationEngineService {
       return this.handleMedicineQuestion(conversation.id, medicineQuestion);
     }
 
-    const paymentStates: ConversationState[] = [ConversationState.WAITING_PIX];
-    if (paymentStates.includes(conversation.pendingAction)) {
-      return this.handleWaitingPix(conversation, text);
-    }
-
     switch (conversation.pendingAction) {
       case ConversationState.WAITING_MEDICINE_NAME:
         return this.handleWaitingMedicineName(conversation, text, medicineQuestion);
@@ -241,8 +240,6 @@ export class ConversationEngineService {
         return this.handleWaitingAddressComplement(conversation, text);
       case ConversationState.WAITING_CONFIRMATION:
         return this.handleWaitingConfirmation(conversation, text);
-      case ConversationState.WAITING_PIX:
-        return "O Pix está sendo preparado. Se quiser, envie “pix” para receber o código novamente.";
       case ConversationState.IDLE:
       default:
         return this.handleIdle(conversation, text, medicineQuestion);
@@ -737,7 +734,7 @@ export class ConversationEngineService {
       return this.formatWaitingPaymentConfirmationReply();
     }
 
-    return this.handlePaymentCommand(conversation, text);
+    return this.formatPaymentProofRequestReply();
   }
 
   private async handlePaymentCommand(conversation: Conversation, text: string) {
@@ -824,7 +821,17 @@ export class ConversationEngineService {
     return [
       "Certo, recebi seu aviso.",
       "",
-      "Nossa equipe vai conferir o Pix e confirmar o pedido por aqui.",
+      "Para agilizar a conferência, envie uma foto ou PDF do comprovante por aqui.",
+      "Nossa equipe vai conferir o Pix e confirmar o pedido pelo WhatsApp.",
+    ].join("\n");
+  }
+
+  private formatPaymentProofRequestReply() {
+    return [
+      "Seu pedido está aguardando a confirmação do Pix.",
+      "",
+      "Se o pagamento já foi feito, envie uma foto ou PDF do comprovante para agilizar a conferência.",
+      "Se precisar do código novamente, escreva “pix”.",
     ].join("\n");
   }
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import {
+  ConversationState,
   MessageDirection,
   MessageRole,
   MessageStatus,
@@ -165,6 +166,10 @@ export class WhatsappService {
         ));
 
       if (!text) {
+        const isPaymentProof =
+          activeConversation.pendingAction === ConversationState.WAITING_PIX &&
+          ["image", "document"].includes(message.type || "");
+
         await this.prisma.safePrismaCall(
           "whatsapp.message.create.inbound_non_text",
           (prisma) =>
@@ -175,13 +180,36 @@ export class WhatsappService {
                 direction: MessageDirection.INBOUND,
                 role: MessageRole.CUSTOMER,
                 status: MessageStatus.RECEIVED,
-                content: this.describeNonTextMessage(message),
+                content: isPaymentProof
+                  ? "[comprovante de pagamento recebido]"
+                  : this.describeNonTextMessage(message),
                 rawPayload: rawPayload
                   ? JSON.parse(JSON.stringify(rawPayload))
                   : undefined,
               },
           }),
         );
+
+        if (isPaymentProof) {
+          await this.prisma.safePrismaCall(
+            "whatsapp.conversation.update.payment_proof_received",
+            (prisma) =>
+              prisma.conversation.update({
+                where: { id: activeConversation.id },
+                data: { lastIntent: "PAYMENT_PROOF_RECEIVED" },
+              }),
+          );
+          await this.replyAndRecord(
+            activeConversation.id,
+            message.from,
+            [
+              "Comprovante recebido. Obrigado!",
+              "",
+              "Nossa equipe vai conferir o pagamento. Assim que ele for confirmado, avisaremos você por aqui.",
+            ].join("\n"),
+          );
+          return;
+        }
 
         const imageSearchText = await this.extractSearchTextFromImage(message);
 
@@ -248,11 +276,11 @@ export class WhatsappService {
     const messages = Array.isArray(content) ? content : [content];
 
     for (const message of messages) {
-      await this.sendAndRecordSingleReply(conversationId, recipient, message);
+      await this.queueTextMessage(conversationId, recipient, message);
     }
   }
 
-  private async sendAndRecordSingleReply(
+  async queueTextMessage(
     conversationId: string,
     recipient: string,
     content: string,
@@ -271,6 +299,12 @@ export class WhatsappService {
     );
 
     await this.processOutboxMessage(outbox.id);
+
+    return this.prisma.safePrismaCall(
+      "whatsapp.outbox.findUnique.after_send",
+      (prisma) => prisma.whatsappOutbox.findUnique({ where: { id: outbox.id } }),
+      outbox,
+    );
   }
 
   async processPendingOutbox(limit = 10) {

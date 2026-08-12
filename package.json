@@ -16,6 +16,7 @@
     "test:conversation-flow": "node scripts/validate-conversation-flow.js",
     "test:medicine-search": "node scripts/validate-medicine-search-flow.js",
     "test:payment-flow": "node scripts/validate-payment-flow.js",
+    "test:admin-payment-flow": "node scripts/validate-admin-payment-flow.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
