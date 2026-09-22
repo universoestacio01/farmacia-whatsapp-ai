@@ -22,6 +22,7 @@ import {
   WhatsappCopy,
 } from "./whatsapp-copy";
 import { ConversationInputService } from "./conversation-input.service";
+import { getConversationOpeningIntent } from "../utils/conversation-opening.util";
 
 interface CartItem {
   type: "medicine" | "retail_product";
@@ -83,8 +84,13 @@ export class ConversationEngineService {
       return this.handleWaitingPix(conversation, text);
     }
 
-    if (this.isGreetingOnly(text)) {
+    const openingIntent = getConversationOpeningIntent(text);
+    if (openingIntent === "greeting") {
       return this.handleGreeting(conversation);
+    }
+
+    if (openingIntent === "start_order") {
+      return this.handleOrderOpening(conversation);
     }
 
     const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
@@ -2326,6 +2332,24 @@ export class ConversationEngineService {
     return WhatsappCopy.welcome();
   }
 
+  private async handleOrderOpening(conversation: Conversation) {
+    const hasCart = this.getCart(conversation.cart).length > 0;
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: "START_ORDER",
+        pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        lastMedicine: null,
+        currentMedicineQuery: null,
+        currentRetailCategory: null,
+        selectedPresentation: Prisma.JsonNull,
+        candidateOptions: Prisma.JsonNull,
+      },
+    });
+    this.logger.log("CONVERSATION INTENT: START_ORDER_WITHOUT_PRODUCT");
+    return WhatsappCopy.startOrder(hasCart);
+  }
+
   private async resetConversationContext(conversationId: string) {
     await this.prisma.conversation.update({
       where: { id: conversationId },
@@ -2510,13 +2534,6 @@ export class ConversationEngineService {
       normalized === "reset" ||
       normalized === "/reset" ||
       normalized === "recomecar"
-    );
-  }
-
-  private isGreetingOnly(text: string) {
-    const normalized = this.normalize(text).trim();
-    return /^(oi|ola|olá|bom dia|boa tarde|boa noite|e ai|e aí|hello|hi)$/.test(
-      normalized,
     );
   }
 

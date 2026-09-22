@@ -578,6 +578,9 @@ test("real conversation engine: dosage change, mixed cart, address and checkout 
     },
   );
   const send = async (message) => engine.resolveReply(conversation, message);
+  const opening = await send("Olá, Gostaria de fazer um pedido");
+  assert.match(opening, /Qual medicamento ou produto/);
+  assert.equal(calls.length, 0, "Opening without a product must not query any catalog");
   const initialOptions = await send("Tem Venvanse?");
   assert.match(initialOptions, /386,91/);
   assert.equal((initialOptions.match(/28/g) || []).length, 3);

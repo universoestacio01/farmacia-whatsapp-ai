@@ -1,6 +1,7 @@
 ﻿import { Injectable } from "@nestjs/common";
 import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
+import { getConversationOpeningIntent, stripGreetingPrefix } from "../utils/conversation-opening.util";
 
 export interface SelectorProduct {
   id: number;
@@ -162,7 +163,7 @@ export class CommercialMedicineSelector {
   }
 
   parseMedicineQuery(text: string): ParsedMedicineQuery {
-    const normalized = this.normalize(text)
+    const normalized = stripGreetingPrefix(text)
       .replace(/[?!:;]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -178,6 +179,7 @@ export class CommercialMedicineSelector {
       .replace(/\bgostaria\s+(?:de|da|do)?\b/g, " ")
       .replace(/\badicionar\b/g, " ")
       .replace(/\bcomprar\b/g, " ")
+      .replace(/\b(?:fazer|realizar|montar|iniciar)\s+(?:(?:um|uma|o|a|meu|minha|novo|nova)\s+)*(?:pedido|compra)(?:\s+(?:de|com))?\b/g, " ")
       .replace(/\bmais\b/g, " ")
       .replace(/\bqual\s+(?:o\s+)?(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
       .replace(/\b(?:preco|valor)\s+(?:da|do|de)?\b/g, " ")
@@ -212,7 +214,7 @@ export class CommercialMedicineSelector {
       .trim();
 
     cleaned = cleaned.replace(/^(?:a|o|um|uma)\s+/g, "").trim();
-    const medicineName = cleaned.length >= 2 ? cleaned : null;
+    const medicineName = !getConversationOpeningIntent(text) && cleaned.length >= 2 ? cleaned : null;
     const canonicalName = medicineName
       ? this.resolveCanonicalMedicineName(medicineName)
       : null;

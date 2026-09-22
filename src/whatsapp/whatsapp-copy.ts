@@ -94,6 +94,23 @@ const CATEGORY_WORDS = [
 ];
 
 export const WhatsappCopy = {
+  startOrder(hasCart = false) {
+    if (hasCart) {
+      return [
+        "Claro! Seu carrinho continua salvo.",
+        "",
+        "Qual medicamento ou produto você quer adicionar?",
+        'Para conferir o pedido, envie "ver carrinho".',
+      ].join("\n");
+    }
+
+    return [
+      "Olá! Você está na Raia Delivery.",
+      "",
+      "Claro, vamos montar seu pedido. Qual medicamento ou produto você precisa?",
+    ].join("\n");
+  },
+
   welcome() {
     return [
       "Olá, aqui é a Raia Delivery.",

@@ -12,6 +12,7 @@ import {
   SelectorProduct,
 } from "./commercial-medicine-selector";
 import { MedicinePriorityRulesService } from "./medicine-priority-rules.service";
+import { getConversationOpeningIntent, stripGreetingPrefix } from "../utils/conversation-opening.util";
 
 export type MedicineIntent =
   | "leaflet"
@@ -130,8 +131,12 @@ export class BulaApiService {
   }
 
   detectMedicineQuestion(message: string): MedicineQuestion | null {
-    const normalized = this.normalize(message);
-    const compact = normalized.replace(/[?!.:,;]/g, " ");
+    if (getConversationOpeningIntent(message)) return null;
+    const searchMessage = stripGreetingPrefix(message);
+    const normalized = this.normalize(searchMessage);
+    const compact = normalized
+      .replace(/[?!:;]/g, " ")
+      .replace(/(?<!\d)[.,]|[.,](?!\d)/g, " ");
     const intentPatterns: Array<{
       intent: MedicineIntent;
       patterns: RegExp[];
@@ -212,14 +217,14 @@ export class BulaApiService {
       }
     }
 
-    const commercialIntent = this.detectCommercialIntent(message);
-    const medicineFromIntent = this.normalizeMedicineName(message);
+    const commercialIntent = this.detectCommercialIntent(searchMessage);
+    const medicineFromIntent = this.normalizeMedicineName(searchMessage);
 
     if (commercialIntent && medicineFromIntent) {
       return {
         intent: commercialIntent,
         medicineName: medicineFromIntent,
-        searchQuery: message.trim(),
+        searchQuery: searchMessage.trim(),
       };
     }
 
