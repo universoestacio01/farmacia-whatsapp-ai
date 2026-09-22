@@ -13,10 +13,12 @@ import { PharmaDbService } from "./pharmadb.service";
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
 import { ProductSearchOrchestratorService } from "./product-search-orchestrator.service";
 import { ViaCepService } from "./via-cep.service";
+import { PrecoPopularService } from "./preco-popular.service";
 
 @Module({
   imports: [PrismaModule, ObservabilityModule],
   providers: [
+    PrecoPopularService,
     BulaApiService,
     CommercialMedicineSelector,
     CosmosTokenPoolService,
@@ -31,6 +33,7 @@ import { ViaCepService } from "./via-cep.service";
     ViaCepService,
   ],
   exports: [
+    PrecoPopularService,
     BulaApiService,
     CommercialMedicineSelector,
     CosmosTokenPoolService,

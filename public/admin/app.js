@@ -847,6 +847,7 @@ function renderProviders(data) {
   const providers = [
     ["Banco de dados", data.database.configured, "Uso sob demanda"],
     ["WhatsApp", data.whatsapp.configured, `Cloud API ${data.whatsapp.apiVersion}`],
+    ["Preço Popular", Boolean(data.precoPopular?.enabled), data.precoPopular?.enabled ? `Catálogo principal. Desconto: ${Math.round((1 - data.precoPopular.priceMultiplier) * 100)}%` : "Desativado"],
     ["PharmaDB", data.medicines.pharmadbConfigured, `Principal: ${data.medicines.primaryProvider}`],
     ["BulAPI", data.medicines.bulapiConfigured, "Fallback de medicamentos"],
     ["Cosmos", data.retailProducts.cosmosConfigured, `${data.retailProducts.cosmosTokenCount} token(s)`],

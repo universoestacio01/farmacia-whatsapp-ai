@@ -38,6 +38,53 @@ Endpoints principais:
 
 ## Variáveis de ambiente
 
+### Catálogo Preço Popular
+
+O catálogo VTEX do Preço Popular é consultado primeiro para medicamentos e produtos
+de higiene/perfumaria. A integração roda no próprio NestJS; não é necessário
+publicar ou executar a pasta `api-busca` em PHP. Não precisa de chave de API.
+
+```dotenv
+PRECO_POPULAR_ENABLED=true
+PRECO_POPULAR_PRICE_MULTIPLIER=0.9
+```
+
+Esses são os padrões mesmo quando as variáveis não estão cadastradas. O valor de
+venda é `Price * 0.9`, arredondado para centavos (10% de desconto). `ListPrice` não
+é usado como preço de venda, e a regra de 50% do PMC da PharmaDB não se aplica a
+essa fonte. O preço final é preservado na seleção, no carrinho e no checkout.
+
+O serviço preserva as variações/SKUs, EAN e imagem, ignora ofertas sem preço positivo
+ou explicitamente indisponíveis e limita cada busca a duas páginas de 50 produtos,
+com um timeout total HTTP de 8 segundos. Há cache de 5 minutos, compartilhamento
+de consultas simultâneas iguais e pausa temporária após falhas. Nada é consultado
+no bootstrap nem em `/health/providers`.
+
+Se não houver resultado comercial válido, são usados os fluxos anteriores:
+`MEDICINE_PRIMARY_PROVIDER` define a preferência PharmaDB/BulAPI antes do catálogo
+manual; produtos de higiene usam Cosmos e depois catálogo manual. Os preços dos
+fallbacks seguem suas próprias regras. A resposta genérica "qualquer marca" mantém
+o catálogo manual curado já existente.
+
+`GET /health/providers` mostra `primaryProvider: "preco_popular"` e
+`providers.preco_popular.priceMultiplier: 0.9`; o painel também identifica a fonte.
+Para reverter ao fluxo anterior, configure `PRECO_POPULAR_ENABLED=false` e reinicie.
+Não há migração de banco específica para essa integração.
+
+Os preços e a disponibilidade consultados pertencem à loja de origem, não ao
+estoque da farmácia. Não representam uma recomendação médica nem dispensam as
+validações comerciais e de receita necessárias. Avalie a permissão de uso do
+catálogo antes de depender exclusivamente dessa fonte externa.
+
+Teste offline, sem consumir APIs:
+
+```bash
+npm run build
+npm run test:preco-popular
+```
+
+### Demais variáveis
+
 Copie `.env.example` para `.env` e ajuste:
 
 - `DATABASE_URL`: conexao MySQL usada pelo Prisma.

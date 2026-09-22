@@ -9,6 +9,7 @@ import {
 } from "../config/direct-pix.config";
 import { getEnvPreview, sanitizeEnv } from "../config/env-sanitize";
 import { PrismaService } from "../prisma/prisma.service";
+import { getPrecoPopularMultiplier, isPrecoPopularEnabled, PRECO_POPULAR_BASE_URL } from "../config/preco-popular.config";
 
 @Controller("health")
 export class HealthController {
@@ -24,8 +25,10 @@ export class HealthController {
 
   @Get("providers")
   providers() {
-    const primaryProvider =
+    const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
+    const fallbackProvider =
       this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") || "pharmadb";
+    const primaryProvider = precoPopularEnabled ? "preco_popular" : fallbackProvider;
     const pharmaDbBaseUrl = this.configService.get<string>(
       "PHARMADB_API_BASE_URL",
     );
@@ -41,6 +44,8 @@ export class HealthController {
     return {
       status: "ok",
       primaryProvider,
+      medicineFallbackProvider: fallbackProvider,
+      retailPrimaryProvider: precoPopularEnabled ? "preco_popular" : "cosmos",
       payments: {
         provider: "pix_direct",
         enabled: true,
@@ -49,6 +54,14 @@ export class HealthController {
         amountEmbedded: true,
       },
       providers: {
+        preco_popular: {
+          configured: precoPopularEnabled,
+          enabled: precoPopularEnabled,
+          baseUrl: PRECO_POPULAR_BASE_URL,
+          priceMultiplier: getPrecoPopularMultiplier(this.configService.get("PRECO_POPULAR_PRICE_MULTIPLIER")),
+          cacheEnabled: true,
+          lazy: true,
+        },
         pharmadb: {
           configured: Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim()),
           lazyAuth: true,

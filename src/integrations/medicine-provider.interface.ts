@@ -1,4 +1,4 @@
-export type MedicineProviderName = "pharmadb" | "bulapi" | "popular_manual";
+export type MedicineProviderName = "preco_popular" | "pharmadb" | "bulapi" | "popular_manual";
 
 export interface MedicineProvider {
   name: MedicineProviderName;
@@ -38,6 +38,8 @@ export interface NormalizedMedicineOption {
   ggrem?: string;
 
   priceFactory?: number;
+  salePrice?: number;
+  imageUrl?: string;
   priceConsumer?: number;
   pmcWithIcms?: number;
   availabilityStatus?: "active" | "inactive" | "out_of_stock" | "unknown";

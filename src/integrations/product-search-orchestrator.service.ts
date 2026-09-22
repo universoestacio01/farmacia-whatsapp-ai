@@ -7,6 +7,7 @@ import { CommercialMedicineOption } from "./bula-api.service";
 import { CosmosService } from "./cosmos.service";
 import { ManualRetailProductService } from "./manual-retail-product.service";
 import { NormalizedRetailProduct } from "./product-provider.interface";
+import { PrecoPopularService } from "./preco-popular.service";
 
 export interface RetailProductLookupSummary {
   query: string;
@@ -30,6 +31,7 @@ export class ProductSearchOrchestratorService {
     private readonly cosmosService: CosmosService,
     private readonly manualRetailProductService: ManualRetailProductService,
     private readonly providerRequestLog?: ProviderRequestLogService,
+    private readonly precoPopularService?: PrecoPopularService,
   ) {}
 
   isRetailProductQuery(message: string) {
@@ -85,6 +87,29 @@ export class ProductSearchOrchestratorService {
       };
       this.setCache(cacheKey, summary, 300);
       return summary;
+    }
+
+    if (this.precoPopularService?.isEnabled()) {
+      try {
+        const catalogProducts = gtin
+          ? [await this.precoPopularService.findRetailByGtin(gtin)].filter((product): product is NormalizedRetailProduct => product !== null)
+          : await this.precoPopularService.searchRetail(query);
+        const selected = this.selectCommercialProducts(catalogProducts, {
+          query, category, requestedBrand, allowKits,
+        });
+        if (selected.length) {
+          const summary = {
+            query, category: category || undefined,
+            requestedBrand: requestedBrand || undefined,
+            options: this.toCommercialOptions(selected).slice(0, 3),
+            manualFallback: false,
+          };
+          this.setCache(cacheKey, summary, 300);
+          return summary;
+        }
+      } catch (error) {
+        this.logger.warn(`PRECO POPULAR RETAIL FALLBACK: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+      }
     }
 
     try {
@@ -203,7 +228,7 @@ export class ProductSearchOrchestratorService {
     const filtered = products.filter((product) =>
       this.isQualityRetailProduct(product, context),
     );
-    this.logger.log(`COSMOS RESULTS AFTER FILTER: ${filtered.length}`);
+    this.logger.log(`RETAIL RESULTS AFTER FILTER: ${filtered.length}`);
 
     if (filtered.length === 0) {
       return [];
@@ -334,6 +359,8 @@ export class ProductSearchOrchestratorService {
         description: product.description || product.displayName,
         imageUrl: product.imageUrl || product.thumbnailUrl,
         source: product.source,
+        ean: product.ean || product.gtin,
+        sourceId: product.sourceId,
       };
     });
   }

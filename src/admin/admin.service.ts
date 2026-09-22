@@ -16,6 +16,7 @@ import {
   Prisma,
 } from "@prisma/client";
 import { sanitizeEnv } from "../config/env-sanitize";
+import { getPrecoPopularMultiplier, isPrecoPopularEnabled, PRECO_POPULAR_BASE_URL } from "../config/preco-popular.config";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 import {
   DEFAULT_PIX_KEY,
@@ -818,6 +819,7 @@ export class AdminService {
   }
 
   providers() {
+    const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
     const cosmosTokens =
       this.tokenList("COSMOS_API_TOKENS").length ||
       this.tokenList("COSMOS_API_TOKEN").length;
@@ -837,17 +839,23 @@ export class AdminService {
         apiVersion: this.env("WHATSAPP_API_VERSION") || "v25.0",
       },
       medicines: {
-        primaryProvider: this.env("MEDICINE_PRIMARY_PROVIDER") || "pharmadb",
+        primaryProvider: precoPopularEnabled ? "preco_popular" : this.env("MEDICINE_PRIMARY_PROVIDER") || "pharmadb",
         pharmadbConfigured: Boolean(this.env("PHARMADB_API_KEY")),
         bulapiConfigured: Boolean(this.env("BULA_API_BASE_URL")),
         manualFallback: true,
       },
       retailProducts: {
+        primaryProvider: precoPopularEnabled ? "preco_popular" : "cosmos",
         cosmosConfigured: Boolean(
           this.env("COSMOS_API_BASE_URL") && cosmosTokens > 0,
         ),
         cosmosTokenCount: cosmosTokens,
         manualFallback: true,
+      },
+      precoPopular: {
+        enabled: precoPopularEnabled,
+        baseUrl: PRECO_POPULAR_BASE_URL,
+        priceMultiplier: getPrecoPopularMultiplier(this.configService.get("PRECO_POPULAR_PRICE_MULTIPLIER")),
       },
       payments: {
         provider: "pix_direct",

@@ -46,6 +46,8 @@ export interface CommercialMedicineOption {
   description?: string;
   imageUrl?: string;
   source?: string;
+  sourceId?: string;
+  ean?: string;
 }
 
 export interface MedicineLookupSummary {
@@ -840,6 +842,10 @@ export class BulaApiService {
 
   private formatOptionLine(option: CommercialMedicineOption) {
     const label = formatProductDisplayName(option.label);
+    if (option.source === "preco_popular") {
+      const price = this.formatCurrency(option.pricePf);
+      return price ? `${label} - ${price}` : label;
+    }
     const packageDescription = formatProductDisplayName(
       option.packageDescription || "",
     );

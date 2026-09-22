@@ -16,6 +16,7 @@ import { NormalizedMedicineOption } from "./medicine-provider.interface";
 import { MedicinePriorityRulesService } from "./medicine-priority-rules.service";
 import { PharmaDbService } from "./pharmadb.service";
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
+import { PrecoPopularService } from "./preco-popular.service";
 
 interface CacheEntry {
   expiresAt: number;
@@ -35,6 +36,7 @@ export class MedicineSearchOrchestratorService {
     private readonly popularManualService: PopularManualMedicineService,
     private readonly priorityRulesService: MedicinePriorityRulesService,
     private readonly providerRequestLog?: ProviderRequestLogService,
+    private readonly precoPopularService?: PrecoPopularService,
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
@@ -47,6 +49,36 @@ export class MedicineSearchOrchestratorService {
       parsedQuery.canonicalName ||
       this.selector.getCanonicalMedicineName(normalizedQuery);
     const cacheQuery = this.buildSearchCacheQuery(parsedQuery, normalizedQuery);
+    if (this.precoPopularService?.isEnabled()) {
+      const cached = this.getFromCache(`preco_popular:${cacheQuery}`);
+      if (cached) return cached;
+      try {
+        let options = await this.precoPopularService.searchMedicines(query);
+        // Explicit brands and strengths must not turn into another presentation.
+        const requestedName = this.normalize(normalizedQuery).trim();
+        if (options.some((option) => this.normalize(option.brand || "") === requestedName)) {
+          options = options.filter((option) => this.normalize(option.brand || "") === requestedName);
+        }
+        options = options.filter((option) => {
+          if (parsedQuery.dosageMg !== undefined) {
+            const strength = this.selector.parseMedicineQuery(option.dosage || "");
+            if (strength.dosageMg !== parsedQuery.dosageMg) return false;
+            if (Boolean(option.dosage?.includes("/")) !== Boolean(parsedQuery.dosage?.includes("/"))) return false;
+          }
+          if (parsedQuery.formGroup && option.form !== parsedQuery.formGroup) return false;
+          if (parsedQuery.packageQuantity !== undefined && option.packageInfo?.unitCount !== parsedQuery.packageQuantity) return false;
+          return true;
+        });
+        const selected = await this.selectNormalized(parsedQuery, options);
+        if (selected.length) {
+          const summary = { medicineName: canonicalQuery, products: [], options: selected };
+          this.setCache(`preco_popular:${cacheQuery}`, summary, 300);
+          return summary;
+        }
+      } catch (error) {
+        this.logger.warn(`PRECO POPULAR MEDICINE FALLBACK: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+      }
+    }
     const provider =
       this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") ||
       "pharmadb";
@@ -422,6 +454,10 @@ export class MedicineSearchOrchestratorService {
         packageDescription: this.formatPackageDescription(option),
         packageInfo,
         pricePf: this.calculateSalePrice(option),
+        brand: option.brand,
+        imageUrl: option.imageUrl,
+        ean: option.ean,
+        sourceId: option.sourceId,
         selectionReason: `fonte ${option.source}`,
         source: option.source,
       } satisfies CommercialMedicineOption;
@@ -454,6 +490,9 @@ export class MedicineSearchOrchestratorService {
   }
 
   private calculateSalePrice(option: NormalizedMedicineOption) {
+    if (option.source === "preco_popular") {
+      return option.salePrice;
+    }
     if (option.priceFactory !== undefined) {
       return this.roundCurrency(option.priceFactory);
     }
@@ -492,6 +531,7 @@ export class MedicineSearchOrchestratorService {
   }
 
   private formatLabel(option: NormalizedMedicineOption, formGroup: string) {
+    if (option.source === "preco_popular") return option.displayName;
     const displayName = this.formatCommercialDisplayName(
       option.displayName || option.productName,
     );

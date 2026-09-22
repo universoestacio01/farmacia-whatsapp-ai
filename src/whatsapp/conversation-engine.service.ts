@@ -38,6 +38,8 @@ interface CartItem {
   total?: number;
   imageUrl?: string;
   source?: string;
+  sourceId?: string;
+  ean?: string;
 }
 
 interface PendingAddress extends ViaCepAddress {
@@ -2125,6 +2127,8 @@ export class ConversationEngineService {
       total,
       imageUrl: option.imageUrl,
       source: option.source || option.selectionReason,
+      sourceId: option.sourceId,
+      ean: option.ean,
     };
   }
 

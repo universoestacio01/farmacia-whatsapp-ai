@@ -75,6 +75,8 @@ const envSchema = z.object({
   WHATSAPP_API_VERSION: z.string().trim().default("v25.0"),
   OPENAI_API_KEY: z.string().trim().optional(),
   OPENAI_MODEL: z.string().trim().default("gpt-4o-mini"),
+  PRECO_POPULAR_ENABLED: sanitizedBoolean.default(true),
+  PRECO_POPULAR_PRICE_MULTIPLIER: z.coerce.number().positive().max(1).default(0.9),
   PHARMADB_API_BASE_URL: z
     .string()
     .trim()
