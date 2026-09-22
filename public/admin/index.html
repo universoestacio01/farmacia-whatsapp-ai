@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>Operação | Raia Delivery</title>
-    <link rel="stylesheet" href="/admin/styles.css?v=20260812-4" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260922-1" />
   </head>
   <body>
     <div class="app-shell">
@@ -45,11 +45,12 @@
             <h1 id="page-title">Visão geral</h1>
           </div>
           <div class="topbar-actions">
+            <label class="refresh-toggle"><input id="auto-refresh" type="checkbox" checked /> Atualização automática</label>
             <div class="update-state">
               <span class="live-dot" aria-hidden="true"></span>
               <span id="last-updated">Carregando dados</span>
             </div>
-            <button id="refresh-button" class="primary-button" type="button">Atualizar</button>
+            <button id="refresh-button" class="secondary-button icon-button" type="button" title="Atualizar dados" aria-label="Atualizar dados"><i data-lucide="refresh-cw" aria-hidden="true"></i></button>
           </div>
         </header>
 
@@ -103,6 +104,11 @@
               </div>
               <span id="pending-payments-summary" class="muted"></span>
             </div>
+            <div class="filters payment-filters">
+              <input id="payment-search" type="search" aria-label="Buscar compensações" placeholder="Cliente, telefone, produto ou pedido" />
+              <select id="proof-filter" aria-label="Filtrar comprovantes"><option value="">Todos os comprovantes</option><option value="received">Com comprovante</option><option value="missing">Sem comprovante</option></select>
+              <select id="waiting-filter" aria-label="Filtrar tempo de espera"><option value="">Qualquer espera</option><option value="30">Há mais de 30 minutos</option><option value="60">Há mais de 1 hora</option></select>
+            </div>
             <div id="pending-payments-list" class="payment-queue payment-queue-full"></div>
           </article>
         </section>
@@ -114,9 +120,12 @@
               <option value="">Todas as etapas</option>
               <option value="IDLE">Atendimento livre</option>
               <option value="WAITING_MEDICINE_NAME">Aguardando produto</option>
+              <option value="WAITING_RETAIL_BRAND">Aguardando marca</option>
               <option value="WAITING_PRESENTATION">Aguardando opção</option>
               <option value="WAITING_QUANTITY">Aguardando quantidade</option>
               <option value="WAITING_CEP">Aguardando CEP</option>
+              <option value="WAITING_ADDRESS_NUMBER">Aguardando número</option>
+              <option value="WAITING_ADDRESS_COMPLEMENT">Aguardando complemento</option>
               <option value="WAITING_CONFIRMATION">Aguardando confirmação</option>
               <option value="WAITING_PIX">Aguardando Pix</option>
             </select>
@@ -151,10 +160,10 @@
                 Selecione uma conversa para acompanhar o atendimento.
               </div>
               <form id="manual-message-form" class="manual-message hidden">
-                <textarea id="manual-message-text" rows="3" placeholder="Escreva uma resposta para o cliente"></textarea>
+                <textarea id="manual-message-text" rows="3" maxlength="4000" aria-label="Resposta ao cliente" placeholder="Escreva uma resposta para o cliente"></textarea>
                 <div class="form-actions">
                   <span class="muted">A mensagem será enviada pelo WhatsApp.</span>
-                  <button class="primary-button" type="submit">Enviar mensagem</button>
+                  <button id="send-message-button" class="primary-button" type="submit">Enviar mensagem</button>
                 </div>
               </form>
             </article>
@@ -182,7 +191,7 @@
           <div class="workspace orders-workspace">
             <article class="panel list-panel">
               <div class="panel-header">
-                <h2 id="orders-title">Todos os pedidos</h2>
+                <h2 id="orders-title">150 pedidos mais recentes</h2>
                 <span id="orders-result-count" class="muted"></span>
               </div>
               <div id="orders-table" class="table selectable"></div>
@@ -226,6 +235,7 @@
               <button id="save-medicine-priorities-button" class="primary-button" type="button">Salvar alterações</button>
             </div>
             <div id="medicine-priorities-meta" class="item-meta"></div>
+            <div class="editor-status"><span id="priority-save-state" class="muted" role="status">Sem alterações pendentes</span><button id="discard-priorities-button" class="link-button" type="button" disabled>Descartar alterações</button></div>
             <textarea id="medicine-priorities-editor" class="json-editor" rows="18" spellcheck="false" aria-label="Regras de prioridade em JSON"></textarea>
           </article>
         </section>
@@ -235,13 +245,22 @@
             <div class="panel-header">
               <div>
                 <p class="section-kicker">Diagnóstico</p>
-                <h2 id="providers-title">Status das integrações</h2>
+                <h2 id="providers-title">Configuração das integrações</h2>
               </div>
               <button id="database-check-button" class="secondary-button" type="button">Testar banco</button>
             </div>
             <div id="providers-grid" class="providers-grid"></div>
             <div id="database-result" class="database-result"></div>
           </article>
+          <div class="activity-section">
+            <div class="panel-header"><h2>Atividade recente das APIs</h2><span id="provider-log-count" class="muted"></span></div>
+            <div class="filters provider-filters">
+              <input id="provider-log-search" type="search" placeholder="Buscar termo, operação ou rastreio" aria-label="Buscar chamadas das APIs" />
+              <select id="provider-log-provider" aria-label="Filtrar API"><option value="">Todas as APIs</option></select>
+              <select id="provider-log-outcome" aria-label="Filtrar resultado"><option value="">Todos os resultados</option><option value="errors">Com falha</option><option value="SUCCESS">Com sucesso</option><option value="EMPTY">Sem resultados</option></select>
+            </div>
+            <div id="provider-logs" class="list"></div>
+          </div>
         </section>
 
         <section id="errors" class="section" aria-labelledby="errors-title">
@@ -298,6 +317,13 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
-    <script src="/admin/app.js?v=20260812-4" defer></script>
+    <dialog id="action-dialog" class="confirmation-dialog" aria-labelledby="action-dialog-title">
+      <form method="dialog" class="action-dialog-content">
+        <h2 id="action-dialog-title"></h2><p id="action-dialog-description"></p>
+        <div class="dialog-actions"><button class="secondary-button" value="cancel" type="submit">Voltar</button><button id="action-dialog-confirm" class="primary-button" value="confirm" type="submit">Confirmar</button></div>
+      </form>
+    </dialog>
+    <script src="/admin/lucide.min.js" defer></script>
+    <script src="/admin/app.js?v=20260922-1" defer></script>
   </body>
 </html>

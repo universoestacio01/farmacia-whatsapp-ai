@@ -490,13 +490,14 @@ export class CommercialMedicineSelector {
     let filtered = scored;
 
     if (parsedQuery.dosageMg !== undefined) {
+      const concentrationRequested = (parsedQuery.dosage || "").includes("/");
       const dosageMatches = filtered.filter((item) =>
-        this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number),
+        this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number) &&
+        (item.option.strength || "").includes("/") === concentrationRequested,
       );
 
-      if (dosageMatches.length > 0) {
-        filtered = dosageMatches;
-      }
+      // An explicit dose is a constraint, not a preference for another strength.
+      filtered = dosageMatches;
     }
 
     if (parsedQuery.formGroup) {
@@ -504,9 +505,7 @@ export class CommercialMedicineSelector {
         (item) => item.option.formGroup === parsedQuery.formGroup,
       );
 
-      if (formMatches.length > 0) {
-        filtered = formMatches;
-      }
+      filtered = formMatches;
     }
 
     if (parsedQuery.packageQuantity !== undefined) {
@@ -547,34 +546,20 @@ export class CommercialMedicineSelector {
     );
 
     const dosageCandidates = this.dosageSelectionPool(scored, priorityRules);
-    const dosageCount = new Set(
-      dosageCandidates
-        .map((item) => this.extractDosageSignature(item.option))
-        .filter(Boolean),
-    ).size;
-
-    while (selected.length < 3) {
+    // Bound iteration even if a provider repeats a presentation identifier.
+    for (const candidate of dosageCandidates) {
+      if (selected.length >= 3) break;
       const selectedDosages = new Set(
         selected
           .map((item) => this.extractDosageSignature(item.option))
           .filter(Boolean),
       );
 
-      if (selectedDosages.size >= Math.min(3, dosageCount)) {
-        break;
-      }
-
-      const differentDosage = dosageCandidates.find((item) => {
-        const dosage = this.extractDosageSignature(item.option);
-        return dosage && !selectedDosages.has(dosage);
-      });
-
-      if (!differentDosage) {
-        break;
-      }
+      const dosage = this.extractDosageSignature(candidate.option);
+      if (!dosage || selectedDosages.has(dosage)) continue;
 
       pick(
-        differentDosage,
+        candidate,
         "dosagem_alternativa",
         "dosagem diferente entre as opções comerciais disponíveis",
       );
@@ -997,7 +982,10 @@ export class CommercialMedicineSelector {
     selected: Array<RankedOption<T>>,
     item: RankedOption<T>,
   ) {
-    if (selected.some((picked) => picked.option.presentationId === item.option.presentationId)) {
+    if (Number.isFinite(item.option.presentationId) && selected.some((picked) =>
+      picked.option.presentationId === item.option.presentationId &&
+      picked.option.source === item.option.source,
+    )) {
       return true;
     }
 

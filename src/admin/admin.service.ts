@@ -190,13 +190,14 @@ export class AdminService {
       (prisma) =>
         prisma.message.findMany({
           where: { conversationId },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take,
         }),
       [],
     );
 
-    return messages.map((message) => ({
+    // Fetch the latest window, then display it in reading order.
+    return messages.reverse().map((message) => ({
       id: message.id,
       direction: message.direction,
       role: message.role,
@@ -762,6 +763,20 @@ export class AdminService {
         prisma.providerRequestLog.findMany({
           orderBy: { createdAt: "desc" },
           take,
+          select: {
+            id: true,
+            traceId: true,
+            provider: true,
+            operation: true,
+            query: true,
+            statusCode: true,
+            durationMs: true,
+            resultsFound: true,
+            resultsAfterFilter: true,
+            outcome: true,
+            failureReason: true,
+            createdAt: true,
+          },
         }),
       [],
     );

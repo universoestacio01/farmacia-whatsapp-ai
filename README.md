@@ -169,5 +169,36 @@ Total: R$ XX,XX
 Vou te enviar o Pix Copia e Cola na próxima mensagem.
 ```
 
-Como não existe integração bancária para consulta do recebimento, a aprovação continua manual. Depois do pagamento, o cliente responde `paguei` e a equipe confere o recebimento. No painel administrativo, altere o status do pedido para `PAID`; o pagamento pendente será atualizado junto.
+Como não existe integração bancária para consulta do recebimento, a aprovação continua manual. Depois do pagamento, o cliente responde `paguei` e a equipe confere o recebimento. No painel administrativo, use **Compensou** e confirme somente depois da conferência no banco. O pagamento e o pedido serão atualizados pelo fluxo existente.
+
+## Painel administrativo: operação e validação local
+
+- Conversas mostram as 100 mensagens mais recentes em ordem cronológica. A atualização preserva rascunhos por cliente e a posição de leitura.
+- Compensações têm filtros por cliente, comprovante e tempo de espera. A confirmação continua manual, com confirmação explícita e bloqueio de cliques repetidos.
+- Pedidos exibem os 150 registros mais recentes. Os filtros desse recorte são locais; não constituem pesquisa no histórico completo.
+- Integrações separa configuração local de atividade real: últimos 100 registros de APIs, filtros, HTTP, tempo, resultados e identificador de rastreio. Não faz chamadas às APIs externas para montar a tela.
+- Prioridades não salvas não são sobrescritas pela atualização automática; o navegador avisa antes de sair com alterações pendentes.
+- A atualização automática pode ser pausada. Falhas e expiração de acesso têm tratamento explícito; sair remove dados e rascunhos da tela.
+
+Prévia isolada com dados fictícios, sem carregar `.env`, sem banco, sem envio de WhatsApp e sem movimentar pagamentos reais:
+
+```bash
+npm run preview:admin
+```
+
+Acesse `http://127.0.0.1:4190/admin/`. O servidor aceita apenas conexões locais e não deve ser usado como comando de produção. Para outra porta: `npm run preview:admin -- 4191`.
+
+Testes após compilar:
+
+```bash
+npm run build
+npm run test:admin-stability
+npm run test:admin-payment-flow
+npm run test:preco-popular
+npm run test:admin-ui
+```
+
+O teste de interface exige Playwright disponível no ambiente (ou em `NODE_PATH`) e Chromium instalado. `PLAYWRIGHT_CHANNEL=chrome` permite usar Chrome já instalado. Usa a prévia local e bloqueia requisições externas. As capturas ficam na pasta temporária `raia-admin-qa`.
+
+Esta rodada não exige novas variáveis ou migration. Publique `src`, `public/admin` (incluindo Lucide e sua licença) e os demais arquivos alterados; compile no servidor. O site institucional não foi alterado.
 

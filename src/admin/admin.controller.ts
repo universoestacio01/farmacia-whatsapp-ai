@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
@@ -127,12 +128,12 @@ export class AdminController {
   sendManualMessage(
     @Headers("x-admin-token") token: string | undefined,
     @Param("id") id: string,
-    @Body("text") text: string,
+    @Body("text") text: unknown,
   ) {
     this.assertAuthorized(token);
 
-    if (!text?.trim()) {
-      throw new ForbiddenException("Mensagem vazia.");
+    if (typeof text !== "string" || !text.trim() || text.trim().length > 4000) {
+      throw new BadRequestException("A mensagem deve ter entre 1 e 4.000 caracteres.");
     }
 
     return this.adminService.sendManualMessage(id, text.trim());
