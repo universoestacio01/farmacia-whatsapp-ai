@@ -17,6 +17,7 @@
     "test:conversation-opening": "node --test scripts/validate-conversation-opening.js",
     "test:medicine-search": "node scripts/validate-medicine-search-flow.js",
     "test:preco-popular": "node --test scripts/validate-preco-popular.js",
+    "test:catalog-regressions": "node --test scripts/validate-catalog-regressions.js",
     "test:catalog-checkout": "node --test scripts/validate-catalog-checkout.js",
     "test:package-images": "node --test scripts/validate-package-images.js",
     "test:payment-flow": "node scripts/validate-payment-flow.js",

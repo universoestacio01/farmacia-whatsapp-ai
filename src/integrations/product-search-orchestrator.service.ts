@@ -12,6 +12,7 @@ export interface RetailProductLookupSummary {
   manualFallback: boolean;
   category?: string;
   requestedBrand?: string;
+  searchStatus?: "ok" | "incomplete" | "unavailable" | "disabled";
 }
 
 interface RetailCacheEntry {
@@ -65,9 +66,12 @@ export class ProductSearchOrchestratorService {
     const allowKits = this.allowsKits(query);
     if (this.precoPopularService?.isEnabled()) {
       try {
-        const catalogProducts = gtin
-          ? [await this.precoPopularService.findRetailByGtin(gtin)].filter((product): product is NormalizedRetailProduct => product !== null)
-          : await this.precoPopularService.searchRetail(query);
+        const result = gtin
+          ? { options: [await this.precoPopularService.findRetailByGtin(gtin)].filter((product): product is NormalizedRetailProduct => product !== null), status: "ok" as const }
+          : this.precoPopularService.searchRetailWithStatus
+            ? await this.precoPopularService.searchRetailWithStatus(query)
+            : { options: await this.precoPopularService.searchRetail(query), status: "ok" as const };
+        const catalogProducts = result.options;
         const selected = this.selectCommercialProducts(catalogProducts, {
           query, category, requestedBrand, allowKits,
         });
@@ -77,12 +81,15 @@ export class ProductSearchOrchestratorService {
             requestedBrand: requestedBrand || undefined,
             options: this.toCommercialOptions(selected).slice(0, 3),
             manualFallback: false,
+            searchStatus: result.status,
           };
-          this.setCache(cacheKey, summary, 300);
+          if (result.status === "ok") this.setCache(cacheKey, summary, 300);
           return summary;
         }
+        return { query, options: [], manualFallback: false, searchStatus: result.status };
       } catch (error) {
         this.logger.warn(`PRECO POPULAR RETAIL SEARCH FAILED: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+        return { query, options: [], manualFallback: false, searchStatus: "unavailable" };
       }
     }
 

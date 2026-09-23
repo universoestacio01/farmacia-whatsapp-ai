@@ -1,0 +1,14 @@
+{
+  "injectable": {
+    "product": "Lasix Com 5x2ml Solucao Injetavel 10mg/ml",
+    "rawDetected": true,
+    "rankingDetected": false,
+    "selected": true
+  },
+  "failureCooldown": {
+    "firstResults": 0,
+    "nextResults": 0,
+    "totalMockHttpCalls": 1,
+    "realHttpCalls": 0
+  }
+}

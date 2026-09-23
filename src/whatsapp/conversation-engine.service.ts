@@ -27,6 +27,8 @@ import { addressFieldPrompt, missingAddressField, parseAddressField } from "./de
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
 import { PrecoPopularService } from "../integrations/preco-popular.service";
 import { PackageImageReading, packageImageSchema } from "../ai/package-image.types";
+import { extractMedicineStrengths, medicineStrengthMatches } from "../utils/medicine-strength.util";
+import { catalogQuarantineReason } from "../config/catalog-quality.config";
 
 interface CartItem {
   pricePolicy?: string;
@@ -1139,7 +1141,9 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      return WhatsappCopy.medicineNotFound(this.aiService.canReadPackageImages?.() === true);
+      return WhatsappCopy.catalogSearchProblem(summary.searchStatus) ||
+        (summary.searchStatus === "presentation_not_found" ? WhatsappCopy.medicinePresentationNotFound() :
+          WhatsappCopy.medicineNotFound(this.aiService.canReadPackageImages?.() === true));
     }
 
     const shouldAskQuantity = summary.options.length === 1;
@@ -1232,7 +1236,7 @@ export class ConversationEngineService {
 
     if (
       effectiveCategory &&
-      effectiveCategory !== "gillette" &&
+      !["gillette", "minancora"].includes(effectiveCategory) &&
       !context?.selectedBrand &&
       this.isOnlyGenericRetailCategoryQuery(productQuery, effectiveCategory)
     ) {
@@ -1284,7 +1288,7 @@ export class ConversationEngineService {
         },
       });
 
-      return WhatsappCopy.productNotFound(productQuery);
+      return WhatsappCopy.catalogSearchProblem(orderedSummary.searchStatus) || WhatsappCopy.productNotFound(productQuery);
     }
 
     const shouldAskQuantity = orderedSummary.options.length === 1;
@@ -1933,19 +1937,45 @@ export class ConversationEngineService {
       return null;
     }
 
+    const namedMedicine = this.bulaApiService.normalizeMedicineName(text);
+    // Fully named searches keep their form, pack size and commercial intent.
+    if (namedMedicine) return null;
+    if (dosage.needsUnit) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull,
+        },
+      });
+      return "Pode enviar a dosagem com a unidade, como aparece na embalagem? Por exemplo: 50mg ou 50mcg. Elas são diferentes.";
+    }
+
     this.logger.log(
       `TROCA DE DOSAGEM DETECTADA: medicamento=${baseMedicine} dosagem=${dosage.label}`,
     );
     const normalizedMedicine =
       this.bulaApiService.normalizeMedicineName(baseMedicine) || baseMedicine;
     const summary = await this.medicineSearch.searchMedicine(
-      `${normalizedMedicine} ${dosage.label}`,
+      `${normalizedMedicine} ${text}`,
     );
     const matchingOptions = (summary?.options || [])
-      .filter((option) => this.optionMatchesDosage(option, dosage.mg))
+      .filter((option) => medicineStrengthMatches(option.strength || "", dosage.label))
       .map((option, index) => ({ ...option, optionId: index + 1 }));
 
     if (matchingOptions.length === 0) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+          lastIntent: "DOSAGE_NOT_FOUND",
+          currentMedicineQuery: normalizedMedicine,
+          selectedPresentation: Prisma.JsonNull,
+          candidateOptions: Prisma.JsonNull,
+        },
+      });
+      const searchProblem = WhatsappCopy.catalogSearchProblem(summary?.searchStatus);
+      if (searchProblem) return searchProblem;
       const alternatives = (summary?.options || []).map((option, index) => ({
         ...option,
         optionId: index + 1,
@@ -2056,6 +2086,7 @@ export class ConversationEngineService {
   }
 
   private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
+    if (catalogQuarantineReason(option)) return { ...option, pricePf: undefined };
     if (option.pricePolicy === CATALOG_PRICE_POLICY && option.source === "preco_popular") return option;
     const offer = await this.catalog?.findCurrentOffer(option);
     return offer ? {
@@ -2071,6 +2102,9 @@ export class ConversationEngineService {
     }
     let changed = false;
     for (const [index, item] of cart.entries()) {
+      if (catalogQuarantineReason(item)) {
+        return { cart, changed: false, error: `O item ${index + 1} precisa de conferência do cadastro pela equipe. Para continuar com os demais produtos, envie "remover item ${index + 1}". Mantive seu carrinho salvo.` };
+      }
       if (item.pricePolicy === CATALOG_PRICE_POLICY && item.source === "preco_popular") continue;
       const offer = await this.catalog?.findCurrentOffer(item);
       if (!offer) {
@@ -2307,7 +2341,8 @@ export class ConversationEngineService {
         typeof option === "object" &&
         option !== null &&
         "optionId" in option &&
-        "label" in option
+        "label" in option &&
+        !catalogQuarantineReason(option)
       );
     });
   }
@@ -2322,6 +2357,7 @@ export class ConversationEngineService {
     }
 
     if ("optionId" in value && "label" in value) {
+      if (catalogQuarantineReason(value as unknown as CommercialMedicineOption)) return null;
       return value as unknown as CommercialMedicineOption;
     }
 
@@ -2369,46 +2405,24 @@ export class ConversationEngineService {
 
   private extractDosageChange(text: string) {
     const normalized = this.normalize(text);
-    const explicit = normalized.match(/\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/);
-    const inferred = normalized.match(/\b(?:de|com)\s*(\d{1,4})\b/);
-    const match = explicit || inferred;
+    const strengths = extractMedicineStrengths(normalized);
+    if (strengths.length) return { label: strengths.map((strength) => strength.label).join(" + "), needsUnit: false };
+    const inferred = normalized.match(/^(?:(?:tem|teria|quero|e|nao tem)\s+)?(?:de|com)\s*(\d{1,4})\s*[?!.]*$/);
+    const match = inferred;
 
     if (!match) {
       return null;
     }
 
     const value = Number(match[1].replace(",", "."));
-    const unit = explicit?.[2] || "mg";
 
     if (!Number.isFinite(value) || value <= 0) {
       return null;
     }
 
-    const mg = unit === "g" ? value * 1000 : value;
     return {
-      mg,
-      label: unit === "g" ? `${this.formatDose(value)}g` : `${this.formatDose(value)}mg`,
+      label: String(value), needsUnit: true,
     };
-  }
-
-  private optionMatchesDosage(option: CommercialMedicineOption, requestedMg: number) {
-    const text = this.normalize(
-      [option.label, option.strength, option.packageDescription]
-        .filter(Boolean)
-        .join(" "),
-    );
-    const matches = [...text.matchAll(/\b(\d+(?:[,.]\d+)?)\s*(mg|g)\b/g)];
-
-    return matches.some((match) => {
-      const value = Number(match[1].replace(",", "."));
-      const unit = match[2];
-      const mg = unit === "g" ? value * 1000 : value;
-      return Math.abs(mg - requestedMg) < 0.01;
-    });
-  }
-
-  private formatDose(value: number) {
-    return Number.isInteger(value) ? String(value) : String(value).replace(".", ",");
   }
 
   private extractCep(text: string) {

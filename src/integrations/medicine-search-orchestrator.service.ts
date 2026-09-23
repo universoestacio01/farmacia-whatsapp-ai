@@ -13,6 +13,7 @@ import { MedicinePriorityRulesService } from "./medicine-priority-rules.service"
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
 import { PrecoPopularService } from "./preco-popular.service";
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
+import { medicineStrengthMatches, medicineStrengthSignature } from "../utils/medicine-strength.util";
 
 interface CacheEntry {
   expiresAt: number;
@@ -45,33 +46,68 @@ export class MedicineSearchOrchestratorService {
       const cached = this.getFromCache(`preco_popular:${cacheQuery}`);
       if (cached) return cached;
       try {
-        let options = await this.precoPopularService.searchMedicines(query);
+        const result = this.precoPopularService.searchMedicinesWithStatus
+          ? await this.precoPopularService.searchMedicinesWithStatus(query)
+          : { options: await this.precoPopularService.searchMedicines(query), status: "ok" as const };
+        if (result.status === "unavailable" || result.status === "disabled") {
+          return { medicineName: normalizedQuery, products: [], options: [], searchStatus: "unavailable" };
+        }
+        let options = result.options;
         // Explicit brands and strengths must not turn into another presentation.
         const requestedName = this.normalize(normalizedQuery).trim();
         if (options.some((option) => this.normalize(option.brand || "") === requestedName)) {
           options = options.filter((option) => this.normalize(option.brand || "") === requestedName);
         }
+        let unverified = false;
+        let restricted = false;
+        let medicineFound = false;
         options = options.filter((option) => {
-          if (parsedQuery.dosageMg !== undefined) {
-            const strength = this.selector.parseMedicineQuery(option.dosage || "");
-            if (strength.dosageMg !== parsedQuery.dosageMg) return false;
-            if (Boolean(option.dosage?.includes("/")) !== Boolean(parsedQuery.dosage?.includes("/"))) return false;
+          let reason: string | undefined;
+          if (!this.selector.isSameMedicine(normalizedQuery, {
+            id: 0, name: option.productName, substance: { name: option.substance || option.activeIngredient },
+          })) reason = "different_medicine_or_formulation";
+          if (reason) {
+            this.logger.log(JSON.stringify({ event: "MEDICINE_FILTER", query, sourceId: option.sourceId, product: option.productName, reason }));
+            return false;
           }
-          if (parsedQuery.formGroup && option.form !== parsedQuery.formGroup) return false;
-          if (parsedQuery.packageQuantity !== undefined && option.packageInfo?.unitCount !== parsedQuery.packageQuantity) return false;
-          return true;
+          medicineFound = true;
+          if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) {
+            reason = "restricted_retail_presentation";
+            restricted = true;
+          } else if (parsedQuery.dosage && !medicineStrengthMatches(option.dosage || "", parsedQuery.dosage)) {
+            reason = option.dosage ? "different_strength" : "missing_strength";
+            unverified ||= !option.dosage;
+          } else if (parsedQuery.formGroup && option.form !== parsedQuery.formGroup) {
+            reason = !option.form || option.form === "outro" ? "missing_form" : "different_form";
+            unverified ||= reason === "missing_form";
+          } else if (parsedQuery.packageQuantity !== undefined && option.packageInfo?.unitCount !== parsedQuery.packageQuantity) {
+            reason = "different_or_missing_package_quantity";
+            unverified ||= option.packageInfo?.unitCount === undefined;
+          }
+          if (reason) this.logger.log(JSON.stringify({ event: "MEDICINE_FILTER", query, sourceId: option.sourceId, product: option.productName, reason }));
+          return !reason;
         });
         const selected = await this.selectNormalized(parsedQuery, options);
         if (selected.length) {
-          const summary = { medicineName: canonicalQuery, products: [], options: selected };
-          this.setCache(`preco_popular:${cacheQuery}`, summary, 300);
+          const summary: MedicineLookupSummary = { medicineName: normalizedQuery, products: [], options: selected, searchStatus: result.status === "incomplete" ? "incomplete" : "found" };
+          if (result.status === "ok") this.setCache(`preco_popular:${cacheQuery}`, summary, 300);
           return summary;
         }
+        const failureReason = "failureReason" in result ? result.failureReason : undefined;
+        return {
+          medicineName: normalizedQuery, products: [], options: [], failureReason,
+          searchStatus: result.status === "incomplete" ? "incomplete"
+            : unverified || failureReason === "quarantined" ? "attributes_unverified"
+              : restricted ? "restricted"
+                : failureReason === "no_price" || failureReason === "out_of_stock" ? "offer_unavailable"
+                  : medicineFound ? "presentation_not_found" : "not_found",
+        };
       } catch (error) {
         this.logger.warn(`PRECO POPULAR MEDICINE SEARCH FAILED: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+        return { medicineName: normalizedQuery, products: [], options: [], searchStatus: "unavailable" };
       }
     }
-    return { medicineName: canonicalQuery, products: [], options: [] };
+    return { medicineName: canonicalQuery, products: [], options: [], searchStatus: "unavailable" };
   }
 
   findSymptomOptions(message: string) {
@@ -86,7 +122,7 @@ export class MedicineSearchOrchestratorService {
     query: ParsedMedicineQuery,
     options: NormalizedMedicineOption[],
   ): Promise<CommercialMedicineOption[]> {
-    const filterTerm = query.canonicalName || query.medicineName || query.received;
+    const filterTerm = query.medicineName || query.canonicalName || query.received;
     this.logger.log(`SEARCH TERM: ${query.received}`);
     this.logger.log(`TERM CONSULTADO/FILTRO: ${filterTerm}`);
     this.logger.log(`RESULTS FOUND: ${options.length}`);
@@ -115,7 +151,7 @@ export class MedicineSearchOrchestratorService {
 
     const mapped = validOptions.map((option, index) => {
       const numericId = this.toNumericId(option.sourceId, index + 1);
-      const packageInfo = option.packageInfo?.raw
+      const parsedPackageInfo = option.packageInfo?.raw
         ? this.selector.extractPackageInfo(option.packageInfo.raw)
         : this.selector.extractPackageInfo(
             [
@@ -127,6 +163,13 @@ export class MedicineSearchOrchestratorService {
               .filter(Boolean)
               .join(" "),
           );
+      const packageInfo = {
+        ...parsedPackageInfo,
+        unitCount: option.packageInfo?.unitCount ?? parsedPackageInfo.unitCount,
+        volumeMl: option.packageInfo?.volumeMl ?? parsedPackageInfo.volumeMl,
+        isInjectable: Boolean(option.packageInfo?.isInjectable || parsedPackageInfo.isInjectable),
+        isHospitalUse: Boolean(option.packageInfo?.isHospitalUse || parsedPackageInfo.isHospitalUse),
+      };
       const formGroup = packageInfo.formGroup !== "outro"
         ? packageInfo.formGroup
         : this.normalizeForm(option.form || option.presentation || "");
@@ -228,8 +271,8 @@ export class MedicineSearchOrchestratorService {
       return "solucao nasal";
     }
     if (/\bgotas?\b/.test(normalized)) return "gotas";
-    if (/\bsolucao oral\b|\boral\b/.test(normalized)) return "solucao oral";
     if (/\bsuspensao\b/.test(normalized)) return "suspensao oral";
+    if (/\bsolucao oral\b|\boral\b/.test(normalized)) return "solucao oral";
     if (/\bxarope\b/.test(normalized)) return "xarope";
     if (/\bpomada\b/.test(normalized)) return "pomada";
     if (/\bcreme\b/.test(normalized)) return "creme";
@@ -276,7 +319,7 @@ export class MedicineSearchOrchestratorService {
   ) {
     return [
       normalizedQuery,
-      query.dosageMg !== undefined ? `${query.dosageMg}mg` : "qualquer_dosagem",
+      query.dosage ? medicineStrengthSignature(query.dosage) : "qualquer_dosagem",
       query.formGroup || "qualquer_forma",
       query.packageQuantity !== undefined
         ? `${query.packageQuantity}un`

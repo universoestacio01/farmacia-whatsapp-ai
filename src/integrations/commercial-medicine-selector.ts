@@ -2,6 +2,7 @@
 import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 import { getConversationOpeningIntent, stripGreetingPrefix } from "../utils/conversation-opening.util";
+import { extractMedicineStrengths, medicineStrengthMatches, medicineStrengthSignature, removeMedicineStrengths } from "../utils/medicine-strength.util";
 
 export interface SelectorProduct {
   id: number;
@@ -128,7 +129,7 @@ export class CommercialMedicineSelector {
     diurix: "hidroclorotiazida",
     hidroclorotiazida: "hidroclorotiazida",
     tamarine: "tamarine",
-    plenance: "tadalafila",
+    plenance: "rosuvastatina",
   };
 
   private readonly brandByMedicine: Record<string, string[]> = {
@@ -149,7 +150,8 @@ export class CommercialMedicineSelector {
     omeprazol: [],
     neopiridin: ["neopiridin"],
     venvanse: ["venvanse"],
-    tadalafila: ["cialis", "tadala", "plenance"],
+    tadalafila: ["cialis", "tadala"],
+    rosuvastatina: ["plenance"],
     sildenafila: ["viagra"],
     fexofenadina: ["allegra"],
     ciprofloxacino: [],
@@ -170,7 +172,7 @@ export class CommercialMedicineSelector {
     const quantity = this.extractRequestedQuantity(normalized);
     const dosageInfo = this.extractRequestedDosage(normalized);
     const formGroup = this.getPresentationGroupFromText(normalized);
-    let cleaned = normalized
+    let cleaned = removeMedicineStrengths(normalized)
       .replace(/[?!:;]/g, " ")
       .replace(/\bnao\s+tem\b/g, " ")
       .replace(/\bnao\s+teria\b/g, " ")
@@ -195,6 +197,7 @@ export class CommercialMedicineSelector {
       .replace(/\b(?:comprimidos?|capsulas?|caixas?|cartelas?|unidades?|unid|frascos?)\b/g, " ")
       .replace(/\b(?:comprimido|capsula|gotas|xarope|solucao|suspensao|pomada|creme|gel|spray|dragea|nasal|oral)\b/g, " ")
       .replace(/\b(?:da|do|de)\b/g, " ")
+      .replace(/\bcom\b/g, " ")
       .replace(/\b(?:tem|teria|vende|vendem)$/g, " ")
       .replace(/\b(?:cloridrato|citrato|maleato|sulfato|bromidrato|fosfato|monoidratada|monoidratado|sodica|sodico)\b/g, " ")
       .replace(/\s+/g, " ")
@@ -264,6 +267,11 @@ export class CommercialMedicineSelector {
     const productName = this.normalize(product.name);
     const substanceName = this.normalize(product.substance?.name || "");
     const brands = this.brandByMedicine[canonical] || [];
+    const requestedName = this.parseMedicineQuery(query).medicineName || canonical;
+    const exactName = this.hasWordOrPhrase(productName, requestedName);
+    const explicitBrandVariant = exactName && brands.some((brand) =>
+      requestedName !== brand && this.hasWordOrPhrase(requestedName, brand),
+    );
 
     if (
       canonical === "paracetamol" &&
@@ -274,10 +282,21 @@ export class CommercialMedicineSelector {
 
     if (
       (productName.includes("+") || substanceName.includes(";")) &&
-      !brands.some((brand) => this.hasWordOrPhrase(productName, brand))
+      !(exactName && !this.hasWordOrPhrase(substanceName, canonical)) &&
+      !explicitBrandVariant &&
+      !["dorflex", "torsilax", "cimegripe", "benegrip", "engov", "neosaldina"].includes(canonical) &&
+      !/\bcomposto\b/.test(requestedName)
     ) {
       return false;
     }
+
+    // Brand extensions are different formulations, not automatic substitutes.
+    for (const variant of ["composto", "sinus", "eze"]) {
+      if (this.hasWordOrPhrase(productName, variant) && !this.hasWordOrPhrase(requestedName, variant)) return false;
+    }
+    if (canonical === "cimegripe" && /\bzinco\b|\bc\s*\+/.test(productName) && !/\bzinco\b|\bc\s*\+/.test(requestedName)) return false;
+
+    if (exactName) return true;
 
     if (brands.some((brand) => this.hasWordOrPhrase(productText, brand))) {
       return true;
@@ -330,7 +349,7 @@ export class CommercialMedicineSelector {
   extractPackageInfo(presentationText: string): PackageInfo {
     const text = this.normalize(presentationText);
     const isInjectable =
-      /\b(sol inj|inj|injetavel|ampola|amp|iv|im)\b/.test(text);
+      /\b(sol inj|inj|injetavel|ampolas?|amp|iv|im)\b/.test(text);
     const isHospitalUse = /\b(hospitalar|uso hospitalar)\b/.test(text);
     const formGroup = this.getPresentationGroupFromText(text);
     const volumeMatch = text.match(/\b(\d+)\s*ml\b/);
@@ -379,7 +398,7 @@ export class CommercialMedicineSelector {
   }
 
   private getPresentationGroupFromText(text: string) {
-    if (/\bcomprim|\bcom\b/.test(text)) return "comprimido";
+    if (/\bcomprim|\bcp\b|\bcom\b(?!\s+\d)/.test(text)) return "comprimido";
     if (/\bcaps|\bcap\b/.test(text)) return "capsula";
     if (
       /\bsolucao nasal\b|\bsol nasal\b|\bsol nas\b|\bsoro fisiologico nasal\b|\bnasal\b/.test(
@@ -389,6 +408,7 @@ export class CommercialMedicineSelector {
       return "solucao nasal";
     }
     if (/\bgotas?\b|\bfr got\b/.test(text)) return "gotas";
+    if (/\bsuspensao\b|\bsusp\b|\bsus or\b/.test(text)) return "suspensao oral";
     if (/\bsolucao oral\b|\bsol oral\b|\bsol or\b|\boral\b/.test(text)) {
       return "solucao oral";
     }
@@ -399,7 +419,7 @@ export class CommercialMedicineSelector {
     if (/\bgel\b/.test(text)) return "gel";
     if (/\bspray\b/.test(text)) return "spray";
     if (/\bpastilha\b/.test(text)) return "pastilha";
-    if (/\bdragea\b|\bdrg\b/.test(text)) return "dragea";
+    if (/\bdrageas?\b|\bdrg\b/.test(text)) return "dragea";
 
     return "outro";
   }
@@ -420,6 +440,7 @@ export class CommercialMedicineSelector {
     const deduped = new Map<string, T>();
 
     for (const option of options) {
+      if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) continue;
       const key = this.normalize(
         [
           option.productName,
@@ -452,7 +473,7 @@ export class CommercialMedicineSelector {
 
     const requestedScored = this.filterByRequestedAttributes(scored, parsedQuery);
     const selectedScored =
-      parsedQuery.dosageMg !== undefined ||
+      parsedQuery.dosage !== undefined ||
       parsedQuery.formGroup ||
       parsedQuery.packageQuantity !== undefined
         ? this.selectRequestedQueryOptions(
@@ -491,11 +512,9 @@ export class CommercialMedicineSelector {
   ) {
     let filtered = scored;
 
-    if (parsedQuery.dosageMg !== undefined) {
-      const concentrationRequested = (parsedQuery.dosage || "").includes("/");
+    if (parsedQuery.dosage !== undefined) {
       const dosageMatches = filtered.filter((item) =>
-        this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number) &&
-        (item.option.strength || "").includes("/") === concentrationRequested,
+        medicineStrengthMatches(item.option.strength || "", parsedQuery.dosage!),
       );
 
       // An explicit dose is a constraint, not a preference for another strength.
@@ -516,9 +535,7 @@ export class CommercialMedicineSelector {
           item.option.packageInfo?.unitCount === parsedQuery.packageQuantity,
       );
 
-      if (quantityMatches.length > 0) {
-        filtered = quantityMatches;
-      }
+      filtered = quantityMatches;
     }
 
     return filtered;
@@ -618,10 +635,10 @@ export class CommercialMedicineSelector {
       selected.push({ ...item, category, reason });
     };
 
-    if (parsedQuery.dosageMg !== undefined) {
+    if (parsedQuery.dosage !== undefined) {
       pick(
         scored.find((item) =>
-          this.optionMatchesDosageMg(item.option, parsedQuery.dosageMg as number),
+          medicineStrengthMatches(item.option.strength || "", parsedQuery.dosage!),
         ),
         "dosagem_solicitada",
         "dosagem pedida pelo cliente",
@@ -693,8 +710,7 @@ export class CommercialMedicineSelector {
       return "";
     }
 
-    const parsed = this.extractRequestedDosage(rule.dosageText);
-    return parsed.mg !== undefined ? `${parsed.mg}mg` : "";
+    return medicineStrengthSignature(rule.dosageText);
   }
 
   private sortByDistinctDosage<T extends SelectorOption>(
@@ -1037,8 +1053,7 @@ export class CommercialMedicineSelector {
   }
 
   private extractDosageSignature(option: SelectorOption) {
-    const parsed = this.extractRequestedDosage(option.strength || "");
-    return parsed.mg !== undefined ? `${parsed.mg}mg` : option.strength || "";
+    return medicineStrengthSignature(option.strength || "");
   }
 
   private legacySelectCommercialOptions<T extends SelectorOption>(
@@ -1403,13 +1418,7 @@ export class CommercialMedicineSelector {
   }
 
   private optionMatchesDosageMg(option: SelectorOption, requestedMg: number) {
-    const text = this.normalize([option.strength, option.packageInfo?.formGroup].join(" "));
-    const explicit = text.match(/\b(\d+(?:[,.]\d+)?)\s*(mg\/ml|mg|g)\b/g) || [];
-
-    return explicit.some((match) => {
-      const parsed = this.extractRequestedDosage(match);
-      return parsed.mg !== undefined && Math.abs(parsed.mg - requestedMg) < 0.01;
-    });
+    return medicineStrengthMatches(option.strength || "", `${requestedMg}mg`);
   }
 
   private isGenericOption(option: SelectorOption, canonical: string) {
@@ -1505,30 +1514,18 @@ export class CommercialMedicineSelector {
   }
 
   private extractRequestedDosage(normalizedText: string) {
-    const explicit = normalizedText.match(
-      /\b(\d+(?:[,.]\d+)?)\s*(mg\/ml|mg|mcg|g|ml)\b/,
-    );
-
-    if (explicit) {
-      const value = Number(explicit[1].replace(",", "."));
-      const unit = explicit[2];
-      const mg =
-        unit === "g"
-          ? value * 1000
-          : unit === "mg" || unit === "mg/ml"
-            ? value
-            : undefined;
-
+    const strengths = extractMedicineStrengths(normalizedText);
+    if (strengths.length) {
       return {
-        raw: explicit[0],
-        normalized: `${this.formatDoseNumber(value)}${unit}`,
-        mg,
+        raw: strengths[0].raw,
+        normalized: strengths.map((strength) => strength.label).join(" + "),
+        mg: strengths.length === 1 ? strengths[0].mg : undefined,
       };
     }
 
     const inferredMg = normalizedText.match(/\b(?:de|com)\s*(\d{1,4})\b/);
 
-    if (inferredMg) {
+    if (inferredMg && !this.extractPackageQuantity(normalizedText)) {
       const value = Number(inferredMg[1]);
 
       if ([2, 5, 10, 20, 25, 30, 40, 50, 70, 100, 250, 400, 500, 600, 750, 850, 1000].includes(value)) {
@@ -1546,7 +1543,7 @@ export class CommercialMedicineSelector {
   private extractPackageQuantity(normalizedText: string) {
     const match = normalizedText.match(
       /\b(?:caixa|cx|cartela|ct|bl)\s*(?:com|x)?\s*(\d{1,3})\b/,
-    );
+    ) || normalizedText.match(/\b(\d{1,3})\s*(?:comprimidos?|capsulas?|drageas?|cp|unidades?)\b/);
 
     return match ? Number(match[1]) : undefined;
   }

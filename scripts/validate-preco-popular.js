@@ -259,7 +259,7 @@ test("EAN query uses exact VTEX filter and does not accept another barcode", asy
   assert.equal(await service.findRetailByGtin("00000000"), null);
 });
 
-test("pagination accepts 206, deduplicates EAN and fetches at most two pages", async (t) => {
+test("pagination accepts 206, deduplicates EAN and stops a repeated page", async (t) => {
   const page = Array.from({ length: 50 }, (_, id) =>
     product(id + 1, `Venvanse ${id + 1}mg Com 28 Capsulas`),
   );

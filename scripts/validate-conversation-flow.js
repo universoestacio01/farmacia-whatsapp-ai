@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const { Logger } = require("@nestjs/common");
 const { ConversationState } = require("@prisma/client");
+const { extractMedicineStrengths } = require("../dist/utils/medicine-strength.util");
 const {
   ConversationEngineService,
 } = require("../dist/whatsapp/conversation-engine.service");
@@ -24,6 +25,7 @@ function option(id, type, medicineName, label, price, formGroup = "produto", bra
     medicineName,
     label,
     formGroup,
+    strength: type === "medicine" ? extractMedicineStrengths(label).map((value) => value.label).join("+") || undefined : undefined,
     packageDescription: label,
     pricePf: price,
     source: "preco_popular",

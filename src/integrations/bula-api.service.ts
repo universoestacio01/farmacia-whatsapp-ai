@@ -56,6 +56,8 @@ export interface MedicineLookupSummary {
   medicineName: string;
   products: BulaApiProduct[];
   options: CommercialMedicineOption[];
+  searchStatus?: "found" | "not_found" | "unavailable" | "incomplete" | "attributes_unverified" | "restricted" | "offer_unavailable" | "presentation_not_found";
+  failureReason?: string;
 }
 
 interface BulaApiListResponse<T> {

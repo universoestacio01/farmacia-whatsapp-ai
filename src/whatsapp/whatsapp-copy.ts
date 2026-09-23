@@ -292,6 +292,26 @@ export const WhatsappCopy = {
     ].join("\n");
   },
 
+  medicinePresentationNotFound() {
+    return "Encontrei o medicamento, mas não essa dosagem ou apresentação no catálogo agora. Pode conferir os detalhes da embalagem ou me dizer outra apresentação que você procura?";
+  },
+
+  catalogSearchProblem(status?: string) {
+    if (status === "unavailable" || status === "incomplete") {
+      return "Não consegui concluir a consulta ao catálogo agora. Pode tentar novamente em instantes?";
+    }
+    if (status === "attributes_unverified") {
+      return "Encontrei o medicamento, mas o catálogo não informa todos os detalhes dessa apresentação. Para evitar uma opção errada, a equipe precisa conferir antes de continuar.";
+    }
+    if (status === "restricted") {
+      return "Essa apresentação precisa ser conferida pela equipe da farmácia antes de continuar. Não vou substituir por outra dosagem ou forma de uso.";
+    }
+    if (status === "offer_unavailable") {
+      return "Encontrei o produto no catálogo, mas não há uma oferta disponível para seguir com o pedido agora. Quer consultar outro produto?";
+    }
+    return null;
+  },
+
   packageImageFallback(status: "unavailable" | "unreadable" | "failed" | "unsupported") {
     const explanation = status === "unreadable"
       ? "Recebi sua foto, mas não consegui identificar o nome com segurança."
@@ -491,7 +511,7 @@ function reorderCategoryBrand(value: string) {
           rest.length > 0 && !/^\d+\s?(mg|g|ml|un|und|kg)$/i.test(rest);
 
         if (!restHasDescriptor) {
-          return limitDisplayName(value);
+          return value;
         }
 
         const categoryDisplay = formatProductDisplayNameWithoutReorder(category);
@@ -504,7 +524,8 @@ function reorderCategoryBrand(value: string) {
     }
   }
 
-  return limitDisplayName(value);
+  // Keep complete product identity, including decimal strengths and volumes.
+  return value;
 }
 
 function formatProductDisplayNameWithoutReorder(name: string) {
@@ -526,18 +547,6 @@ function removeRepeatedWords(value: string) {
   }
 
   return result.join(" ");
-}
-
-function limitDisplayName(value: string) {
-  if (value.length <= 80) {
-    return value;
-  }
-
-  const sizeMatch = value.match(/\b\d+\s?(mg|g|ml|un|und|kg)\b/i);
-  const suffix = sizeMatch ? ` ${sizeMatch[0].replace(/\s+/g, "")}` : "";
-  const base = value.slice(0, 72 - suffix.length).trim();
-
-  return `${base}${suffix}`;
 }
 
 function uniqueDisplayParts(values: Array<string | undefined>) {

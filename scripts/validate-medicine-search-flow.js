@@ -14,7 +14,7 @@ async function testParser() {
     ["Cloridrato de ciprofloxacina", "ciprofloxacina", "ciprofloxacino", undefined, undefined],
     ["Cloridrato de fexofenadina", "fexofenadina", "fexofenadina", undefined, undefined],
     ["Allegra", "allegra", "fexofenadina", undefined, undefined],
-    ["Plenance de 10 mg", "plenance", "tadalafila", 10, undefined],
+    ["Plenance de 10 mg", "plenance", "rosuvastatina", 10, undefined],
     ["Viagra", "viagra", "sildenafila", undefined, undefined],
     ["Dipirona 1g", "dipirona", "dipirona", 1000, undefined],
     ["Dipirona 0,5g", "dipirona", "dipirona", 500, undefined],

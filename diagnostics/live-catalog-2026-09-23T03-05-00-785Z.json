@@ -1,0 +1,55 @@
+{
+  "startedAt": "2026-09-23T03:05:00.785Z",
+  "provider": "preco_popular",
+  "baseUrl": "https://www.precopopular.com.br",
+  "context": "Local production classes, live HTTP, default priority rules; no production database or WhatsApp.",
+  "requests": [
+    {
+      "query": "dipirona",
+      "method": "GET",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=dipirona&_from=0&_to=49",
+      "durationMs": 131,
+      "error": {
+        "name": "TypeError",
+        "message": "fetch failed",
+        "cause": "EACCES"
+      }
+    }
+  ],
+  "providerEvents": [
+    {
+      "provider": "preco_popular",
+      "operation": "catalog_search",
+      "query": "dipirona",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=dipirona&_from=0&_to=49",
+      "durationMs": 131,
+      "outcome": "FAILED",
+      "failureReason": "fetch failed"
+    }
+  ],
+  "normalizations": [],
+  "queries": [
+    {
+      "query": "dipirona",
+      "httpCalls": 1,
+      "durationMs": 137,
+      "normalizedMedicineCount": 0,
+      "normalizedDosages": [],
+      "options": [],
+      "checks": {
+        "found": false,
+        "allPricesValid": false,
+        "allHaveImageUrl": false,
+        "allHaveEan": false,
+        "duplicatePresentations": [],
+        "fullCatalogPrices": false,
+        "requestedDoseMatches": null
+      }
+    }
+  ],
+  "imageChecks": [],
+  "enabled": true,
+  "stoppedEarly": "Provider request failed; no retry storm",
+  "finishedAt": "2026-09-23T03:05:00.923Z",
+  "catalogHttpCalls": 1
+}

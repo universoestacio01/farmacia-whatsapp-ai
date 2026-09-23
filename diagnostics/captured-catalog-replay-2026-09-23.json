@@ -1,0 +1,188 @@
+{
+  "networkCalls": 0,
+  "source": "live-catalog-2026-09-23T03-05-16-027Z.json",
+  "scope": "Parsing and filtering only; captured normalized responses substituted for searchCatalog, independent instance per query. Not live API validation of these six queries.",
+  "results": [
+    {
+      "query": "neosoro 0,5mg/ml",
+      "parsed": {
+        "received": "neosoro 0,5mg/ml",
+        "normalized": "neosoro 0,5mg/ml",
+        "medicineName": "neosoro",
+        "canonicalName": "neosoro",
+        "dosage": "0,5mg/ml",
+        "dosageMg": 0.5,
+        "fallbackTerms": [
+          "neosoro"
+        ]
+      },
+      "options": []
+    },
+    {
+      "query": "allegra 6mg/ml",
+      "parsed": {
+        "received": "allegra 6mg/ml",
+        "normalized": "allegra 6mg/ml",
+        "medicineName": "allegra",
+        "canonicalName": "fexofenadina",
+        "dosage": "6mg/ml",
+        "dosageMg": 6,
+        "fallbackTerms": [
+          "allegra",
+          "fexofenadina"
+        ]
+      },
+      "options": [
+        {
+          "name": "Antialergico Allegra Pediátrico Fexofenadina 6mg/ml Sabor Framboesa 6mg",
+          "ean": "7891058004347",
+          "dose": "6mg/ml",
+          "form": "outro",
+          "package": "frasco com 60 ml",
+          "price": 34.9
+        },
+        {
+          "name": "Antialergico Allegra Pediátrico Fexofenadina 6mg/ml Sabor Framboesa 6mg",
+          "ean": "7891058002589",
+          "dose": "6mg/ml",
+          "form": "outro",
+          "package": "frasco com 60 ml",
+          "price": 34.99
+        },
+        {
+          "name": "Antialergico Allegra Pediátrico Fexofenadina 6mg/ml 150ml com Copinho",
+          "ean": "7891058002572",
+          "dose": "6mg/ml",
+          "form": "outro",
+          "package": "frasco com 150 ml",
+          "price": 76.12
+        }
+      ]
+    },
+    {
+      "query": "allegra suspensao oral",
+      "parsed": {
+        "received": "allegra suspensao oral",
+        "normalized": "allegra suspensao oral",
+        "medicineName": "allegra",
+        "canonicalName": "fexofenadina",
+        "formGroup": "solucao oral",
+        "fallbackTerms": [
+          "allegra",
+          "fexofenadina"
+        ]
+      },
+      "options": []
+    },
+    {
+      "query": "amoxicilina 250mg/5ml",
+      "parsed": {
+        "received": "amoxicilina 250mg/5ml",
+        "normalized": "amoxicilina 250mg/5ml",
+        "medicineName": "amoxicilina /",
+        "canonicalName": "amoxicilina",
+        "dosage": "250mg",
+        "dosageMg": 250,
+        "fallbackTerms": [
+          "amoxicilina /",
+          "amoxicilina"
+        ]
+      },
+      "options": [
+        {
+          "name": "Amoxicilina Ems 250mg 150ml Suspensão",
+          "ean": "7896004700458",
+          "dose": "250mg",
+          "form": "outro",
+          "package": "frasco com 150 ml",
+          "price": 21.7
+        },
+        {
+          "name": "Amoxicilina Eurofarma 150ml 250mg",
+          "ean": "7891317001568",
+          "dose": "250mg",
+          "form": "outro",
+          "package": "frasco com 150 ml",
+          "price": 27.89
+        }
+      ]
+    },
+    {
+      "query": "amoxicilina suspensao oral",
+      "parsed": {
+        "received": "amoxicilina suspensao oral",
+        "normalized": "amoxicilina suspensao oral",
+        "medicineName": "amoxicilina",
+        "canonicalName": "amoxicilina",
+        "formGroup": "solucao oral",
+        "fallbackTerms": [
+          "amoxicilina"
+        ]
+      },
+      "options": [
+        {
+          "name": "Amoxicilina Cimed 150ml Pó Para Suspensão Oral 250mg/5ml",
+          "ean": "7896523208473",
+          "dose": "250mg/5ml",
+          "form": "solucao oral",
+          "package": "frasco com 150 ml",
+          "price": 20.66
+        },
+        {
+          "name": "Amoxicilina Ems 150ml Suspensão Oral 500mg",
+          "ean": "7896004705477",
+          "dose": "500mg",
+          "form": "solucao oral",
+          "package": "frasco com 150 ml",
+          "price": 42.14
+        },
+        {
+          "name": "Amoxicilina Prati 150ml Suspensão Oral 250mg/5ml",
+          "ean": "7898148298877",
+          "dose": "250mg/5ml",
+          "form": "solucao oral",
+          "package": "frasco com 150 ml",
+          "price": 26.99
+        }
+      ]
+    },
+    {
+      "query": "dorflex 30 comprimidos",
+      "parsed": {
+        "received": "dorflex 30 comprimidos",
+        "normalized": "dorflex 30 comprimidos",
+        "medicineName": "dorflex",
+        "canonicalName": "dorflex",
+        "formGroup": "comprimido",
+        "fallbackTerms": [
+          "dorflex"
+        ]
+      },
+      "options": [
+        {
+          "name": "Dorflex Max Analgésico e Relaxante Muscular 8 comprimidos",
+          "ean": "7891058003944",
+          "form": "comprimido",
+          "package": "caixa com 8 comprimidos",
+          "price": 15.31
+        },
+        {
+          "name": "Dorflex Uno Dipirona 1g Enxaqueca 10 comprimidos",
+          "ean": "7891058022815",
+          "dose": "1g",
+          "form": "comprimido",
+          "package": "caixa com 10 comprimidos",
+          "price": 16.4
+        },
+        {
+          "name": "Dorflex Uno Dipirona 1g Enxaqueca 20 comprimidos",
+          "ean": "7891058000103",
+          "dose": "1g",
+          "form": "comprimido",
+          "package": "caixa com 20 comprimidos",
+          "price": 26.79
+        }
+      ]
+    }
+  ]
+}
