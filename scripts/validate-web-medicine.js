@@ -378,7 +378,7 @@ test("unverified web results never claim a product was found or is out of stock"
     const result = await service.searchMedicine("neosulida");
     assert.equal(result.searchStatus, "search_unverified");
     assert.doesNotMatch(WhatsappCopy.catalogSearchProblem(result.searchStatus), /Encontrei o produto|não há uma oferta/);
-    assert.match(WhatsappCopy.catalogSearchProblem(result.searchStatus), /não significa.*em falta/);
+    assert.match(WhatsappCopy.catalogSearchProblem(result.searchStatus), /não está disponível para pedido/);
   }
 });
 

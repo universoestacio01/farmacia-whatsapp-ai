@@ -121,6 +121,20 @@ test("identified image requires confirmation; exact extracted dose goes through 
   assert.equal(f.conversation.pendingAddress.cep, "23860000");
 });
 
+for (const intent of ["CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"]) {
+  test(`human catalog review ${intent} keeps image in history without restarting OCR/search`, async () => {
+    const f = fixture();
+    f.conversation.lastIntent = intent;
+    await f.receive(image);
+    assert.equal(f.analyses.length, 0);
+    assert.equal(f.searches.length, 0);
+    assert.equal(f.conversation.lastIntent, intent);
+    assert.equal(f.conversation.cart.length, 1);
+    assert.ok(f.messages.some((m) => m.direction === "INBOUND"));
+    assert.match(f.replies[0], /registrado na conversa para a equipe/);
+  });
+}
+
 test("decline/correct or go back never searches the guessed medicine", async () => {
   for (const text of ["2", "não", "voltar"]) {
     const f = fixture();
@@ -317,7 +331,9 @@ test("download timeout is shared across metadata and media", async (t) => {
   assert.equal((await media.extractMedicineFromImage("123")).status, "failed");
 });
 
-test("copy only invites a photo when capability is configured", () => {
-  assert.match(WhatsappCopy.medicineNotFound(true), /foto nítida/);
-  assert.doesNotMatch(WhatsappCopy.medicineNotFound(false), /foto/);
+test("missing medicine suggests another product instead of asking for photos", () => {
+  for (const configured of [true, false]) {
+    assert.match(WhatsappCopy.medicineNotFound(configured), /buscar outro produto/);
+    assert.doesNotMatch(WhatsappCopy.medicineNotFound(configured), /foto|atendimento|em falta/);
+  }
 });

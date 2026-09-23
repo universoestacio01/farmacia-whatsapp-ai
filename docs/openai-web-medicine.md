@@ -53,6 +53,14 @@ Verificacao apos a correcao: build e 573 testes automatizados passaram. O script
 
 ## Publicacao
 
+### Atendimento comercial em caso de falha
+
+A OpenAI retorna apenas URLs; a mensagem ao cliente e definida em `whatsapp-copy.ts`. Sem produto/oferta validada (`not_found`, `search_unverified`, `offer_unavailable`), a mensagem agora e: "Esse produto nao esta disponivel para pedido no momento. Voce gostaria de buscar outro produto?". Nao afirma falta de estoque proprio, nao pede foto e nao apresenta menu de atendimento humano. O estado `CATALOG_UNAVAILABLE` aceita sim, nao ou diretamente outro nome, mantendo o carrinho. Falhas tecnicas, restricoes ou atributos inseguros continuam separados, sem afirmar indisponibilidade de estoque; somente nesses casos permanece o menu para solicitar conferencia da equipe. O erro detalhado continua no log.
+
+O menu grava `CATALOG_HELP_OPTIONS`, sem selecionar produto nem gerar cobranca. Ao escolher atendimento, grava `CATALOG_REVIEW_REQUESTED`; a conversa aparece primeiro em Atencao com o produto a conferir. Nao ha promessa de prazo ou estoque. Carrinho preservado. Texto e arquivos posteriores ficam no historico, sem buscas/OCR automaticos. A equipe responde pelo painel existente. Envio manual bem-sucedido marca `CATALOG_REVIEW_HANDLED`; falha de envio mantem a solicitacao prioritaria. O bot continua sem consultar produtos durante esse atendimento ate o cliente escrever `voltar` (mantem carrinho), reiniciar ou encerrar a conversa. Nenhum novo campo ou migracao de banco.
+
+Esta revisao nao altera a regra de preco nem remove os bloqueios 403 dos sites. Nao foram feitas chamadas pagas nem alteracoes de producao nesta etapa. Contrato da reserva conferido com a documentacao oficial: https://developers.openai.com/api/docs/guides/tools-web-search.
+
 Publicar src, public/admin, package.json e package-lock.json juntos, executar npm ci e npm run build, reiniciar o backend. parse5 e a nova dependencia. Nao exige migracao de banco. O painel Integracoes e /health/providers mostram configuracao, nao uma promessa de conectividade.
 
 Documentacao OpenAI consultada: https://developers.openai.com/api/docs/guides/tools-web-search e https://developers.openai.com/api/docs/models/gpt-5-mini.

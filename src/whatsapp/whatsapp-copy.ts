@@ -278,47 +278,32 @@ export const WhatsappCopy = {
   },
 
   productNotFound(_productName: string) {
-    return [
-      "Não localizei esse produto agora.",
-      "",
-      "Pode conferir o nome ou me mandar outra opção?",
-    ].join("\n");
+    return WhatsappCopy.productUnavailable();
   },
 
-  medicineNotFound(canReadImages = false) {
-    return [
-      "Não localizei esse medicamento agora.",
-      "",
-      canReadImages
-        ? "Pode conferir o nome e a dosagem? Se preferir, envie uma foto nítida da frente da embalagem."
-        : "Pode escrever o nome e a dosagem como aparecem na embalagem? Exemplo: Dipirona 1g.",
-    ].join("\n");
+  medicineNotFound(_canReadImages = false) {
+    return WhatsappCopy.productUnavailable();
+  },
+
+  productUnavailable() {
+    return "Esse produto não está disponível para pedido no momento. Você gostaria de buscar outro produto?";
   },
 
   medicinePresentationNotFound() {
     return "Encontrei o medicamento, mas não essa dosagem ou apresentação no catálogo agora. Pode conferir os detalhes da embalagem ou me dizer outra apresentação que você procura?";
   },
 
-  catalogSearchProblem(status?: string) {
-    if (status === "search_unverified") {
-      return "Ainda não consegui confirmar uma opção com o nome, a apresentação e o preço corretos nas fontes consultadas. Isso não significa que o produto esteja em falta. Pode conferir o nome e me dizer a dosagem ou a apresentação da embalagem?";
-    }
-    if (status === "backup_unavailable") {
-      return "Não encontrei uma opção correspondente na consulta principal, e a consulta complementar está indisponível. Isso não confirma que o produto esteja em falta. Pode conferir o nome e a apresentação para tentarmos novamente?";
-    }
-    if (status === "unavailable" || status === "incomplete") {
-      return "Não consegui concluir a consulta ao catálogo agora. Pode tentar novamente em instantes?";
-    }
-    if (status === "attributes_unverified") {
-      return "Encontrei o medicamento, mas o catálogo não informa todos os detalhes dessa apresentação. Para evitar uma opção errada, a equipe precisa conferir antes de continuar.";
-    }
-    if (status === "restricted") {
-      return "Essa apresentação precisa ser conferida pela equipe da farmácia antes de continuar. Não vou substituir por outra dosagem ou forma de uso.";
-    }
-    if (status === "offer_unavailable") {
-      return "O catálogo retornou esse produto, mas não consegui confirmar uma oferta com preço e disponibilidade agora. Isso não confirma falta de estoque na farmácia. Pode me dizer a apresentação da embalagem para conferir a busca?";
-    }
-    return null;
+  catalogSearchProblem(status?: string, productName?: string) {
+    if (["not_found", "search_unverified", "offer_unavailable"].includes(status || "")) return WhatsappCopy.productUnavailable();
+    if (!["search_unverified", "backup_unavailable", "unavailable", "incomplete", "attributes_unverified", "restricted", "offer_unavailable"].includes(status || "")) return null;
+    const product = productName ? formatProductDisplayName(sanitizeCustomerText(productName).slice(0, 100)) : "esse item";
+    return [
+      `Para seguir com ${product}, preciso de uma conferência da equipe.`,
+      "Como prefere continuar?",
+      "",
+      "1. Solicitar atendimento",
+      "2. Buscar outro produto",
+    ].join("\n");
   },
 
   packageImageFallback(status: "unavailable" | "unreadable" | "failed" | "unsupported") {

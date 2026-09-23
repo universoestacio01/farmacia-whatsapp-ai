@@ -115,21 +115,21 @@ test("a new category need not be hardcoded to return matching retail offers", as
 
 test("retail misses retain the requested volume instead of offering another package", async (t) => {
   const h = harness(t);
-  assert.match(await h.send("Soro fisiologico 999ml"), /Não localizei esse produto/);
+  assert.match(await h.send("Soro fisiologico 999ml"), /não está disponível para pedido/);
   assert.equal(h.conversation.selectedPresentation, null);
 });
 
 for (const status of [429, 500]) test(`HTTP ${status} is not reported as a missing product and is not retried`, async (t) => {
   const h = harness(t, { status });
   const reply = await h.send("Soro fisiologico");
-  assert.match(reply, /Não consegui concluir a consulta/);
+  assert.match(reply, /Solicitar atendimento/);
   assert.doesNotMatch(reply, /Não localizei/);
   assert.equal(h.calls.length, 1);
 });
 
 test("network failure remains an availability error, not a catalog miss", async (t) => {
   const h = harness(t, { error: new Error("offline") });
-  assert.match(await h.send("Tem gaze?"), /Não consegui concluir/);
+  assert.match(await h.send("Tem gaze?"), /Solicitar atendimento/);
   assert.equal(h.calls.length, 1);
 });
 
@@ -139,7 +139,7 @@ for (const reason of ["no_price", "out_of_stock"]) test(`retail ${reason} is dif
     seller.commertialOffer[reason === "no_price" ? "Price" : "AvailableQuantity"] = 0;
   }
   const h = harness(t, { body });
-  assert.match(await h.send("Soro fisiologico"), /não consegui confirmar uma oferta com preço e disponibilidade/);
+  assert.match(await h.send("Soro fisiologico"), /não está disponível para pedido/);
   assert.equal(h.conversation.selectedPresentation, null);
 });
 

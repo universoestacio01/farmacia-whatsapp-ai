@@ -35,6 +35,47 @@ test("long conversations show the latest 100 messages in chronological order", a
   assert.equal(result[99].content, "Message 139");
 });
 
+test("requested catalog reviews appear before ordinary pending chats and identify the product", async () => {
+  const calls = [];
+  const row = (id, extra = {}) => ({ id, status: "OPEN", pendingAction: "WAITING_MEDICINE_NAME",
+    updatedAt: new Date(), customer: { name: "Teste", whatsappNumber: "test" }, messages: [], ...extra });
+  const service = new AdminService({ safePrismaCall: (_, callback) => callback({ conversation: {
+    findMany: async (args) => {
+      calls.push(args);
+      return args.where.lastIntent ? [row("review", { lastIntent: "CATALOG_REVIEW_REQUESTED", currentMedicineQuery: "Neosulida 100mg" })] : [row("ordinary")];
+    },
+  } }) });
+  const result = await service.attentionQueue(2);
+  assert.deepEqual(result.map((r) => r.id), ["review", "ordinary"]);
+  assert.match(result[0].reason, /Conferir produto e valor: Neosulida 100mg/);
+  assert.equal(calls[0].where.lastIntent, "CATALOG_REVIEW_REQUESTED");
+  assert.equal(calls[1].take, 1);
+  assert.deepEqual(calls[1].where.id.notIn, ["review"]);
+});
+
+for (const fails of [false, true]) test(`manual operator reply ${fails ? "failure preserves review" : "success marks request answered"}`, async () => {
+  const updates = [], messages = [];
+  const client = {
+    conversation: {
+      findUnique: async () => ({ id: "chat", lastIntent: "CATALOG_REVIEW_REQUESTED", customer: { whatsappNumber: "test" } }),
+      updateMany: async (args) => { updates.push(args); return { count: 1 }; },
+    },
+    message: { create: async (args) => { messages.push(args); return args.data; } },
+  };
+  const service = new AdminService({ safePrismaCall: (_, callback) => callback(client) }, {}, {
+    sendTextMessage: async () => { if (fails) throw new Error("offline"); return { whatsappMessageId: "msg" }; },
+  });
+  if (fails) {
+    await assert.rejects(service.sendManualMessage("chat", "Vou conferir"), /offline/);
+    assert.equal(updates.length, 0);
+  } else {
+    assert.equal((await service.sendManualMessage("chat", "Vou conferir")).sent, true);
+    assert.equal(updates[0].where.lastIntent, "CATALOG_REVIEW_REQUESTED");
+    assert.equal(updates[0].data.lastIntent, "CATALOG_REVIEW_HANDLED");
+  }
+  assert.equal(messages.length, 1);
+});
+
 test("provider activity exposes only diagnostic metadata, never raw response or request URLs", async () => {
   let fields;
   const service = new AdminService({

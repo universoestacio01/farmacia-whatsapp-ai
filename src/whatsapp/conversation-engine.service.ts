@@ -101,6 +101,17 @@ export class ConversationEngineService {
       return this.handleWaitingPix(conversation, text);
     }
 
+    if (["CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"].includes(conversation.lastIntent || "") && !this.isGlobalCancelRequest(text)) {
+      if (this.isViewCartRequest(text)) return this.formatCartStatus(conversation);
+      if (this.isBackRequest(text)) {
+        await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
+          lastIntent: null, currentMedicineQuery: null, lastMedicine: null, candidateOptions: Prisma.JsonNull,
+        } });
+        return "Vamos continuar. Qual produto você quer buscar? Seu carrinho continua salvo.";
+      }
+      return "Sua mensagem ficou registrada para a equipe. Seu carrinho continua salvo. Para voltar à busca automática, escreva voltar.";
+    }
+
     const openingIntent = getConversationOpeningIntent(text);
     if (openingIntent === "greeting") {
       return this.handleGreeting(conversation);
@@ -189,6 +200,37 @@ export class ConversationEngineService {
       });
 
       return "Claro. Me diga qual outro produto você quer incluir no pedido.";
+    }
+
+    if (conversation.lastIntent === "CATALOG_UNAVAILABLE" &&
+        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
+      const answer = this.normalize(text).trim().replace(/[.!?]+$/, "");
+      if (/^(sim|quero|quero sim|pode ser|outro produto|buscar outro produto)$/.test(answer)) {
+        await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
+          lastIntent: "ADD_ITEM", currentMedicineQuery: null, currentRetailCategory: null,
+          lastMedicine: null, candidateOptions: Prisma.JsonNull,
+        } });
+        return "Claro! Qual produto você procura?";
+      }
+      if (/^(nao|nao obrigado|nao obrigada|agora nao|por enquanto nao)$/.test(answer)) {
+        return "Tudo bem! Quando precisar, é só me chamar por aqui.";
+      }
+    }
+
+    if (conversation.lastIntent === "CATALOG_HELP_OPTIONS" &&
+        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
+      const choice = this.normalize(text).trim().replace(/[.!?]+$/, "");
+      if (/^(1|sim|atendente|atendimento|solicitar atendimento|falar com (?:a equipe|atendente)|quero atendimento)$/.test(choice)) {
+        await this.prisma.conversation.update({ where: { id: conversation.id }, data: { lastIntent: "CATALOG_REVIEW_REQUESTED" } });
+        return "Solicitação registrada para a equipe conferir esse item com você. Seu carrinho continua salvo. Se souber a dosagem e a embalagem, pode enviar por aqui.";
+      }
+      if (/^(2|nao|outro produto|buscar outro produto)$/.test(choice)) {
+        await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
+          lastIntent: "ADD_ITEM", currentMedicineQuery: null, lastMedicine: null, candidateOptions: Prisma.JsonNull,
+        } });
+        return "Claro. Qual outro produto você procura?";
+      }
+      if (/^\d+$/.test(choice)) return WhatsappCopy.catalogSearchProblem("backup_unavailable", this.bulaApiService.normalizeMedicineName(conversation.currentMedicineQuery || "") || undefined)!;
     }
 
     if (conversation.lastIntent === "WAITING_PACKAGE_IMAGE_CONFIRMATION" &&
@@ -1196,6 +1238,18 @@ export class ConversationEngineService {
     return this.formatSymptomOptionsReply(symptom, options);
   }
 
+  private async offerCatalogHelp(conversationId: string, status: string | undefined, query: string) {
+    const reply = WhatsappCopy.catalogSearchProblem(status, this.bulaApiService.normalizeMedicineName(query) || query);
+    if (!reply) return null;
+    await this.prisma.conversation.update({ where: { id: conversationId }, data: {
+      lastIntent: ["not_found", "search_unverified", "offer_unavailable"].includes(status || "") ? "CATALOG_UNAVAILABLE" : "CATALOG_HELP_OPTIONS",
+      pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+      currentMedicineQuery: query,
+      selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull,
+    } });
+    return reply;
+  }
+
   private async handleMedicineQuestion(
     conversationId: string,
     question: MedicineQuestion,
@@ -1256,7 +1310,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      return WhatsappCopy.catalogSearchProblem(summary.searchStatus) ||
+      return await this.offerCatalogHelp(conversationId, summary.searchStatus || "not_found", searchQuery) ||
         (summary.searchStatus === "presentation_not_found" ? WhatsappCopy.medicinePresentationNotFound() :
           WhatsappCopy.medicineNotFound(this.aiService.canReadPackageImages?.() === true));
     }
@@ -1426,7 +1480,7 @@ export class ConversationEngineService {
         },
       });
 
-      return WhatsappCopy.catalogSearchProblem(orderedSummary.searchStatus) || WhatsappCopy.productNotFound(productQuery);
+      return await this.offerCatalogHelp(conversationId, orderedSummary.searchStatus || "not_found", productQuery) || WhatsappCopy.productNotFound(productQuery);
     }
 
     const shouldAskQuantity = orderedSummary.options.length === 1;
@@ -2084,7 +2138,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      const searchProblem = WhatsappCopy.catalogSearchProblem(summary?.searchStatus);
+      const searchProblem = await this.offerCatalogHelp(conversation.id, summary?.searchStatus, `${normalizedMedicine} ${dosage.label}`);
       if (searchProblem) return searchProblem;
       const alternatives = (summary?.options || []).map((option, index) => ({
         ...option,
