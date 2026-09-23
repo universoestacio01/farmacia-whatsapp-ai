@@ -48,6 +48,7 @@ async function run() {
       .locator('#metrics-grid button[data-metric-section="payments"]')
       .click();
     await page.waitForSelector("#pending-payments-list .payment-row");
+    check((await page.locator("#pending-payments-list .payment-row").first().getAttribute("data-pending-order-id")) === "order-demo-1", "Newest pending order first");
     await page.selectOption("#proof-filter", "received");
     check(
       (await page.locator("#pending-payments-list .payment-row").count()) === 1,
@@ -70,6 +71,56 @@ async function run() {
       !Object.keys(demo.counts).some((key) => key.includes("confirm-payment")),
       "Opening/cancelling dialog never confirms payment",
     );
+
+    await page.click('[data-section="sales"]');
+    await page.waitForSelector("#sales-chart [data-sales-day]");
+    check(await page.locator("#sales-chart [data-sales-day]").count() === 30, "Daily chart includes all 30 days");
+    check(await page.locator("#sales-metrics button").count() === 4, "Four sales indicators");
+    check(await page.locator("#sales-chart .sales-bar").evaluateAll((bars) => bars.some((bar) => bar.getBoundingClientRect().height > 0)), "Chart has nonzero bars");
+    await page.selectOption("#sales-status", "AWAITING_SETTLEMENT");
+    check((await page.textContent("#sales-list")).includes("Aguardando compensação"), "Receipt sales visible before settlement");
+    check(!(await page.textContent("#sales-list")).includes("Compensada"), "Status filter separates paid sales");
+    await page.selectOption("#sales-status", "");
+    await page.selectOption("#sales-proof", "received");
+    check(!(await page.textContent("#sales-list")).includes("Sem comprovante"), "Receipt-only filter");
+    await page.selectOption("#sales-proof", "");
+    const downloadPromise = page.waitForEvent("download");
+    await page.click("#sales-export");
+    const download = await downloadPromise;
+    check(download.suggestedFilename().startsWith("vendas-"), "Filtered CSV downloads");
+    await page.locator("#sales-chart [data-sales-day]").last().click();
+    check(await page.locator("#sales-clear-day").isVisible(), "Chart day filters the order list");
+    await page.click("#sales-clear-day");
+    await page.selectOption("#sales-period", "7");
+    await page.waitForFunction(() => document.querySelectorAll("#sales-chart [data-sales-day]").length === 7);
+    check(true, "Period selector reloads report");
+    await page.selectOption("#sales-period", "30");
+    await page.waitForFunction(() => document.querySelectorAll("#sales-chart [data-sales-day]").length === 30);
+    check(await page.locator("#sales-list .sales-row").count() === 50, "Sales list starts with 50 without limiting period totals");
+    await page.click("#sales-more");
+    check(await page.locator("#sales-list .sales-row").count() > 50, "More sales remain accessible");
+    await page.route("**/admin/api/sales?*", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "Indisponível no teste" }) }));
+    await page.click("#refresh-button");
+    await page.waitForFunction(() => document.querySelector("#sales-feedback").textContent.includes("Não foi possível"));
+    check(await page.locator("#sales-metrics button").count() === 0, "API failure is not displayed as zero sales or stale metrics");
+    check(await page.locator("#sales-export").isDisabled(), "Export disabled on stale report");
+    await page.unroute("**/admin/api/sales?*");
+    await page.click("#refresh-button");
+    await page.waitForSelector("#sales-metrics button");
+    for (const width of [1440, 768, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.screenshot({ path: path.join(output, `sales-${width}.png`) });
+      check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `Sales no page overflow at ${width}px`);
+      if (width === 390) {
+        await page.locator("#sales-chart").scrollIntoViewIfNeeded();
+        await page.screenshot({ path: path.join(output, "sales-mobile-chart.png") });
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    check(!Object.keys(demo.counts).some((key) => key.includes("confirm-payment")), "Sales/report/export do not confirm payment");
+    await page.locator("#sales-list [data-sale-order]").first().click();
+    await page.waitForSelector("#orders.active #order-detail .detail-block");
+    check((await page.textContent("#page-title")) === "Pedidos", "Sale opens order detail");
 
     await page.click('[data-section="conversations"]');
     await page.waitForSelector('[data-conversation-id="chat1"]');

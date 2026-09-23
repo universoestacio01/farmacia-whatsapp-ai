@@ -38,6 +38,12 @@ export class AdminController {
     return this.adminService.overview();
   }
 
+  @Get("sales")
+  sales(@Headers("x-admin-token") token?: string, @Query("period") period?: string) {
+    this.assertAuthorized(token);
+    return this.adminService.sales(period || "30");
+  }
+
   @Get("conversations")
   conversations(
     @Headers("x-admin-token") token?: string,

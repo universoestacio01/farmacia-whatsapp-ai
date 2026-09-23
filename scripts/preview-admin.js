@@ -1,6 +1,7 @@
 // Local-only demo. No environment file, database, gateway or WhatsApp connection.
 const express = require("express");
 const path = require("node:path");
+const { buildSalesReport, salesDay } = require("../dist/admin/admin-sales");
 
 function createAdminPreview() {
   const app = express();
@@ -24,7 +25,7 @@ function createAdminPreview() {
     customer: customers[i % 2],
     status: i === 3 ? "PAID" : "PENDING_PAYMENT_MANUAL",
     totalCents: 3790 + i * 1000,
-    createdAt: now,
+    createdAt: new Date(Date.now() - i * 35 * 60000).toISOString(),
     updatedAt: now,
     waitingMinutes: i * 35,
     proofReceived: i === 1,
@@ -62,6 +63,15 @@ function createAdminPreview() {
       },
     ],
   }));
+  const salesOrders = Array.from({ length: 70 }, (_, i) => {
+    const createdAt = new Date(Date.now() - (i % 35) * 86400000 - (i % 6) * 3600000);
+    const totalCents = 2890 + (i * 1379) % 22000;
+    return { ...orders[i % 4], id: `order-demo-${i + 5}`, createdAt, totalCents,
+      status: i % 3 ? "PAID" : "PENDING_PAYMENT_MANUAL",
+      proofReceived: i % 4 !== 0,
+      payments: [{ ...orders[0].payments[0], createdAt, status: i % 3 ? "PAID" : "PENDING", amountCents: totalCents }],
+    };
+  });
   const conversations = customers.map((customer, i) => ({
     id: `chat${i + 1}`,
     customerName: customer.name,
@@ -183,6 +193,14 @@ function createAdminPreview() {
       (order) => order.status === "PENDING_PAYMENT_MANUAL",
     );
     const serialOrder = (order) => ({ ...order, payment: order.payments[0] });
+    if (req.path === "/sales") {
+      const to = salesDay(new Date());
+      const start = new Date(`${to}T12:00:00Z`);
+      start.setUTCDate(start.getUTCDate() - (req.query.period === "all" ? 35 : Number(req.query.period) || 30) + 1);
+      const rows = [...orders, ...salesOrders].map((order) => ({ ...order, createdAt: new Date(order.createdAt) }));
+      const receipts = new Map(rows.filter((order) => order.proofReceived).map((order) => [order.id, order.createdAt]));
+      return res.json(buildSalesReport(rows, receipts, start.toISOString().slice(0, 10), to));
+    }
     if (req.path === "/overview")
       return res.json({
         cards: {
@@ -205,7 +223,7 @@ function createAdminPreview() {
       return res.json(pending.map(serialOrder));
     const orderId = req.path.match(/^\/orders\/(order-demo-\d+)(?:\/(.*))?$/);
     if (orderId) {
-      const order = orders.find((row) => row.id === orderId[1]);
+      const order = [...orders, ...salesOrders].find((row) => row.id === orderId[1]);
       if (!order)
         return res.status(404).json({ message: "Pedido não encontrado." });
       if (orderId[2] === "confirm-payment" && req.method === "POST") {

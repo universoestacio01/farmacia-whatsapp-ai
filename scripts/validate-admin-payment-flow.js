@@ -40,7 +40,7 @@ class FakePrisma {
           amountCents: 4990,
           providerTransactionId: "pix-order-manual-payment",
           paidAt: null,
-          createdAt: new Date(),
+          createdAt: new Date("2026-08-12T12:00:01.000Z"),
         },
       ],
     };

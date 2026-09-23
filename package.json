@@ -29,6 +29,7 @@
     "test:admin-payment-flow": "node scripts/validate-admin-payment-flow.js",
     "test:admin-stability": "node --test scripts/validate-admin-stability.js",
     "test:admin-ui": "node scripts/validate-admin-ui.js",
+    "test:admin-sales": "node --test scripts/validate-admin-sales.js",
     "preview:admin": "node scripts/preview-admin.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

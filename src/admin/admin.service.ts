@@ -3,6 +3,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  BadRequestException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { backupProviderConfig } from "../config/medicine-backups.config";
@@ -27,6 +29,7 @@ import {
 import { MedicinePriorityRulesService } from "../integrations/medicine-priority-rules.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WhatsappService } from "../whatsapp/whatsapp.service";
+import { associateReceipts, buildSalesReport, salesDay, SalesOrder } from "./admin-sales";
 
 @Injectable()
 export class AdminService {
@@ -214,7 +217,7 @@ export class AdminService {
       "admin.order.findMany",
       (prisma) =>
         prisma.order.findMany({
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take,
           include: {
             customer: true,
@@ -278,7 +281,7 @@ export class AdminService {
             },
             payments: { some: { status: PaymentStatus.PENDING } },
           },
-          orderBy: { createdAt: "asc" },
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           take,
           include: {
             customer: true,
@@ -296,41 +299,11 @@ export class AdminService {
     const conversationIds = orders
       .map((order) => order.conversationId)
       .filter((id): id is string => Boolean(id));
-    const conversations = conversationIds.length
-      ? await this.prisma.safePrismaCall(
-          "admin.conversation.findMany.payment_proofs",
-          (prisma) =>
-            prisma.conversation.findMany({
-              where: { id: { in: conversationIds } },
-              select: {
-                id: true,
-                lastIntent: true,
-                messages: {
-                  where: {
-                    content: { contains: "comprovante de pagamento recebido" },
-                  },
-                  orderBy: { createdAt: "desc" },
-                  take: 1,
-                  select: { createdAt: true },
-                },
-              },
-            }),
-          [],
-        )
-      : [];
-    const proofByConversation = new Map(
-      conversations.map((conversation) => [conversation.id, conversation]),
-    );
+    const receipts = await this.orderReceipts(conversationIds);
 
     return orders
       .map((order) => {
-        const proofConversation = order.conversationId
-          ? proofByConversation.get(order.conversationId)
-          : undefined;
-        const proofReceived = Boolean(
-          proofConversation?.lastIntent === "PAYMENT_PROOF_RECEIVED" ||
-            proofConversation?.messages.length,
-        );
+        const proofReceived = receipts.has(order.id);
 
         return {
           id: order.id,
@@ -338,7 +311,7 @@ export class AdminService {
           status: order.status,
           totalCents: order.totalCents,
           proofReceived,
-          proofReceivedAt: proofConversation?.messages[0]?.createdAt || null,
+          proofReceivedAt: receipts.get(order.id) || null,
           customer: {
             name: order.customer.name,
             whatsappNumber: order.customer.whatsappNumber,
@@ -366,12 +339,56 @@ export class AdminService {
         };
       })
       .sort((left, right) => {
-        if (left.proofReceived !== right.proofReceived) {
-          return left.proofReceived ? -1 : 1;
-        }
-
-        return left.createdAt.getTime() - right.createdAt.getTime();
+        return right.createdAt.getTime() - left.createdAt.getTime() || right.id.localeCompare(left.id);
       });
+  }
+
+  private async orderReceipts(conversationIds: string[]) {
+    const ids = [...new Set(conversationIds)];
+    const result = new Map<string, Date>();
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const batch = ids.slice(offset, offset + 100);
+      const boundaries = await this.prisma.safePrismaCall("admin.order.receipt_boundaries", (prisma) =>
+        prisma.order.findMany({ where: { conversationId: { in: batch } }, select: {
+          id: true, conversationId: true, createdAt: true, payments: { select: { createdAt: true } },
+        } }), null);
+      const conversations = await this.prisma.safePrismaCall("admin.conversation.findMany.payment_proofs", (prisma) =>
+        prisma.conversation.findMany({ where: { id: { in: batch } }, select: { id: true, messages: {
+          where: { direction: MessageDirection.INBOUND, role: MessageRole.CUSTOMER, content: "[comprovante de pagamento recebido]" },
+          select: { createdAt: true },
+        } } }), null);
+      if (!boundaries || !conversations) throw new ServiceUnavailableException("Não foi possível consultar os comprovantes.");
+      for (const [id, date] of associateReceipts(boundaries, conversations)) result.set(id, date);
+    }
+    return result;
+  }
+
+  async sales(period = "30") {
+    if (!["7", "30", "90", "all"].includes(period)) throw new BadRequestException("Período inválido.");
+    const to = salesDay(new Date());
+    const start = new Date(`${to}T12:00:00Z`);
+    start.setUTCDate(start.getUTCDate() - (Number(period) || 1) + 1);
+    let from = start.toISOString().slice(0, 10);
+    const orders: SalesOrder[] = [];
+    let cursor: string | undefined;
+    // Page through the entire period: metrics must not depend on the visible queue limit.
+    while (true) {
+      const page = await this.prisma.safePrismaCall("admin.order.sales", (prisma) => prisma.order.findMany({
+        where: { createdAt: { ...(period === "all" ? {} : { gte: new Date(`${from}T00:00:00-03:00`) }), lte: new Date() } },
+        orderBy: { id: "asc" }, take: 500, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: { id: true, conversationId: true, status: true, totalCents: true, createdAt: true,
+          customer: { select: { name: true, whatsappNumber: true } }, items: { select: { name: true, quantity: true } },
+          payments: { select: { createdAt: true, status: true } },
+        },
+      }), null);
+      if (!page) throw new ServiceUnavailableException("Não foi possível atualizar as vendas.");
+      orders.push(...page);
+      if (page.length < 500) break;
+      cursor = page[page.length - 1].id;
+    }
+    if (period === "all" && orders.length) from = orders.reduce((min, order) => salesDay(order.createdAt) < min ? salesDay(order.createdAt) : min, to);
+    const receipts = await this.orderReceipts(orders.map((order) => order.conversationId).filter((id): id is string => Boolean(id)));
+    return buildSalesReport(orders, receipts, from, to);
   }
 
   async orderDetails(orderId: string) {

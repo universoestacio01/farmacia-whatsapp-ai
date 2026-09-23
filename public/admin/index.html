@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <title>Operação | Raia Delivery</title>
-    <link rel="stylesheet" href="/admin/styles.css?v=20260922-1" />
+    <link rel="stylesheet" href="/admin/styles.css?v=20260923-sales" />
   </head>
   <body>
     <div class="app-shell">
@@ -20,6 +20,7 @@
 
         <nav class="nav" aria-label="Navegação principal">
           <button class="nav-item active" data-section="overview" type="button">Visão geral</button>
+          <button class="nav-item" data-section="sales" type="button">Vendas</button>
           <button class="nav-item" data-section="payments" type="button">
             Compensações
             <span id="pending-nav-count" class="nav-count hidden">0</span>
@@ -95,12 +96,39 @@
           </div>
         </section>
 
+        <section id="sales" class="section" aria-label="Vendas">
+          <div class="sales-toolbar">
+            <div><p class="section-kicker">Resultados comerciais</p><h2>Vendas e recebimentos</h2></div>
+            <div class="sales-controls">
+              <select id="sales-period" aria-label="Período das vendas"><option value="7">Últimos 7 dias</option><option value="30" selected>Últimos 30 dias</option><option value="90">Últimos 90 dias</option><option value="all">Todo o histórico</option></select>
+              <button id="sales-export" class="secondary-button icon-button" type="button" title="Exportar vendas filtradas em CSV" aria-label="Exportar vendas filtradas em CSV"><i data-lucide="download" aria-hidden="true"></i></button>
+            </div>
+          </div>
+          <p class="muted sales-policy">Vendas = pedidos com comprovante recebido ou pagamento confirmado. Comprovantes aguardam conferência bancária; não liberam a entrega.</p>
+          <p id="sales-feedback" role="status" class="muted"></p>
+          <div id="sales-metrics" class="sales-metrics"></div>
+          <div class="sales-chart-section">
+            <div class="sales-toolbar"><div><h2>Vendas por dia</h2><p id="sales-range" class="muted"></p></div><div class="sales-legend"><span><b class="legend-settled"></b>Compensado</span><span><b class="legend-pending"></b>A conferir</span></div></div>
+            <div id="sales-chart" class="sales-chart" aria-label="Valores de vendas por dia"></div>
+          </div>
+          <div class="sales-toolbar"><h2>Vendas recentes</h2><button id="sales-clear-day" class="link-button hidden" type="button">Todos os dias</button></div>
+          <div class="filters sales-filters">
+            <input id="sales-search" type="search" aria-label="Buscar vendas" placeholder="Cliente, telefone, produto ou pedido" />
+            <select id="sales-status" aria-label="Situação da venda"><option value="">Todas as vendas</option><option value="AWAITING_SETTLEMENT">Aguardando compensação</option><option value="SETTLED">Compensadas</option></select>
+            <select id="sales-proof" aria-label="Comprovantes das vendas"><option value="">Todos os comprovantes</option><option value="received">Com comprovante</option><option value="missing">Sem comprovante</option></select>
+          </div>
+          <p id="sales-list-summary" class="muted" aria-live="polite"></p>
+          <div id="sales-list" class="list"></div>
+          <button id="sales-more" class="secondary-button hidden" type="button">Carregar mais vendas</button>
+        </section>
+
         <section id="payments" class="section" aria-labelledby="payments-title">
           <article class="panel">
             <div class="panel-header">
               <div>
                 <p class="section-kicker">Conferência manual</p>
                 <h2 id="payments-title">Pagamentos aguardando compensação</h2>
+                <p class="muted">Pedidos mais recentes primeiro</p>
               </div>
               <span id="pending-payments-summary" class="muted"></span>
             </div>
@@ -324,6 +352,7 @@
       </form>
     </dialog>
     <script src="/admin/lucide.min.js" defer></script>
-    <script src="/admin/app.js?v=20260922-1" defer></script>
+    <script src="/admin/app.js?v=20260923-sales" defer></script>
+    <script src="/admin/sales.js?v=20260923-sales" defer></script>
   </body>
 </html>

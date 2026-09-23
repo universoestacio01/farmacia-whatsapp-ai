@@ -4,6 +4,9 @@ const state = {
   conversations: [],
   orders: [],
   pendingPayments: [],
+  sales: null,
+  salesDay: "",
+  salesVisible: 50,
   selectedConversationId: null,
   selectedOrderId: null,
   pendingConfirmationOrder: null,
@@ -22,6 +25,7 @@ const state = {
 
 const pageTitleBySection = {
   overview: "Visão geral",
+  sales: "Vendas",
   payments: "Compensações",
   attention: "Fila de atenção",
   conversations: "Conversas",
@@ -150,6 +154,7 @@ function bindAuth() {
 }
 
 function bindActions() {
+  bindSalesActions();
   document.getElementById("refresh-button").addEventListener("click", refresh);
   document
     .getElementById("database-check-button")
@@ -276,6 +281,7 @@ async function refresh() {
   try {
     const loaders = {
       overview: loadOverview,
+      sales: loadSales,
       payments: loadPendingPayments,
       attention: loadAttention,
       conversations: loadConversations,
@@ -566,7 +572,7 @@ function renderPendingPayments(target, orders, compact) {
             <div class="payment-customer">
               <strong>${escapeHtml(order.customer.name || "Cliente WhatsApp")}</strong>
               <p>${escapeHtml(order.customer.whatsappNumber)} · ${escapeHtml(itemSummary)}</p>
-              ${order.proofReceived ? statusBadge("Comprovante recebido", "info") : ""}
+              ${order.proofReceived ? statusBadge("Venda · comprovante recebido", "info") : ""}
             </div>
           </div>
           <div class="payment-value">
@@ -1691,6 +1697,11 @@ function endSession() {
   state.conversations = [];
   state.orders = [];
   state.pendingPayments = [];
+  state.sales = null;
+  state.salesDay = "";
+  state.salesVisible = 50;
+  document.getElementById("sales-search").value = "";
+  for (const id of ["sales-metrics", "sales-chart", "sales-range", "sales-feedback", "sales-list-summary"]) document.getElementById(id).textContent = "";
   state.providerLogs = [];
   state.medicinePriorityRules = [];
   state.selectedConversationId = null;
