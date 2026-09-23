@@ -40,7 +40,7 @@ Endpoints principais:
 
 ### Catálogo Preço Popular
 
-O catálogo VTEX do Preço Popular é a única fonte de medicamentos, preços e produtos
+O catálogo VTEX do Preço Popular é a fonte principal de medicamentos, preços e produtos
 de higiene/perfumaria. A integração roda no próprio NestJS; não é necessário
 publicar ou executar a pasta `api-busca` em PHP. Não precisa de chave de API.
 
@@ -60,20 +60,39 @@ com um timeout total HTTP de 8 segundos. Há cache de 5 minutos, compartilhament
 de consultas simultâneas iguais e pausa temporária após falhas. Nada é consultado
 no bootstrap nem em `/health/providers`.
 
-PharmaDB, BulAPI e Cosmos não são mais consultados. Não existe fallback de produto
-ou preço para esses serviços nem para preços tabelados do catálogo manual.
-As listas locais continuam apenas para reconhecer nomes, categorias, marcas e prioridades.
-"Qualquer marca" também consulta a nova API. Se não houver oferta válida, o bot não
-inventa produto, disponibilidade ou preço. Os adaptadores antigos foram mantidos
-como código legado, fora do fluxo de consultas; BulAPI permanece apenas como
-utilitário local de interpretação e formatação, com transporte HTTP bloqueado.
+Para medicamentos, as reservas seguem a ordem **Preço Popular -> PharmaDB -> BulAPI**.
+Uma resposta válida da principal não consulta as reservas. Elas são usadas se a
+principal falhar ou não encontrar a apresentação solicitada, preservando os filtros
+de dosagem, forma, quantidade e segurança. Buscas encaminhadas para higiene e
+primeiros socorros continuam somente na principal. Cosmos continua desativado.
+As listas locais reconhecem nomes e prioridades, mas não fabricam ofertas.
 
-`GET /health/providers` mostra `primaryProvider: "preco_popular"` e
-`providers.preco_popular.priceMultiplier: 1`; os provedores antigos aparecem
-desativados. `PRECO_POPULAR_ENABLED=false` desliga as buscas, sem reativar os antigos.
-O painel mostra somente o catálogo ativo. As variáveis `PHARMADB_*`, `BULA_API_BASE_URL`,
-`COSMOS_*` e `MEDICINE_PRIMARY_PROVIDER` podem ser removidas da Hostinger.
-Não há nova migração de banco.
+A regra anterior de preço foi restaurada somente nas reservas:
+- PharmaDB: PF positivo, quando disponível; caso contrário, PMC com ICMS (ou PMC)
+  multiplicado por `PHARMADB_PMC_PRICE_MULTIPLIER`, padrão `0.5`.
+- BulAPI: maior PF positivo da apresentação exata, sem misturar outras dosagens.
+- Sem preço ou apresentação verificável, o item não pode entrar no pedido.
+
+Esses valores são uma política comercial configurada, não confirmação de estoque
+nem de custo de aquisição. A operação deve conferir disponibilidade e margem.
+O preço integral da principal permanece inalterado, sem o antigo desconto de 10%.
+
+Configure `PHARMADB_API_KEY`, `PHARMADB_ENABLED=true` e `BULAPI_ENABLED=true`.
+As flags são verdadeiras por padrão; PharmaDB sem chave é ignorada.
+As URLs padrão estão em `.env.example`. Desligar a principal não desliga as reservas;
+para isso, desative as duas flags. Nunca publique `.env` ou `.env.hostinger` no GitHub.
+
+As reservas têm cache de 5 minutos (vazio: 1 minuto), consultas simultâneas agrupadas
+e pausa de 1 minuto após falhas (5 minutos para HTTP 429). A PharmaDB lê no máximo
+2 páginas e 3 detalhes: até 6 requisições protegidas, incluindo uma retentativa 401,
+mais autenticação quando necessária. BulAPI faz até 9 requisições. Cada reserva
+tem orçamento de 6 segundos; resultados não cobrem necessariamente todo o catálogo.
+`BulaApiService` continua como utilitário local; o transporte externo limitado é
+`BulapiCatalogService`. Não há sondagens externas no bootstrap ou no health.
+
+`GET /health/providers` e o painel mostram configuração e habilitação, **não**
+confirmação de conectividade (`connectivityChecked: false`). Não há migração de banco.
+Teste offline das reservas: `npm run build && npm run test:medicine-backups`.
 
 Carrinhos iniciados na política anterior têm os itens conferidos por EAN/SKU na
 nova fonte antes da confirmação. Se o valor mudar, o resumo é reapresentado.

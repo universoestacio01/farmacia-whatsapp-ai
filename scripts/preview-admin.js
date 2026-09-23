@@ -262,10 +262,14 @@ function createAdminPreview() {
         database: { configured: true },
         whatsapp: { configured: true, apiVersion: "v25.0" },
         precoPopular: { enabled: true, priceMultiplier: 1 },
-        medicines: {
-          primaryProvider: "preco_popular",
-          pharmadbConfigured: false,
-          bulapiConfigured: false,
+          medicines: {
+            primaryProvider: "preco_popular",
+            pharmadbConfigured: true,
+            bulapiConfigured: true,
+            backups: {
+              pharmadb: { enabled: true, configured: true, pmcMultiplier: 0.5 },
+              bulapi: { enabled: true, configured: true },
+            },
         },
         retailProducts: { primaryProvider: "preco_popular", cosmosConfigured: false, cosmosTokenCount: 0 },
         payments: { directPixConfigured: true },

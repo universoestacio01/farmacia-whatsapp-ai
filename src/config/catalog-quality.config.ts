@@ -7,6 +7,6 @@ export const CATALOG_QUARANTINE = [
   },
 ] as const;
 
-export function catalogQuarantineReason(item: { sourceId?: string; ean?: string }) {
-  return CATALOG_QUARANTINE.find((entry) => entry.skuId === item.sourceId || entry.ean === item.ean)?.reason;
+export function catalogQuarantineReason(item: { sourceId?: string; ean?: string; source?: string }) {
+  return CATALOG_QUARANTINE.find((entry) => ((!item.source || item.source === "preco_popular") && entry.skuId === item.sourceId) || entry.ean === item.ean)?.reason;
 }

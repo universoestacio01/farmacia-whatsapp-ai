@@ -246,7 +246,9 @@ async function run() {
     await page.waitForSelector(".request-log");
     const providerCards = await page.textContent("#providers-grid");
     check(providerCards.includes("Preço integral do catálogo"), "Panel shows full catalog price policy");
-    check(!/PharmaDB|BulAPI|Cosmos|Desconto/.test(providerCards), "Retired providers are not advertised as active integrations");
+    check(/PharmaDB/.test(providerCards) && /BulAPI/.test(providerCards), "Medicine backup configuration is visible");
+    check(!/Cosmos|Desconto/.test(providerCards), "Cosmos and the old discount remain retired");
+    check(providerCards.includes("Conectividade não verificada"), "Configured backups are not advertised as online");
     await page.selectOption("#provider-log-outcome", "errors");
     check(
       (await page.locator(".request-log").count()) === 1,

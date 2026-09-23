@@ -6,11 +6,16 @@ import {
   NormalizedMedicineOption,
 } from "./medicine-provider.interface";
 import { PharmaDbAuthService } from "./pharmadb-auth.service";
+import { backupEnabled, PHARMADB_BASE_URL } from "../config/medicine-backups.config";
+import { sanitizeEnv } from "../config/env-sanitize";
+import { extractMedicineStrengths, removeMedicineStrengths } from "../utils/medicine-strength.util";
 
 interface CacheEntry {
   expiresAt: number;
-  value: NormalizedMedicineOption[];
+  value: BackupResult;
 }
+interface SearchBudget { deadline: number; requests: number; }
+interface BackupResult { options: NormalizedMedicineOption[]; status: "ok" | "incomplete" | "unavailable" | "disabled"; }
 
 @Injectable()
 export class PharmaDbService implements MedicineProvider {
@@ -18,6 +23,7 @@ export class PharmaDbService implements MedicineProvider {
   private readonly logger = new Logger(PharmaDbService.name);
   private readonly cache = new Map<string, CacheEntry>();
   private unavailableUntil = 0;
+  private readonly pending = new Map<string, Promise<BackupResult>>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -26,14 +32,27 @@ export class PharmaDbService implements MedicineProvider {
   ) {}
 
   async search(query: string): Promise<NormalizedMedicineOption[]> {
-    if (!this.authService.hasApiKey()) {
-      this.logger.warn("PHARMADB_API_KEY ausente, pulando PharmaDB");
-      return [];
-    }
+    return (await this.searchWithStatus(query)).options;
+  }
+
+  isEnabled() { return backupEnabled(this.configService.get("PHARMADB_ENABLED")) && this.authService.hasApiKey(); }
+
+  async searchWithStatus(query: string): Promise<BackupResult> {
+    if (!this.isEnabled()) return { options: [], status: "disabled" };
+    const normalized = this.selector.normalizeMedicineName(query) || query;
+    const cached = this.getFromCache(`pharmadb:${normalized}`);
+    if (cached) return cached;
+    if (this.pending.has(normalized)) return this.pending.get(normalized)!;
+    const request = this.performSearch(normalized).finally(() => this.pending.delete(normalized));
+    this.pending.set(normalized, request);
+    return request;
+  }
+
+  private async performSearch(query: string): Promise<BackupResult> {
 
     if (this.isTemporarilyUnavailable()) {
       this.logger.warn("PharmaDB temporariamente indisponível, pulando chamada");
-      return [];
+      return { options: [], status: "unavailable" };
     }
 
     const normalizedQuery =
@@ -50,7 +69,8 @@ export class PharmaDbService implements MedicineProvider {
     this.logger.log(`SEARCH TERM: ${normalizedQuery}`);
 
     try {
-      const rawItems = await this.fetchSearchResults(normalizedQuery);
+      const result = await this.fetchSearchResults(normalizedQuery, { deadline: Date.now() + 6000, requests: 0 });
+      const rawItems = result.items;
       this.logger.log(`RESULTS FOUND: ${rawItems.length}`);
       this.logger.log(`PharmaDB retornou ${rawItems.length} resultados`);
 
@@ -66,8 +86,9 @@ export class PharmaDbService implements MedicineProvider {
         `PHARMADB RESULT STATUS: active=${normalized.filter((item) => item.availabilityStatus === "active").length} inactive=${normalized.filter((item) => item.availabilityStatus === "inactive").length} out_of_stock=${normalized.filter((item) => item.availabilityStatus === "out_of_stock").length} no_price=${normalized.filter((item) => item.priceFactory === undefined && item.priceConsumer === undefined && item.pmcWithIcms === undefined).length}`,
       );
 
-      this.setCache(cacheKey, normalized, normalized.length > 0 ? 300 : 60);
-      return normalized;
+      const value: BackupResult = { options: normalized, status: result.incomplete ? "incomplete" : "ok" };
+      this.setCache(cacheKey, value, normalized.length > 0 ? 300 : 60);
+      return value;
     } catch (error) {
       this.logger.warn(
         `PHARMADB SEARCH FAILED, FALLING BACK TO BULAPI: ${
@@ -75,7 +96,7 @@ export class PharmaDbService implements MedicineProvider {
         }`,
       );
       this.markTemporarilyUnavailable(error);
-      return [];
+      return { options: [], status: "unavailable" };
     }
   }
 
@@ -86,37 +107,46 @@ export class PharmaDbService implements MedicineProvider {
   private markTemporarilyUnavailable(error: unknown) {
     const message = error instanceof Error ? error.message : "";
 
-    if (/PharmaDB respondeu (403|429|500|503)/.test(message)) {
-      this.unavailableUntil = Date.now() + 60_000;
-    }
+    this.unavailableUntil = Date.now() + (/429/.test(message) ? 300_000 : 60_000);
   }
 
-  private async fetchSearchResults(query: string) {
-    const perPage = 20;
-    const maxPages = 3;
+  private async fetchSearchResults(query: string, budget: SearchBudget) {
+    const perPage = 100;
+    const maxPages = 2;
     const items: unknown[] = [];
+    const seen = new Set<string>();
+    let incomplete = false;
 
     for (let page = 1; page <= maxPages; page += 1) {
       const endpoint = `/produtos/busca?q=${encodeURIComponent(query)}&page=${page}&per_page=${perPage}`;
-      const data = await this.fetchProtected(endpoint);
+      const data = await this.fetchProtected(endpoint, budget);
       const pageItems = this.extractItems(data);
+      const signature = JSON.stringify(pageItems.map((item) => this.getProductId(item)));
+      if (seen.has(signature)) { incomplete = true; break; }
+      seen.add(signature);
       this.logger.log(
         `PHARMADB PAGE RESULTS: endpoint=${endpoint} page=${page} count=${pageItems.length}`,
       );
       items.push(...pageItems);
 
-      if (pageItems.length === 0 || !this.hasNextPage(data, page)) {
-        break;
-      }
+      if (pageItems.length === 0 || !this.hasNextPage(data, page, pageItems.length)) break;
+      if (page === maxPages) incomplete = true;
     }
 
     if (items.length === 0) {
-      return [];
+      return { items: [], incomplete };
     }
 
     const detailedItems: unknown[] = [];
 
-    for (const item of items.slice(0, 20)) {
+    const matching = items.filter((item) => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      return this.selector.isSameMedicine(query, { id: 0, name: this.firstString(record, ["nome", "name"]) || "",
+        substance: { name: this.firstString(record, ["principios_ativos", "principio_ativo"]) } });
+    });
+    incomplete ||= matching.length > 3;
+    for (const item of matching.slice(0, 3)) {
       const productId = this.getProductId(item);
 
       if (!productId) {
@@ -125,21 +155,23 @@ export class PharmaDbService implements MedicineProvider {
       }
 
       try {
-        detailedItems.push(await this.fetchProtected(`/produtos/${productId}`));
+        detailedItems.push(await this.fetchProtected(`/produtos/${encodeURIComponent(productId)}`, budget));
       } catch (error) {
         this.logger.warn(
           `PharmaDB falhou ao detalhar produto ${productId}: ${
             error instanceof Error ? error.message : "erro desconhecido"
           }`,
         );
-        detailedItems.push(item);
+        throw error;
       }
     }
 
-    return detailedItems;
+    return { items: detailedItems, incomplete };
   }
 
-  private async fetchProtected(endpoint: string, retried = false): Promise<unknown> {
+  private async fetchProtected(endpoint: string, budget: SearchBudget, retried = false): Promise<unknown> {
+    if (budget.requests >= 6 || Date.now() >= budget.deadline) throw new Error("PharmaDB request budget exhausted");
+    budget.requests++;
     const token = await this.authService.getAccessToken(retried);
 
     if (!token) {
@@ -147,10 +179,12 @@ export class PharmaDbService implements MedicineProvider {
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    if (Date.now() >= budget.deadline) throw new Error("PharmaDB deadline exceeded");
+    const timeout = setTimeout(() => controller.abort(), Math.min(2500, budget.deadline - Date.now()));
 
     try {
       const response = await fetch(`${this.getBaseUrl()}${endpoint}`, {
+        redirect: "error",
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/json",
@@ -163,7 +197,7 @@ export class PharmaDbService implements MedicineProvider {
 
       if (response.status === 401 && !retried) {
         this.authService.clearToken();
-        return this.fetchProtected(endpoint, true);
+        return this.fetchProtected(endpoint, budget, true);
       }
 
       if ([403, 429, 500, 503].includes(response.status)) {
@@ -174,7 +208,7 @@ export class PharmaDbService implements MedicineProvider {
         throw new Error(`PharmaDB respondeu ${response.status}`);
       }
 
-      return response.json();
+      return await response.json();
     } finally {
       clearTimeout(timeout);
     }
@@ -185,7 +219,8 @@ export class PharmaDbService implements MedicineProvider {
       return [];
     }
 
-    const item = raw as Record<string, unknown>;
+    const wrapper = raw as Record<string, unknown>;
+    const item = wrapper.data && typeof wrapper.data === "object" && !Array.isArray(wrapper.data) ? wrapper.data as Record<string, unknown> : wrapper;
     const productName = this.firstString(item, [
       "nome",
       "produto",
@@ -225,7 +260,7 @@ export class PharmaDbService implements MedicineProvider {
       "presentation",
     ]);
     const packageInfo = this.selector.extractPackageInfo(
-      [presentation, productName].filter(Boolean).join(" "),
+      removeMedicineStrengths([presentation, productName].filter(Boolean).join(" ")),
     );
     const activeIngredient = this.firstString(item, [
       "principioAtivo",
@@ -277,28 +312,20 @@ export class PharmaDbService implements MedicineProvider {
       ]),
       ean: this.firstString(item, ["ean", "codigoBarras"]),
       ggrem: this.firstString(item, ["ggrem", "codigoGGREM"]),
-      priceFactory: this.firstNumber(item, [
+      priceFactory: this.firstCurrencyNumber(item, [
         "precoFabrica",
         "preco_fabrica",
         "pf",
         "PF",
         "precoPF",
         "precoFabricante",
-        "pf_0",
-        "pf_12",
-        "pf_17",
-        "preco_fabrica_centavos",
-      ]),
-      priceConsumer: this.firstNumber(item, [
+      ], ["pf_0", "pf_12", "pf_17", "preco_fabrica_centavos"]),
+      priceConsumer: this.firstCurrencyNumber(item, [
         "precoConsumidor",
         "preco_consumer",
         "pmc",
         "PMC",
-        "pmc_0",
-        "pmc_12",
-        "pmc_17",
-        "pmc_centavos",
-      ]),
+      ], ["pmc_0", "pmc_12", "pmc_17", "pmc_centavos"]),
       pmcWithIcms: this.firstNumber(item, ["pmcComIcms", "pmc_com_icms"]),
       availabilityStatus: this.resolveAvailabilityStatus(item),
       bulaPacienteUrl: this.firstString(item, [
@@ -326,7 +353,7 @@ export class PharmaDbService implements MedicineProvider {
       "embalagem",
     ]);
     const packageInfo = this.selector.extractPackageInfo(
-      [description, baseOption.productName].filter(Boolean).join(" "),
+      removeMedicineStrengths([description, baseOption.productName].filter(Boolean).join(" ")),
     );
     const sourceId = [
       baseOption.sourceId,
@@ -385,8 +412,8 @@ export class PharmaDbService implements MedicineProvider {
         ["pmc_0", "pmc_12", "pmc_17", "pmc_centavos"],
       ),
       availabilityStatus:
-        this.resolveAvailabilityStatus(presentation) ||
-        baseOption.availabilityStatus,
+        ["inactive", "out_of_stock"].includes(baseOption.availabilityStatus || "") ? baseOption.availabilityStatus :
+          this.resolveAvailabilityStatus(presentation) === "unknown" ? baseOption.availabilityStatus : this.resolveAvailabilityStatus(presentation),
       raw: { product, presentation },
     };
   }
@@ -397,7 +424,7 @@ export class PharmaDbService implements MedicineProvider {
     }
 
     if (!data || typeof data !== "object") {
-      return [];
+      throw new Error("PharmaDB invalid search response");
     }
 
     const record = data as Record<string, unknown>;
@@ -410,12 +437,12 @@ export class PharmaDbService implements MedicineProvider {
       }
     }
 
-    return [];
+    throw new Error("PharmaDB invalid search response");
   }
 
-  private hasNextPage(data: unknown, currentPage: number) {
+  private hasNextPage(data: unknown, currentPage: number, count: number) {
     if (!data || typeof data !== "object") {
-      return true;
+      return count >= 100;
     }
 
     const record = data as Record<string, unknown>;
@@ -429,7 +456,7 @@ export class PharmaDbService implements MedicineProvider {
     const last = this.firstNumber(meta, ["last_page", "lastPage", "totalPages"]);
     const total = this.firstNumber(meta, ["total", "total_count", "totalCount"]);
     const perPage =
-      this.firstNumber(meta, ["per_page", "perPage", "limit"]) || 20;
+      this.firstNumber(meta, ["per_page", "perPage", "limit"]) || count || 100;
 
     if (last !== undefined) {
       return current < last;
@@ -439,7 +466,7 @@ export class PharmaDbService implements MedicineProvider {
       return current * perPage < total;
     }
 
-    return true;
+    return count >= 100;
   }
 
   private getPresentations(record: Record<string, unknown>) {
@@ -602,26 +629,12 @@ export class PharmaDbService implements MedicineProvider {
   }
 
   private extractDosageFromText(value?: string) {
-    if (!value) {
-      return undefined;
-    }
-
-    const normalized = value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toUpperCase();
-    const match = normalized.match(
-      /\b(\d+(?:[,.]\d+)?)\s*(MG\/ML|MG|MCG|G|ML)\b/,
-    );
-
-    if (!match) {
-      return undefined;
-    }
-
-    return `${match[1].replace(".", ",")} ${match[2]}`;
+    return value ? extractMedicineStrengths(value).map((strength) => strength.label).join("+") || undefined : undefined;
   }
 
   private resolveAvailabilityStatus(record: Record<string, unknown>) {
+    if ([record.comercializado, record.ativo, record.active].some((value) => value === false || value === 0 || value === "false")) return "inactive" as const;
+    if ([record.disponivel, record.available].some((value) => value === false) || record.estoque === 0 || record.stock === 0) return "out_of_stock" as const;
     const status = this.firstString(record, [
       "status",
       "situacao",
@@ -660,7 +673,8 @@ export class PharmaDbService implements MedicineProvider {
     return entry.value;
   }
 
-  private setCache(key: string, value: NormalizedMedicineOption[], ttlSeconds: number) {
+  private setCache(key: string, value: BackupResult, ttlSeconds: number) {
+    if (this.cache.size >= 200) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, {
       value,
       expiresAt: Date.now() + ttlSeconds * 1000,
@@ -669,8 +683,7 @@ export class PharmaDbService implements MedicineProvider {
 
   private getBaseUrl() {
     return (
-      this.configService.get<string>("PHARMADB_API_BASE_URL") ||
-      "https://api.pharmadb.com.br/v1"
+      sanitizeEnv(this.configService.get("PHARMADB_API_BASE_URL")) || PHARMADB_BASE_URL
     ).replace(/\/$/, "");
   }
 }

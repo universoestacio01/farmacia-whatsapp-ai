@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { hasBackupPrice } from "../config/medicine-backups.config";
 import { Conversation, ConversationState, Prisma } from "@prisma/client";
 import { AiService } from "../ai/ai.service";
 import { SymptomMedicineRule } from "../config/symptom-medicine.config";
@@ -78,6 +80,7 @@ export class ConversationEngineService {
     private readonly paymentsService: PaymentsService,
     private readonly inputService: ConversationInputService = new ConversationInputService(),
     private readonly catalog?: PrecoPopularService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   async resolveReply(conversation: Conversation, text: string) {
@@ -2099,6 +2102,7 @@ export class ConversationEngineService {
   private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
     if (catalogQuarantineReason(option)) return { ...option, pricePf: undefined };
     if (option.pricePolicy === CATALOG_PRICE_POLICY && option.source === "preco_popular") return option;
+    if (hasBackupPrice(option, this.config)) return option;
     const offer = await this.catalog?.findCurrentOffer(option);
     return offer ? {
       ...option, source: offer.source, sourceId: offer.sourceId, ean: offer.ean,
@@ -2117,6 +2121,7 @@ export class ConversationEngineService {
         return { cart, changed: false, error: `O item ${index + 1} precisa de conferência do cadastro pela equipe. Para continuar com os demais produtos, envie "remover item ${index + 1}". Mantive seu carrinho salvo.` };
       }
       if (item.pricePolicy === CATALOG_PRICE_POLICY && item.source === "preco_popular") continue;
+      if (hasBackupPrice(item, this.config)) continue;
       const offer = await this.catalog?.findCurrentOffer(item);
       if (!offer) {
         return { cart, changed: false, error:

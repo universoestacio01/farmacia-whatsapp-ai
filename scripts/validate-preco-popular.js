@@ -452,21 +452,24 @@ test("mixed cart preserves final price, image, EAN and subtotal without discount
   );
 });
 
-test("health is config-only, exposes sole catalog and full price without fetching", () => {
+test("health is config-only, exposes primary catalog and lazy medicine backups without fetching", () => {
   const health = new HealthController(
     config({ MEDICINE_PRIMARY_PROVIDER: "pharmadb" }),
     {},
   );
   const result = health.providers();
   assert.equal(result.primaryProvider, "preco_popular");
-  assert.equal(result.medicineFallbackProvider, null);
+  assert.equal(result.medicineFallbackProvider, "bulapi");
+  assert.equal(result.connectivityChecked, false);
   assert.equal(result.retailPrimaryProvider, "preco_popular");
   assert.equal(result.providers.preco_popular.priceMultiplier, 1);
   assert.equal(result.providers.preco_popular.lazy, true);
-  for (const provider of ["pharmadb", "bulapi", "cosmos"]) {
+  for (const provider of ["cosmos"]) {
     assert.equal(result.providers[provider].enabled, false);
     assert.equal(result.providers[provider].retired, true);
   }
+  assert.equal(result.providers.pharmadb.enabled, true);
+  assert.equal(result.providers.bulapi.enabled, true);
   const disabled = new HealthController(
     config({ PRECO_POPULAR_ENABLED: false }),
     {},
@@ -616,7 +619,11 @@ test("Nest module registers and injects new provider without network or database
     const service = module.get(PrecoPopularService);
     for (const [path, name] of [
       ["pharmadb.service", "PharmaDbService"],
-      ["pharmadb-auth.service", "PharmaDbAuthService"],
+      ["bulapi-catalog.service", "BulapiCatalogService"],
+    ]) {
+      assert.ok(module.get(require(`../dist/integrations/${path}`)[name]));
+    }
+    for (const [path, name] of [
       ["cosmos.service", "CosmosService"],
       ["cosmos-token-pool.service", "CosmosTokenPoolService"],
     ]) {

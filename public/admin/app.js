@@ -1232,9 +1232,16 @@ function renderProviders(data) {
       "Preço Popular",
       Boolean(data.precoPopular?.enabled),
       data.precoPopular?.enabled
-        ? "Única fonte de produtos e preços. Preço integral do catálogo."
+        ? "Fonte principal. Preço integral do catálogo."
         : "Desativado",
     ],
+    ...Object.entries(data.medicines?.backups || {}).map(([name, provider]) => [
+      name === "pharmadb" ? "PharmaDB" : "BulAPI",
+      Boolean(provider.enabled && provider.configured),
+      !provider.enabled ? "Reserva desativada" : !provider.configured ? "Chave ausente" :
+        name === "pharmadb" ? `Reserva: PF ou ${Math.round(provider.pmcMultiplier * 100)}% do PMC. Conectividade não verificada.` :
+          "Reserva: maior PF da apresentação. Conectividade não verificada.",
+    ]),
     [
       "Pix direto",
       data.payments.directPixConfigured,

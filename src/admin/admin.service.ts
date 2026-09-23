@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { backupProviderConfig } from "../config/medicine-backups.config";
 import {
   ConversationStatus,
   ConversationState,
@@ -835,6 +836,7 @@ export class AdminService {
 
   providers() {
     const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
+    const backups = backupProviderConfig(this.configService);
 
     return {
       database: {
@@ -852,8 +854,10 @@ export class AdminService {
       },
       medicines: {
         primaryProvider: precoPopularEnabled ? "preco_popular" : null,
-        pharmadbConfigured: false,
-        bulapiConfigured: false,
+        pharmadbConfigured: backups.pharmadb.configured,
+        bulapiConfigured: backups.bulapi.configured,
+        backups,
+        connectivityChecked: false,
         manualFallback: false,
       },
       retailProducts: {

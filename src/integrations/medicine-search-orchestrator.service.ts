@@ -1,4 +1,6 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { ProviderRequestOutcome } from "@prisma/client";
 import { SymptomMedicineRule } from "../config/symptom-medicine.config";
 import {
   CommercialMedicineOption,
@@ -14,6 +16,13 @@ import { PopularManualMedicineService } from "./popular-manual-medicine.service"
 import { PrecoPopularService } from "./preco-popular.service";
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
 import { medicineStrengthMatches, medicineStrengthSignature } from "../utils/medicine-strength.util";
+import { extractMedicineStrengths, removeMedicineStrengths } from "../utils/medicine-strength.util";
+import { PharmaDbService } from "./pharmadb.service";
+import { BulapiCatalogService } from "./bulapi-catalog.service";
+import { backupPricePolicy, pharmaDbMultiplier } from "../config/medicine-backups.config";
+import { formatProductDisplayName } from "../whatsapp/whatsapp-copy";
+import { ProviderRequestLogService } from "../observability/provider-request-log.service";
+import { catalogQuarantineReason } from "../config/catalog-quality.config";
 
 interface CacheEntry {
   expiresAt: number;
@@ -30,9 +39,59 @@ export class MedicineSearchOrchestratorService {
     private readonly popularManualService: PopularManualMedicineService,
     private readonly priorityRulesService: MedicinePriorityRulesService,
     private readonly precoPopularService: PrecoPopularService,
+    @Optional() private readonly pharmaDbService?: PharmaDbService,
+    @Optional() private readonly bulapiCatalog?: BulapiCatalogService,
+    @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly requestLog?: ProviderRequestLogService,
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
+    const primary = await this.searchPrimaryMedicine(query);
+    // Never turn a retail lookup or a safety restriction into a medicine fallback.
+    if (primary.options.length || primary.retailFallbackQuery || ["restricted", "attributes_unverified"].includes(primary.searchStatus || "")) return primary;
+    const parsed = this.selector.parseMedicineQuery(query);
+    let missingPrice = false;
+    let backupUnavailable = false;
+    let backupIncomplete = false;
+    for (const provider of [this.pharmaDbService, this.bulapiCatalog]) {
+      if (!provider?.isEnabled()) continue;
+      const key = `${provider.name}:${this.buildSearchCacheQuery(parsed, parsed.medicineName || query)}:${backupPricePolicy(provider.name, this.config)}`;
+      const cached = this.getFromCache(key);
+      if (cached) return cached;
+      const started = Date.now();
+      try {
+        const result = await provider.searchWithStatus(query);
+        backupUnavailable ||= result.status === "unavailable";
+        backupIncomplete ||= result.status === "incomplete";
+        const matched = result.options.map((option) => this.normalizeBackupOption(option)).filter((option) => {
+          const reason = this.backupRejectionReason(parsed, option);
+          if (reason) this.logger.log(JSON.stringify({ event: "MEDICINE_BACKUP_FILTER", provider: provider.name, query, sourceId: option.sourceId, reason }));
+          return !reason;
+        });
+        const priced = matched.map((option) => ({ ...option, salePrice: this.backupPrice(option) }));
+        missingPrice ||= priced.some((option) => !option.salePrice);
+        const selected = priced.length ? await this.selectNormalized(parsed, priced) : [];
+        await this.requestLog?.record({ provider: provider.name, operation: "medicine_fallback", query,
+          durationMs: Date.now() - started, resultsFound: result.options.length, resultsAfterFilter: selected.length,
+          outcome: result.status === "unavailable" ? ProviderRequestOutcome.FAILED : selected.length ? ProviderRequestOutcome.SUCCESS : ProviderRequestOutcome.EMPTY,
+          failureReason: result.status === "unavailable" ? "backup_unavailable" : selected.length ? undefined : "no_matching_priced_presentation" });
+        if (selected.length) {
+          const summary: MedicineLookupSummary = { medicineName: parsed.medicineName || query, products: [], options: selected, searchStatus: result.status === "incomplete" ? "incomplete" : "found" };
+          this.setCache(key, summary, 300);
+          this.logger.log(JSON.stringify({ event: "MEDICINE_FALLBACK_SELECTED", provider: provider.name, query, count: selected.length }));
+          return summary;
+        }
+      } catch {
+        backupUnavailable = true;
+        this.logger.warn(JSON.stringify({ event: "MEDICINE_BACKUP_FAILED", provider: provider.name, query }));
+      }
+    }
+    return missingPrice ? { ...primary, searchStatus: "offer_unavailable" }
+      : backupUnavailable ? { ...primary, searchStatus: "unavailable" }
+        : backupIncomplete ? { ...primary, searchStatus: "incomplete" } : primary;
+  }
+
+  private async searchPrimaryMedicine(query: string): Promise<MedicineLookupSummary> {
     const parsedQuery = this.selector.parseMedicineQuery(query);
     const normalizedQuery =
       parsedQuery.medicineName ||
@@ -128,7 +187,7 @@ export class MedicineSearchOrchestratorService {
     this.logger.log(`TERM CONSULTADO/FILTRO: ${filterTerm}`);
     this.logger.log(`RESULTS FOUND: ${options.length}`);
     const validOptions = options.filter((option) =>
-      option.source === "preco_popular" && Number.isFinite(option.salePrice) && (option.salePrice ?? 0) > 0 &&
+      ["preco_popular", "pharmadb", "bulapi"].includes(option.source) && Number.isFinite(option.salePrice) && (option.salePrice ?? 0) > 0 &&
       this.selector.isSameMedicine(filterTerm, {
         id: this.toNumericId(option.sourceId, 0),
         name: option.productName,
@@ -188,7 +247,7 @@ export class MedicineSearchOrchestratorService {
         packageDescription: this.formatPackageDescription(option),
         packageInfo,
         pricePf: option.salePrice,
-        pricePolicy: CATALOG_PRICE_POLICY,
+        pricePolicy: option.source === "preco_popular" ? CATALOG_PRICE_POLICY : backupPricePolicy(option.source, this.config),
         brand: option.brand,
         imageUrl: option.imageUrl,
         ean: option.ean,
@@ -222,6 +281,44 @@ export class MedicineSearchOrchestratorService {
     );
 
     return ranking.selected.map((option, index) => ({ ...option, optionId: index + 1 }));
+  }
+
+  private normalizeBackupOption(option: NormalizedMedicineOption): NormalizedMedicineOption {
+    const description = (option.presentation || option.packageInfo?.raw || "").replace(/\bunid\.?\b/gi, "unidades");
+    const info = this.selector.extractPackageInfo([description, option.productName].join(" "));
+    const strengths = extractMedicineStrengths(option.dosage || description);
+    const packaging = removeMedicineStrengths(description);
+    const packInfo = this.selector.extractPackageInfo(packaging);
+    const units = packaging.match(/\b(\d+)\s*(?:comprimidos?|capsulas?|unidades?|cp|comp|caps)\b/i);
+    const volume = packaging.match(/\b(\d+(?:[,.]\d+)?)\s*ml\b/i);
+    const form = info.formGroup !== "outro" ? info.formGroup : this.normalizeForm(option.form || "");
+    const volumeMl = option.packageInfo?.volumeMl ?? (volume ? Number(volume[1].replace(",", ".")) : info.volumeMl);
+    const unverifiedLiquid = Boolean(volumeMl && !["capsula", "comprimido", "dragea"].includes(form) && strengths.some((strength) => !strength.denominator));
+    const dosage = unverifiedLiquid ? undefined : strengths.map((strength) => strength.label).join("+") || undefined;
+    return { ...option, dosage, form,
+      displayName: formatProductDisplayName([removeMedicineStrengths(option.productName), form === "outro" ? undefined : form, dosage].filter(Boolean).join(" ")),
+      packageInfo: { ...option.packageInfo, raw: description, unitCount: option.packageInfo?.unitCount ?? (units ? Number(units[1]) : packInfo.unitCount), volumeMl,
+        isInjectable: Boolean(option.packageInfo?.isInjectable || info.isInjectable), isHospitalUse: Boolean(option.packageInfo?.isHospitalUse || info.isHospitalUse) } };
+  }
+
+  private backupRejectionReason(query: ParsedMedicineQuery, option: NormalizedMedicineOption) {
+    if (catalogQuarantineReason({ ean: option.ean })) return "quarantined";
+    if (!this.selector.isSameMedicine(query.medicineName || query.received, { id: 0, name: option.productName, substance: { name: option.substance || option.activeIngredient } })) return "different_medicine_or_formulation";
+    if (["inactive", "out_of_stock"].includes(option.availabilityStatus || "")) return "inactive_or_unavailable";
+    if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) return "restricted_retail_presentation";
+    if (query.dosage && !medicineStrengthMatches(option.dosage || "", query.dosage)) return "different_or_missing_strength";
+    if (query.formGroup && option.form !== query.formGroup) return "different_or_missing_form";
+    if (query.packageQuantity !== undefined && option.packageInfo?.unitCount !== query.packageQuantity) return "different_or_missing_package_quantity";
+    if (!option.dosage || !option.form || option.form === "outro") return "unverified_presentation";
+    return undefined;
+  }
+
+  private backupPrice(option: NormalizedMedicineOption) {
+    const pf = option.priceFactory;
+    const pmc = option.pmcWithIcms ?? option.priceConsumer;
+    const price = typeof pf === "number" && pf > 0 ? pf
+      : option.source === "pharmadb" && typeof pmc === "number" ? pmc * pharmaDbMultiplier(this.config) : undefined;
+    return typeof price === "number" && Number.isFinite(price) && price > 0 ? Math.round((price + Number.EPSILON) * 100) / 100 : undefined;
   }
 
   private formatPackageDescription(option: NormalizedMedicineOption) {
