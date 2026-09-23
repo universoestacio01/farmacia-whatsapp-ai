@@ -28,6 +28,9 @@ const catalog = {
   dipirona: [row('1', 'Dipirona 500mg com 10 comprimidos')],
   maxidex: [row('2', 'Maxidex Suspensao Oftalmica 1mg/ml 5ml')],
   metronidazol: [row('3', 'Metronidazol Pomada 100mg/g 50g')],
+  forxiga: [row('90', 'Forxiga 10mg Com 30 Comprimidos')],
+  itraconazol: [row('91', 'Itraconazol 100mg Com 15 Capsulas Duras')],
+  mounjaro: [row('92', 'Mounjaro 5mg/0,5ml Com 4 Canetas De 0,5ml Solucao Injetavel'), row('93', 'Mounjaro 2,5mg/0,5ml Com 4 Canetas De 0,5ml Solucao Injetavel')],
   tadalafila: [row('4', 'Tadalafila 20mg com 4 comprimidos')],
   'elixir paregorico': [row('5', 'Paregorico Catarinense Elixir 30ml')],
   'absorvente sempre livre com16 unidade': [row('6', 'Absorvente Sempre Livre com 16 Unidades', false)],
@@ -106,6 +109,40 @@ test('Maxidex is not discarded for containing the word colirio in the request', 
   const f = harness(t); const result = await f.medicine.searchMedicine('Colirio maxidex');
   assert.equal(result.options.length, 1); assert.equal(result.options[0].formGroup, 'oftalmico');
 });
+for (const [query, term] of [['uma pergunta forxiga', 'forxiga'], ['comprar itraconazol 100 mg capsula dura', 'itraconazol']]) {
+  test(`production history phrase keeps only the product name: ${query}`, async t => {
+    const f = harness(t);
+    const reply = await f.send(query);
+    assert.equal(f.calls[0], term);
+    assert.ok(f.conversation.selectedPresentation || f.conversation.candidateOptions?.length, reply);
+    assert.doesNotMatch(reply, /n[aã]o est[aá] dispon[ií]vel/i);
+  });
+}
+
+test('contextual Mounjaro 5mg matches only the labeled 5mg per 0.5ml pen and reaches cart', async t => {
+  const f = harness(t);
+  await f.send('Tem Mounjaro?');
+  assert.equal(f.conversation.candidateOptions.length, 2);
+  const reply = await f.send('Tem de 5mg?');
+  assert.ok(f.conversation.selectedPresentation, reply);
+  assert.equal(f.conversation.selectedPresentation.strength, '5mg/0,5ml');
+  await f.send('1');
+  assert.equal(f.conversation.cart.length, 1);
+  assert.equal(f.conversation.cart[0].dosage, '5mg/0,5ml');
+  assert.equal(f.conversation.cart[0].unitPrice, 10);
+  assert.equal(f.calls.length, 1);
+});
+
+test('pen-dose matching never reinterprets ordinary liquids, multidose bottles or concentrations', () => {
+  const { medicinePresentationStrengthMatches: matches } = require('../dist/utils/medicine-strength.util');
+  for (const name of ['Mounjaro Solucao Injetavel 2ml', 'Teste Suspensao Oral 4 Canetas de 0,5ml', 'Teste Solucao Injetavel Caneta Multidose 0,5ml', 'Teste Solucao Injetavel 4 Canetas De 3ml']) {
+    assert.equal(matches('5mg/0,5ml', '5mg', name), false, name);
+  }
+  const name = 'Mounjaro 5mg/0,5ml Com 4 Canetas De 0,5ml Solucao Injetavel';
+  assert.equal(matches('5mg/0,5ml', '5mg', name), true);
+  for (const requested of ['2,5mg', '10mg', '5mg/ml', '5mg+2mg']) assert.equal(matches('5mg/0,5ml', requested, name), false);
+});
+
 test('ophthalmic ointment is not relabelled as eye drops', () => {
   const s = new CommercialMedicineSelector();
   assert.equal(s.parseMedicineQuery('Maxidex pomada oftalmica').formGroup, 'pomada');

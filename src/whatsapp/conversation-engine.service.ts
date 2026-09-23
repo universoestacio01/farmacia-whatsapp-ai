@@ -30,7 +30,7 @@ import { addressFieldPrompt, missingAddressField, parseAddressField } from "./de
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
 import { PrecoPopularService } from "../integrations/preco-popular.service";
 import { PackageImageReading, packageImageSchema } from "../ai/package-image.types";
-import { extractMedicineStrengths, medicineStrengthMatches } from "../utils/medicine-strength.util";
+import { extractMedicineStrengths, medicinePresentationStrengthMatches } from "../utils/medicine-strength.util";
 import { catalogQuarantineReason } from "../config/catalog-quality.config";
 import { medicineSpellingSuggestion } from "../config/medicine-spelling.config";
 import { explicitRetailCategories, isGenericRetailCategoryQuery, normalizeRetailSearchQuery } from "../utils/retail-search-query.util";
@@ -207,7 +207,7 @@ export class ConversationEngineService {
 
     if (conversation.lastIntent === "CATALOG_UNAVAILABLE" &&
         conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
-      const answer = this.normalize(text).trim().replace(/[.!?]+$/, "");
+      const answer = this.normalize(text).replace(/[,;.!?]+/g, " ").replace(/\s+/g, " ").trim();
       if (/^(tentar novamente|tente novamente|buscar novamente|tenta de novo)$/.test(answer)) {
         const query = conversation.currentMedicineQuery || conversation.lastMedicine;
         return query ? this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: query, searchQuery: query })
@@ -2116,7 +2116,7 @@ export class ConversationEngineService {
       `${normalizedMedicine} ${text}`,
     );
     const matchingOptions = (summary?.options || [])
-      .filter((option) => medicineStrengthMatches(option.strength || "", dosage.label))
+      .filter((option) => medicinePresentationStrengthMatches(option.strength || "", dosage.label, option.productName))
       .map((option, index) => ({ ...option, optionId: index + 1 }));
 
     if (matchingOptions.length === 0) {

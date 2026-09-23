@@ -155,13 +155,14 @@ test("medicine dosage mismatches cannot fall back to retail to bypass their rest
   assert.equal(summary.options.length, 0);
 });
 
-test("injectable mislabeled as retail still cannot be offered automatically", async (t) => {
+test("injectable catalog item can follow the retail route when the catalog classifies it there", async (t) => {
   const body = structuredClone(capture.requests[0].body.slice(0, 1));
   body[0].productName = body[0].items[0].name = "Soro Fisiologico Injetavel 500ml";
   const h = harness(t, { body });
   await h.send("Soro fisiologico");
-  assert.equal(h.conversation.selectedPresentation, null);
-  assert.equal(h.conversation.candidateOptions, null);
+  assert.ok(h.conversation.selectedPresentation);
+  assert.match(h.conversation.selectedPresentation.productName, /Injet/);
+  assert.ok(h.conversation.selectedPresentation.pricePf > 0);
 });
 
 test("sem alcool is a qualifier, never an instruction to search alcohol", () => {

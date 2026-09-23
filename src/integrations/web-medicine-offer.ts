@@ -8,7 +8,7 @@ import { CommercialMedicineSelector } from "./commercial-medicine-selector";
 import { NormalizedMedicineOption } from "./medicine-provider.interface";
 import {
   extractMedicineStrengths,
-  medicineStrengthMatches,
+  medicinePresentationStrengthMatches,
 } from "../utils/medicine-strength.util";
 import { catalogQuarantineReason } from "../config/catalog-quality.config";
 
@@ -185,14 +185,13 @@ export function extractVerifiedWebOptions(
     );
     if (info.unitCount === undefined && units)
       info.unitCount = Number(units[1]);
-    if (info.isInjectable || info.isHospitalUse) continue;
     const dosage =
       extractMedicineStrengths(name)
         .map((strength) => strength.label)
         .join("+") || undefined;
     if (
       requested.dosage &&
-      !medicineStrengthMatches(dosage || "", requested.dosage)
+      !medicinePresentationStrengthMatches(dosage || "", requested.dosage, name)
     )
       continue;
     if (requested.formGroup && info.formGroup !== requested.formGroup) continue;

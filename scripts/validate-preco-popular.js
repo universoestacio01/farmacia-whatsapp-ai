@@ -123,6 +123,46 @@ function retailSearch(service) {
   return new ProductSearchOrchestratorService(manual, service);
 }
 
+for (const [brand, name, query, strength, volume] of [
+  ["Ozempic", "Ozempic Semaglutida 1mg Solucao Injetavel 3ml + 4 Agulhas", "Ozempic 1mg", "1mg", 3],
+  ["Mounjaro", "Mounjaro 5mg Solucao Injetavel 4 Canetas 0,5ml", "Mounjaro 5mg", "5mg", 0.5],
+  ["Mounjaro", "Mounjaro Tirzepatida 5mg/0,5ml Com 4 Canetas De 0,5ml Solucao Injetavel Eli Lilly", "Mounjaro 5mg", "5mg/0,5ml", 0.5],
+  ["Lasix", "Lasix 10mg/ml Solucao Injetavel 5 Ampolas 2ml Uso Hospitalar", "Lasix injetavel", "10mg/ml", 2],
+]) test(`catalog ${brand} is eligible without injectable/hospital penalty and retains exact label and price`, async (t) => {
+  const calls = mockFetch(t, () => respond([product(901, name, 127.54, brand)]));
+  const provider = new PrecoPopularService(config(), selector);
+  const search = medicineSearch(provider);
+  const result = await search.searchMedicine(query);
+  assert.equal(result.searchStatus, "found");
+  assert.equal(result.options.length, 1);
+  assert.equal(result.options[0].pricePf, 127.54);
+  assert.equal(result.options[0].strength, strength);
+  assert.equal(result.options[0].formGroup, "injetavel");
+  assert.equal(result.options[0].packageInfo.volumeMl, volume);
+  assert.equal(result.options[0].packageInfo.isLargePackage, false);
+  assert.equal((await search.searchMedicine(`${brand} comprimido`)).options.length, 0);
+  assert.equal(calls.length, 1, "Name lookup cache shared between presentation refinements");
+});
+
+test("requested injectable dosage is strict, and concentration is never a dose", async (t) => {
+  mockFetch(t, () => respond([product(901, "Mounjaro 5mg Solucao Injetavel 4 Canetas 0,5ml", 100, "Mounjaro")]));
+  const search = medicineSearch(new PrecoPopularService(config(), selector));
+  for (const query of ["Mounjaro 10mg", "Mounjaro 5mg/ml"]) {
+    const result = await search.searchMedicine(query);
+    assert.equal(result.options.length, 0);
+    assert.equal(result.searchStatus, "presentation_not_found");
+  }
+});
+
+test("injectable and hospital metadata no longer changes ranking score", () => {
+  const option = { productName: "Teste", medicineName: "teste", presentationId: 1, formGroup: "injetavel", strength: "5mg", pricePf: 20,
+    packageInfo: { unitCount: 4, volumeMl: 0.5, formGroup: "injetavel", isLargePackage: false, isInjectable: false, isHospitalUse: false } };
+  const ordinary = selector.rankCommercialOptions("teste", [option]);
+  const tagged = selector.rankCommercialOptions("teste", [{ ...option, packageInfo: { ...option.packageInfo, isInjectable: true, isHospitalUse: true } }]);
+  assert.equal(tagged.selected.length, 1);
+  assert.equal(tagged.scored[0].score, ordinary.scored[0].score);
+});
+
 test("full catalog prices are rounded in cents; old discount settings are ignored", () => {
   assert.equal(calculatePrecoPopularSalePrice(100), 100);
   assert.equal(calculatePrecoPopularSalePrice(21.9), 21.9);

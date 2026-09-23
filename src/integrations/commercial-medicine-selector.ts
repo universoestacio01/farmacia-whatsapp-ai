@@ -2,7 +2,7 @@
 import { COMMERCIAL_MEDICINES } from "../config/commercial-medicines.config";
 import { MedicinePriorityRuleConfig } from "../config/medicine-priority-rules.config";
 import { getConversationOpeningIntent, stripGreetingPrefix } from "../utils/conversation-opening.util";
-import { extractMedicineStrengths, medicineStrengthMatches, medicineStrengthSignature, removeMedicineStrengths } from "../utils/medicine-strength.util";
+import { extractMedicineStrengths, medicinePresentationStrengthMatches, medicineStrengthSignature, removeMedicineStrengths } from "../utils/medicine-strength.util";
 
 export interface SelectorProduct {
   id: number;
@@ -177,6 +177,7 @@ export class CommercialMedicineSelector {
     const volume = removeMedicineStrengths(normalized).match(/\b(\d+(?:[,.]\d+)?)\s*ml\b/);
     let cleaned = removeMedicineStrengths(normalized)
       .replace(/[?!:;]/g, " ")
+      .replace(/^(?:uma\s+)?pergunta\s+/, "")
       .replace(/\bnao\s+tem\b/g, " ")
       .replace(/\bnao\s+teria\b/g, " ")
       .replace(/\b(?:pro|para)\s+(?:o\s+|a\s+)?(?:meu|minha)?\s*(?:amigo|amiga|mae|pai|filho|filha|esposa|marido|cliente)\b.*$/g, " ")
@@ -197,9 +198,11 @@ export class CommercialMedicineSelector {
       .replace(/\b(?:qual|preco|valor)\b/g, " ")
       .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
       .replace(/\b(?:remedios|remedio|medicamentos|medicamento|produto)\b/g, " ")
+      .replace(/\bcapsulas?\s+(?:duras?|moles?)\b/g, " ")
       .replace(/\b(?:comprimidos?|capsulas?|caixas?|cartelas?|unidades?|unid|frascos?)\b/g, " ")
       .replace(/\b(?:comprimido|capsula|gotas|xarope|solucao|suspensao|pomada|creme|gel|spray|dragea|nasal|oral)\b/g, " ")
       .replace(/\b(?:colirios?|oftalmic[ao]|injetave[l]|injetaveis|pastilhas?)\b/g, " ")
+      .replace(/\b(?:ampolas?|canetas?|seringas?|uso hospitalar|hospitalar|sol inj|inj|iv|im)\b/g, " ")
       .replace(/[()[\]{}]/g, " ")
       .replace(/\b(?:grande|maior|pequeno|pequena|menor)\b/g, " ")
       .replace(/\b(?:da|do|de)\b/g, " ")
@@ -340,10 +343,6 @@ export class CommercialMedicineSelector {
   isRetailPresentation(presentation: SelectorPresentation) {
     const packageInfo = this.extractPackageInfo(this.presentationText(presentation));
 
-    if (packageInfo.isInjectable || packageInfo.isHospitalUse) {
-      return false;
-    }
-
     if (
       packageInfo.unitCount !== undefined &&
       packageInfo.unitCount >= 50 &&
@@ -358,14 +357,15 @@ export class CommercialMedicineSelector {
   extractPackageInfo(presentationText: string): PackageInfo {
     const text = this.normalize(presentationText);
     const isInjectable =
-      /\b(sol inj|inj|injetavel|ampolas?|amp|iv|im)\b/.test(text);
+      /\b(sol inj|inj|injetave(?:l|is)|ampolas?|amp|iv|im)\b/.test(text);
     const isHospitalUse = /\b(hospitalar|uso hospitalar)\b/.test(text);
     const formGroup = this.getPresentationGroupFromText(text);
-    const volumeMatch = text.match(/\b(\d+)\s*ml\b/);
+    const volumeMatch = removeMedicineStrengths(text).match(/\b(\d+(?:[,.]\d+)?)\s*ml\b/);
     const unitPatterns = [
       /\b(?:caixa|cx|ct|bl|frasco|fr)?\s*(?:com|x)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
       /\b(?:caixa|cx|ct)\s*(\d+)\s*(?:comprimidos?|comp|capsulas?|caps|drageas?|drag)\b/,
       /\b(\d+)\s*(?:unid|unidade|unidades)\b/,
+      /\b(\d+)\s*(?:ampolas?|canetas?|seringas?)\b/,
       /\b(?:x|com)\s*(\d+)\b(?!\s*ml)/,
     ];
     let unitCount: number | undefined;
@@ -384,10 +384,8 @@ export class CommercialMedicineSelector {
       unitCount = numberMatch ? Number(numberMatch[1]) : undefined;
     }
 
-    const volumeMl = volumeMatch ? Number(volumeMatch[1]) : undefined;
+    const volumeMl = volumeMatch ? Number(volumeMatch[1].replace(",", ".")) : undefined;
     const isLargePackage =
-      isHospitalUse ||
-      isInjectable ||
       (unitCount !== undefined && unitCount >= 50) ||
       /\bcx\s*(50|60|100)\b/.test(text);
 
@@ -408,7 +406,7 @@ export class CommercialMedicineSelector {
 
   private getPresentationGroupFromText(text: string) {
     if (/\b(?:colirios?|oftalmic[ao])\b/.test(text) && !/\b(?:pomada|creme|gel)\b/.test(text)) return "oftalmico";
-    if (/\binjetave(?:l|is)\b/.test(text)) return "injetavel";
+    if (/\b(?:sol inj|inj|injetave(?:l|is)|ampolas?|amp|iv|im)\b/.test(text)) return "injetavel";
     if (/\bcomprim|\bcp\b|\bcom\b(?!\s+\d)/.test(text)) return "comprimido";
     if (/\bcaps|\bcap\b/.test(text)) return "capsula";
     if (
@@ -451,7 +449,6 @@ export class CommercialMedicineSelector {
     const deduped = new Map<string, T>();
 
     for (const option of options) {
-      if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) continue;
       const key = this.normalize(
         [
           option.productName,
@@ -533,7 +530,7 @@ export class CommercialMedicineSelector {
 
     if (parsedQuery.dosage !== undefined) {
       const dosageMatches = filtered.filter((item) =>
-        medicineStrengthMatches(item.option.strength || "", parsedQuery.dosage!),
+        medicinePresentationStrengthMatches(item.option.strength || "", parsedQuery.dosage!, item.option.productName),
       );
 
       // An explicit dose is a constraint, not a preference for another strength.
@@ -661,7 +658,7 @@ export class CommercialMedicineSelector {
     if (parsedQuery.dosage !== undefined) {
       pick(
         scored.find((item) =>
-          medicineStrengthMatches(item.option.strength || "", parsedQuery.dosage!),
+          medicinePresentationStrengthMatches(item.option.strength || "", parsedQuery.dosage!, item.option.productName),
         ),
         "dosagem_solicitada",
         "dosagem pedida pelo cliente",
@@ -855,17 +852,6 @@ export class CommercialMedicineSelector {
 
   private retailCurationScore(medicineName: string, option: SelectorOption) {
     const canonical = this.getCanonicalMedicineName(medicineName);
-    const text = this.normalize(
-      [
-        option.productName,
-        option.label,
-        option.medicineName,
-        option.strength,
-        option.packageInfo?.formGroup,
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
     let score = 0;
     const reasons: string[] = [];
 
@@ -875,11 +861,6 @@ export class CommercialMedicineSelector {
     ) {
       score += 6000;
       reasons.push("catalogo popular curado");
-    }
-
-    if (/\b(sol inj|inj|injetavel|ampola|amp|hospitalar|iv|im)\b/.test(text)) {
-      score -= 8000;
-      reasons.push("apresentacao hospitalar ou injetavel evitada no varejo");
     }
 
     if (option.packageInfo?.unitCount && option.packageInfo.unitCount > 60) {
@@ -953,7 +934,6 @@ export class CommercialMedicineSelector {
       if (unitCount >= 50 && unitCount <= 60) score -= 120;
     }
 
-    if (packageInfo?.isInjectable || packageInfo?.isHospitalUse) score -= 1000;
     if (packageInfo?.isLargePackage && (unitCount === undefined || unitCount > 60)) {
       score -= 220;
     }
@@ -1382,10 +1362,6 @@ export class CommercialMedicineSelector {
 
     const config = COMMERCIAL_MEDICINES[canonical];
 
-    if (packageInfo.isHospitalUse || packageInfo.isInjectable) {
-      return -1000;
-    }
-
     if (packageInfo.isLargePackage) {
       return -350;
     }
@@ -1434,7 +1410,7 @@ export class CommercialMedicineSelector {
   }
 
   private optionMatchesDosageMg(option: SelectorOption, requestedMg: number) {
-    return medicineStrengthMatches(option.strength || "", `${requestedMg}mg`);
+    return medicinePresentationStrengthMatches(option.strength || "", `${requestedMg}mg`, option.productName);
   }
 
   private isGenericOption(option: SelectorOption, canonical: string) {

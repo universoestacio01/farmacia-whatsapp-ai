@@ -38,6 +38,23 @@ export function medicineStrengthMatches(actual: string, requested: string): bool
   return Boolean(signature) && medicineStrengthSignature(actual) === signature;
 }
 
+/** Match a labeled single-pen amount without treating arbitrary liquids as doses. */
+export function medicinePresentationStrengthMatches(actual: string, requested: string, productName: string): boolean {
+  if (medicineStrengthMatches(actual, requested)) return true;
+  const name = productName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const pen = name.match(/\bcanetas?\s+(?:de\s+)?(\d+(?:[,.]\d+)?)\s*ml\b/);
+  if (!pen || !/\binjetave(?:l|is)\b/.test(name) || /\b(?:multidose|multiplas doses)\b/.test(name)) return false;
+  const strengths = extractMedicineStrengths(actual);
+  const request = extractMedicineStrengths(requested);
+  if (strengths.length !== 1 || request.length !== 1 || request[0].denominator) return false;
+  const strength = strengths[0];
+  // Require the explicit denominator to equal the labeled pen volume. No
+  // multiplication by bottle volume or inference about an administration dose.
+  return strength.denominator === "ml" &&
+    strength.per === Number(pen[1].replace(",", ".")) &&
+    strength.mg === request[0].mg;
+}
+
 export function removeMedicineStrengths(value: string): string {
   return value.replace(strengthPattern, " ");
 }

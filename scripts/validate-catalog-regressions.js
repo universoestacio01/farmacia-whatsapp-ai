@@ -147,7 +147,7 @@ for (const query of [...medicines, ...variations]) {
       const raw = sourceSkus.get(option.sourceId);
       assert.ok(raw, option.label);
       assert.equal(option.pricePf, raw.sellers.find((seller) => seller.commertialOffer.Price > 0).commertialOffer.Price);
-      assert.ok(!option.packageInfo?.isInjectable && !option.packageInfo?.isHospitalUse);
+      if (parsed.formGroup) assert.equal(option.formGroup, parsed.formGroup);
       assert.notEqual(option.ean, "7891058003555");
       assert.equal(medicineStrengthSignature(option.label), medicineStrengthSignature(raw.name));
       if (parsed.dosage) assert.ok(medicineStrengthMatches(option.strength || "", parsed.dosage), option.label);
@@ -285,9 +285,12 @@ test("pagination limit and failed later pages are explicitly incomplete", async 
   assert.equal(h.calls.length, 4);
 });
 
-test("injections are rejected even if the selector is used without the orchestrator", () => {
+test("injections remain eligible when the selector is used without the orchestrator", () => {
   const selector = new CommercialMedicineSelector();
   const info = selector.extractPackageInfo("Lasix solucao injetavel 10mg/ml 5 ampolas 2ml");
   assert.equal(info.isInjectable, true);
-  assert.deepEqual(selector.selectCommercialOptions("furosemida", [{productName: "Lasix", medicineName: "furosemida", presentationId: 1, formGroup: "outro", strength: "10mg/ml", packageInfo: info, pricePf: 20}]), []);
+  assert.equal(info.isLargePackage, false);
+  assert.equal(info.volumeMl, 2);
+  assert.equal(info.unitCount, 5);
+  assert.equal(selector.selectCommercialOptions("furosemida", [{productName: "Lasix", medicineName: "furosemida", presentationId: 1, formGroup: "injetavel", strength: "10mg/ml", packageInfo: info, pricePf: 20}]).length, 1);
 });

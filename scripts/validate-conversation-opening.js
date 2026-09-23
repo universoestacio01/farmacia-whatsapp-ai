@@ -169,6 +169,19 @@ test("recovery accepts another product or a new query without interpreting 1 as 
   assert.equal(f.conversation.cart.length, 0);
 });
 
+for (const text of ["Não, obrigada", "Não, obrigado!", "Não. Obrigada."]) {
+  test(`declining another product is not a catalog query: ${text}`, async () => {
+    const f = createFixture(ConversationState.WAITING_MEDICINE_NAME, {
+      lastIntent: "CATALOG_UNAVAILABLE", currentMedicineQuery: "fiber biome",
+      cart: [{name: "Item", quantity: 1, unitPrice: 10}],
+    });
+    assert.match(await f.send(text), /Tudo bem/);
+    assert.equal(f.queries.medicines.length, 0);
+    assert.equal(f.queries.retail.length, 0);
+    assert.equal(f.conversation.cart.length, 1);
+  });
+}
+
 for (const intent of ["CATALOG_HELP_OPTIONS", "CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"]) {
   test(`retired ${intent} resumes automatically and preserves cart`, async () => {
     const cart = [{ name: "Sabonete", quantity: 1, unitPrice: 5 }];

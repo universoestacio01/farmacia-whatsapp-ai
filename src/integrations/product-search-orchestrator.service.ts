@@ -175,8 +175,6 @@ export class ProductSearchOrchestratorService {
       return reject("missing_name");
     }
 
-    if (/\b(?:injetavel|intravenos[ao]|endovenos[ao]|uso hospitalar|infusao)\b/.test(text)) return reject("restricted_retail_presentation");
-
     if (!context.allowKits && this.looksLikeKit(text)) {
       return reject("kit_not_requested");
     }

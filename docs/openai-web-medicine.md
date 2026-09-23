@@ -8,7 +8,7 @@ A IA descobre ate quatro URLs de produtos; nao fornece o preco cobrado. Se nenhu
 
 O parser HTML parse5 extrai dados Product/Offer JSON-LD. Regra de venda: 100% do preco publico BRL de uma embalagem, em centavos, sem margem ou desconto adicional. Sem PF/PMC estimado. Exige nome correspondente, marca explicita preservada, dosagem equivalente quando pedida, forma, quantidade/volume, disponibilidade InStock e oferta nao vencida. Oferta agregada so vale quando contem oferta concreta verificavel; lowPrice sozinho nao vale. Precos divergentes, condicionais (CPF/cupom/clube/convenio/quantidade), parcelados ou incompletos sao rejeitados.
 
-Uma fonte externa nao comprova estoque da propria farmacia, custo de compra, margem ou autorizacao para dispensacao. Os bloqueios existentes de apresentacoes hospitalares/injetaveis/quarentena continuam. Nenhuma inferencia de tratamento ou dose e feita pela reserva. Os tres resultados passam pelo seletor existente.
+Uma fonte externa nao comprova estoque da propria farmacia, custo de compra, margem ou autorizacao para dispensacao. Injetaveis e apresentacoes hospitalares nao sao excluidos por categoria. Permanecem a quarentena de dados inconsistentes, a correspondencia de medicamento/apresentacao e a validacao de preco. Nenhuma inferencia de tratamento ou dose e feita pela reserva. Os tres resultados passam pelo seletor existente.
 
 ## Checkout e rastreabilidade
 
@@ -61,7 +61,7 @@ O encaminhamento humano de catalogo foi removido. Estados antigos `CATALOG_HELP_
 
 Quando o indice do nome exato retorna vazio sem falha, o Preco Popular tenta uma unica consulta mais ampla (nome canonico ou primeiro termo). Os resultados precisam conter todos os termos originais: nao ha troca silenciosa de marca, formula ou dosagem. Resultados validos continuam passando pelos mesmos filtros e ranking. Se falhar, segue a reserva web existente. Erros de API, quarentena e falta de preco nao provocam essa consulta adicional.
 
-Validacao de Ozempic em 23/09/2026: a principal retornou duas apresentacoes com preco. O status final foi `restricted`, porque a regra existente bloqueia injetaveis. Essa restricao nao foi removida nem contornada pela reserva. Portanto o novo fluxo nao exige humano, mas tambem nao libera automaticamente a venda de injetaveis, apresentacoes hospitalares ou produtos em quarentena. Nao sao sugeridos substitutos terapeuticos por semelhanca de nome.
+Auditoria de 23/09/2026: a principal retornou duas apresentacoes de Ozempic e seis de Mounjaro com preco; o filtro antigo descartou todas como `restricted`. A pedido do operador, a exclusao e as penalizacoes genericas de injetaveis/hospitalares foram removidas da busca principal, seletor, rota de varejo e verificacao web. Pedidos explicitos de comprimidos continuam sem aceitar injetaveis como substitutos. Quarentena e validacao de preco continuam ativas. Elegibilidade no catalogo nao significa autorizacao sanitaria de dispensacao. Nao sao sugeridos substitutos terapeuticos por semelhanca de nome.
 
 Esta revisao nao altera a regra de preco nem remove os bloqueios 403 dos sites. Nao foram feitas chamadas pagas nem alteracoes de producao nesta etapa. Contrato da reserva conferido com a documentacao oficial: https://developers.openai.com/api/docs/guides/tools-web-search.
 

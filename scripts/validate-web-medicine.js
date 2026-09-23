@@ -109,12 +109,33 @@ test("equivalent strength 1000mg matches 1g", () =>
     options(product({ name: "Dipirona 1000mg com 10 Comprimidos" })).length,
     1,
   ));
+
+for (const [name, query, volume] of [
+  ["Ozempic 1mg Solucao Injetavel 3ml", "Ozempic 1mg", 3],
+  ["Mounjaro 5mg Solucao Injetavel 4 Canetas 0,5ml", "Mounjaro 5mg", 0.5],
+  ["Mounjaro 5mg/0,5ml Com 4 Canetas De 0,5ml Solucao Injetavel", "Mounjaro 5mg", 0.5],
+  ["Lasix 10mg/ml Solucao Injetavel 5 Ampolas 2ml Uso Hospitalar", "Lasix", 2],
+]) test(`verified web injectable reaches final selection: ${query}`, async () => {
+  const url = "https://drogasil.com.br/test-injectable.html";
+  const found = extractVerifiedWebOptions(html(product({name, url})), url, query, selector);
+  assert.equal(found.length, 1);
+  assert.equal(found[0].packageInfo.volumeMl, volume);
+  const service = new MedicineSearchOrchestratorService(selector, {},
+    { getRulesForPrinciple: async () => [] },
+    { isEnabled: () => true, searchMedicinesWithStatus: async () => ({status: "ok", options: []}) },
+    { isEnabled: () => true, searchWithStatus: async () => ({status: "ok", options: found}) });
+  const result = await service.searchMedicine(query);
+  assert.equal(result.searchStatus, "found");
+  assert.equal(result.options[0].pricePf, 19.9);
+  assert.equal(result.options[0].webQuote.sourceUrl, url);
+  assert.equal(extractVerifiedWebOptions(html(product({name, url, offers: offer({price: 0})})), url, query, selector).length, 0);
+});
 for (const [label, item] of [
   ["other dose", product({ name: "Dipirona 500mg com 10 Comprimidos" })],
   ["other package", product({ name: "Dipirona 1g com 20 Comprimidos" })],
   ["other medicine", product({ name: "Paracetamol 1g com 10 Comprimidos" })],
   ["missing packaging", product({ name: "Dipirona 1g" })],
-  ["injectable", product({ name: "Dipirona 1g Injetavel com 10 Ampolas" })],
+  ["injectable cannot replace requested tablets", product({ name: "Dipirona 1g Injetavel com 10 Ampolas" })],
   ["missing price", product({ offers: offer({ price: undefined }) })],
   ["zero price", product({ offers: offer({ price: 0 }) })],
   ["foreign currency", product({ offers: offer({ priceCurrency: "USD" }) })],

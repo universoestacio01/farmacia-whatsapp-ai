@@ -14,7 +14,7 @@ import { MedicinePriorityRulesService } from "./medicine-priority-rules.service"
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
 import { PrecoPopularService } from "./preco-popular.service";
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
-import { medicineStrengthMatches, medicineStrengthSignature } from "../utils/medicine-strength.util";
+import { medicinePresentationStrengthMatches, medicineStrengthSignature } from "../utils/medicine-strength.util";
 import { OpenAiWebMedicineService } from "./openai-web-medicine.service";
 import { WEB_MEDICINE_PRICE_POLICY } from "../config/web-medicine.config";
 import { ProviderRequestLogService } from "../observability/provider-request-log.service";
@@ -41,8 +41,8 @@ export class MedicineSearchOrchestratorService {
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
     const startedAt = Date.now();
     const primary = await this.searchPrimaryMedicine(query);
-    // Never turn a retail lookup or a safety restriction into a medicine fallback.
-    if (primary.options.length || primary.retailFallbackQuery || primary.searchStatus === "restricted" || primary.failureReason === "quarantined") return primary;
+    // Retail lookups keep their own route; quarantined data cannot become an offer.
+    if (primary.options.length || primary.retailFallbackQuery || primary.failureReason === "quarantined") return primary;
     if (!this.webMedicine?.isEnabled()) return primary;
     const parsed = this.selector.parseMedicineQuery(query);
     let final: MedicineLookupSummary;
@@ -91,7 +91,6 @@ export class MedicineSearchOrchestratorService {
           options = options.filter((option) => this.normalize(option.brand || "") === requestedName);
         }
         let unverified = false;
-        let restricted = false;
         let medicineFound = false;
         options = options.filter((option) => {
           let reason: string | undefined;
@@ -103,10 +102,7 @@ export class MedicineSearchOrchestratorService {
             return false;
           }
           medicineFound = true;
-          if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) {
-            reason = "restricted_retail_presentation";
-            restricted = true;
-          } else if (parsedQuery.dosage && !medicineStrengthMatches(option.dosage || "", parsedQuery.dosage)) {
+          if (parsedQuery.dosage && !medicinePresentationStrengthMatches(option.dosage || "", parsedQuery.dosage, option.productName)) {
             reason = option.dosage ? "different_strength" : "missing_strength";
             unverified ||= !option.dosage;
           } else if (parsedQuery.formGroup && option.form !== parsedQuery.formGroup) {
@@ -130,14 +126,13 @@ export class MedicineSearchOrchestratorService {
         const failureReason = "failureReason" in result ? result.failureReason : undefined;
         await this.requestLog?.record({ provider: "medicine_search", operation: "primary_selection", query,
           resultsFound: result.options.length, resultsAfterFilter: selected.length,
-          outcome: ProviderRequestOutcome.EMPTY, failureReason: unverified ? "attributes_unverified" : restricted ? "restricted" : medicineFound ? "presentation_not_matched" : "name_not_matched" });
+          outcome: ProviderRequestOutcome.EMPTY, failureReason: unverified ? "attributes_unverified" : medicineFound ? "presentation_not_matched" : "name_not_matched" });
         return {
           medicineName: normalizedQuery, products: [], options: [], failureReason,
           retailFallbackQuery: !result.options.length && "retailFallbackQuery" in result ? result.retailFallbackQuery : undefined,
           searchStatus: result.status === "incomplete" ? "incomplete"
             : unverified || failureReason === "quarantined" ? "attributes_unverified"
-              : restricted ? "restricted"
-                : failureReason === "no_price" || failureReason === "out_of_stock" ? "offer_unavailable"
+              : failureReason === "no_price" || failureReason === "out_of_stock" ? "offer_unavailable"
                   : medicineFound ? "presentation_not_found" : "not_found",
         };
       } catch (error) {

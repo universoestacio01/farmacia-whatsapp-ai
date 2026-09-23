@@ -122,7 +122,7 @@ export class PrecoPopularService {
         const strengths = extractMedicineStrengths(text);
         const packagingText = removeMedicineStrengths(text);
         const units = packagingText.match(
-          /\b(\d+)\s*(?:comprimidos?|capsulas?|drageas?|unidades?|supositorios?|cp|comp|caps)\b/,
+          /\b(\d+)\s*(?:comprimidos?|capsulas?|drageas?|unidades?|supositorios?|ampolas?|canetas?|seringas?|cp|comp|caps)\b/,
         );
         const volume = packagingText.match(/\b(\d+(?:[,.]\d+)?)\s*ml\b/);
         // "com 28 capsulas" is ordinary Portuguese, not the CMED abbreviation COM.
@@ -133,8 +133,10 @@ export class PrecoPopularService {
         const volumeMl = volume
           ? Number(volume[1].replace(",", "."))
           : undefined;
+        // Injectable pens may label the dose in mg and the device volume in ml.
+        // Preserve that literal dose; never invent an mg/ml concentration.
         const incompleteConcentration = Boolean(volumeMl && strengths.length && strengths.some((strength) => !strength.denominator) &&
-          !["comprimido", "capsula", "dragea"].includes(info.formGroup));
+          !["comprimido", "capsula", "dragea", "injetavel"].includes(info.formGroup));
         const dosage = incompleteConcentration ? undefined : strengths.map((strength) => strength.label).join("+") || undefined;
         if (incompleteConcentration) this.logger.warn(JSON.stringify({ provider: this.name, sourceId: product.skuId, reason: "unverified_liquid_concentration", name: product.name }));
         return {
