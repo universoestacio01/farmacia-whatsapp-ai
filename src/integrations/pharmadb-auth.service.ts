@@ -17,6 +17,9 @@ export class PharmaDbAuthService {
   private expiresAt = 0;
   private pending: Promise<string | null> | null = null;
   private unavailableUntil = 0;
+  private failureStatus?: number;
+
+  getFailureStatus() { return this.failureStatus; }
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -54,6 +57,7 @@ export class PharmaDbAuthService {
     }
 
     const baseUrl = this.getBaseUrl();
+    this.failureStatus = undefined;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
 
@@ -69,6 +73,7 @@ export class PharmaDbAuthService {
       });
 
       if (!response.ok) {
+        this.failureStatus = response.status;
         this.unavailableUntil = Date.now() + (response.status === 429 ? 300_000 : 60_000);
         this.logger.warn(`PharmaDB auth respondeu ${response.status}`);
         return null;
@@ -83,6 +88,7 @@ export class PharmaDbAuthService {
       }
 
       this.accessToken = data.access_token;
+      this.failureStatus = undefined;
       this.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
       this.logger.log(`PharmaDB token renovado. Tier: ${data.tier || "n/a"}`);
       return this.accessToken;

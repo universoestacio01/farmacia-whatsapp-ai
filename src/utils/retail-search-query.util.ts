@@ -14,7 +14,11 @@ const aliases = Object.entries(RETAIL_SEARCH_ALIASES)
   .sort((a, b) => b.alias.length - a.alias.length);
 
 export function normalizeRetailTerms(value: string) {
-  let text = fold(value);
+  let text = fold(value).replace(/\bcom(?=\d)/g, "com ")
+    .replace(/\bsempre livres\b/g, "sempre livre")
+    .replace(/\babsorventes\b/g, "absorvente")
+    .replace(/\bfraldas\b/g, "fralda")
+    .replace(/\bunidades\b/g, "unidade");
   for (const { canonical, pattern } of aliases) text = text.replace(pattern, canonical);
   return text
     .replace(/\b(\d+),(\d+)(?=\s*(?:ml|g|kg|l)\b|\s*%)/g, "$1.$2")
@@ -70,6 +74,12 @@ export function matchesRetailCategory(text: string, category: string) {
 export function matchesRetailQuery(text: string, query: string, category: string | null) {
   const product = normalizeRetailTerms(text);
   let qualifiers = normalizeRetailSearchQuery(query);
+  if (category === "fralda") {
+    const adult = /\b(?:adulto|geriatrica|geriatrico)\b/.test(product);
+    if (/\b(?:infantil|bebe|crianca|pampers|huggies|pompom|pom pom|mamypoko)\b/.test(qualifiers) && adult) return false;
+    if (/\b(?:adulto|geriatrica)\b/.test(qualifiers) && !adult) return false;
+    qualifiers = qualifiers.replace(/\b(?:infantil|bebe|crianca|adulto|geriatrica)\b/g, " ");
+  }
   for (const term of RETAIL_CATEGORY_TERMS[category || ""] || []) qualifiers = qualifiers.replace(phrasePattern(term, true), " ");
   for (const restriction of ["sem alcool", "sem perfume", "sem fragrancia", "sem abas", "com abas", "sem aba", "com aba"]) {
     if (retailTextContains(qualifiers, restriction) && !retailTextContains(product, restriction)) return false;

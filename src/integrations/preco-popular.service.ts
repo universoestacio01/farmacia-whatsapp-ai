@@ -98,6 +98,7 @@ export class PrecoPopularService {
   async searchMedicinesWithStatus(query: string) {
     const parsed = this.selector.parseMedicineQuery(query);
     const term = parsed.medicineName || parsed.canonicalName || "";
+    this.logger.log(JSON.stringify({ event: "MEDICINE_QUERY_NORMALIZED", provider: this.name, receivedQuery: query, term }));
     const result = await this.searchCatalog(term);
     const options: NormalizedMedicineOption[] = result.products
       .filter((product) => product.isMedicine)

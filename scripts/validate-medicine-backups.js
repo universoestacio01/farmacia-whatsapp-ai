@@ -196,14 +196,14 @@ test("PharmaDB unavailable proceeds to BulAPI, keeping its PF", async () => {
   assert.equal(result.options[0].pricePolicy, "bulapi_max_pf_v1");
 });
 
-test("both failures are unavailable, not a false product absence", async () => {
+test("backup failures remain distinct from a successful empty primary", async () => {
   const f = flow({
     pharma: { status: "unavailable", options: [] },
     bula: { status: "unavailable", options: [] },
   });
   assert.equal(
     (await f.service.searchMedicine("dipirona")).searchStatus,
-    "unavailable",
+    "backup_unavailable",
   );
 });
 

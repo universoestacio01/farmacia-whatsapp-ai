@@ -296,6 +296,9 @@ export const WhatsappCopy = {
   },
 
   catalogSearchProblem(status?: string) {
+    if (status === "backup_unavailable") {
+      return "Não encontrei uma opção correspondente na consulta principal, e a consulta complementar está indisponível. Isso não confirma que o produto esteja em falta. Pode conferir o nome e a apresentação para tentarmos novamente?";
+    }
     if (status === "unavailable" || status === "incomplete") {
       return "Não consegui concluir a consulta ao catálogo agora. Pode tentar novamente em instantes?";
     }

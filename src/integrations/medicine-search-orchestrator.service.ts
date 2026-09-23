@@ -46,6 +46,7 @@ export class MedicineSearchOrchestratorService {
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
+    const startedAt = Date.now();
     const primary = await this.searchPrimaryMedicine(query);
     // Never turn a retail lookup or a safety restriction into a medicine fallback.
     if (primary.options.length || primary.retailFallbackQuery || ["restricted", "attributes_unverified"].includes(primary.searchStatus || "")) return primary;
@@ -74,7 +75,8 @@ export class MedicineSearchOrchestratorService {
         await this.requestLog?.record({ provider: provider.name, operation: "medicine_fallback", query,
           durationMs: Date.now() - started, resultsFound: result.options.length, resultsAfterFilter: selected.length,
           outcome: result.status === "unavailable" ? ProviderRequestOutcome.FAILED : selected.length ? ProviderRequestOutcome.SUCCESS : ProviderRequestOutcome.EMPTY,
-          failureReason: result.status === "unavailable" ? "backup_unavailable" : selected.length ? undefined : "no_matching_priced_presentation" });
+          statusCode: result.statusCode,
+          failureReason: result.status === "unavailable" ? result.failureReason || "backup_unavailable" : selected.length ? undefined : "no_matching_priced_presentation" });
         if (selected.length) {
           const summary: MedicineLookupSummary = { medicineName: parsed.medicineName || query, products: [], options: selected, searchStatus: result.status === "incomplete" ? "incomplete" : "found" };
           this.setCache(key, summary, 300);
@@ -86,9 +88,17 @@ export class MedicineSearchOrchestratorService {
         this.logger.warn(JSON.stringify({ event: "MEDICINE_BACKUP_FAILED", provider: provider.name, query }));
       }
     }
-    return missingPrice ? { ...primary, searchStatus: "offer_unavailable" }
-      : backupUnavailable ? { ...primary, searchStatus: "unavailable" }
+    const final: MedicineLookupSummary = missingPrice ? { ...primary, searchStatus: "offer_unavailable" }
+      : backupUnavailable && primary.searchStatus === "not_found" ? { ...primary, searchStatus: "backup_unavailable" }
         : backupIncomplete ? { ...primary, searchStatus: "incomplete" } : primary;
+    await this.requestLog?.record({ provider: "medicine_search", operation: "search_outcome", query,
+      resultsFound: primary.options.length, resultsAfterFilter: final.options.length,
+      durationMs: Date.now() - startedAt, outcome: final.options.length ? ProviderRequestOutcome.SUCCESS : backupUnavailable || primary.searchStatus === "unavailable" ? ProviderRequestOutcome.FAILED : ProviderRequestOutcome.EMPTY,
+      failureReason: `primary=${primary.searchStatus};final=${final.searchStatus};backupUnavailable=${backupUnavailable};backupIncomplete=${backupIncomplete}` });
+    this.logger.log(JSON.stringify({ event: "MEDICINE_SEARCH_OUTCOME", query,
+      normalizedQuery: parsed.medicineName, primaryStatus: primary.searchStatus,
+      primaryFailureReason: primary.failureReason, backupUnavailable, backupIncomplete, finalStatus: final.searchStatus }));
+    return final;
   }
 
   private async searchPrimaryMedicine(query: string): Promise<MedicineLookupSummary> {
@@ -109,7 +119,8 @@ export class MedicineSearchOrchestratorService {
           ? await this.precoPopularService.searchMedicinesWithStatus(query)
           : { options: await this.precoPopularService.searchMedicines(query), status: "ok" as const };
         if (result.status === "unavailable" || result.status === "disabled") {
-          return { medicineName: normalizedQuery, products: [], options: [], searchStatus: "unavailable" };
+          return { medicineName: normalizedQuery, products: [], options: [], searchStatus: "unavailable",
+            failureReason: "failureReason" in result ? result.failureReason : undefined };
         }
         let options = result.options;
         // Explicit brands and strengths must not turn into another presentation.
@@ -142,6 +153,8 @@ export class MedicineSearchOrchestratorService {
           } else if (parsedQuery.packageQuantity !== undefined && option.packageInfo?.unitCount !== parsedQuery.packageQuantity) {
             reason = "different_or_missing_package_quantity";
             unverified ||= option.packageInfo?.unitCount === undefined;
+          } else if (parsedQuery.volumeMl !== undefined && option.packageInfo?.volumeMl !== parsedQuery.volumeMl) {
+            reason = "different_or_missing_volume";
           }
           if (reason) this.logger.log(JSON.stringify({ event: "MEDICINE_FILTER", query, sourceId: option.sourceId, product: option.productName, reason }));
           return !reason;
@@ -153,6 +166,9 @@ export class MedicineSearchOrchestratorService {
           return summary;
         }
         const failureReason = "failureReason" in result ? result.failureReason : undefined;
+        await this.requestLog?.record({ provider: "medicine_search", operation: "primary_selection", query,
+          resultsFound: result.options.length, resultsAfterFilter: selected.length,
+          outcome: ProviderRequestOutcome.EMPTY, failureReason: unverified ? "attributes_unverified" : restricted ? "restricted" : medicineFound ? "presentation_not_matched" : "name_not_matched" });
         return {
           medicineName: normalizedQuery, products: [], options: [], failureReason,
           retailFallbackQuery: !result.options.length && "retailFallbackQuery" in result ? result.retailFallbackQuery : undefined,
@@ -306,6 +322,7 @@ export class MedicineSearchOrchestratorService {
     if (!this.selector.isSameMedicine(query.medicineName || query.received, { id: 0, name: option.productName, substance: { name: option.substance || option.activeIngredient } })) return "different_medicine_or_formulation";
     if (["inactive", "out_of_stock"].includes(option.availabilityStatus || "")) return "inactive_or_unavailable";
     if (option.packageInfo?.isInjectable || option.packageInfo?.isHospitalUse) return "restricted_retail_presentation";
+    if (query.volumeMl !== undefined && option.packageInfo?.volumeMl !== query.volumeMl) return "different_or_missing_volume";
     if (query.dosage && !medicineStrengthMatches(option.dosage || "", query.dosage)) return "different_or_missing_strength";
     if (query.formGroup && option.form !== query.formGroup) return "different_or_missing_form";
     if (query.packageQuantity !== undefined && option.packageInfo?.unitCount !== query.packageQuantity) return "different_or_missing_package_quantity";
@@ -419,6 +436,8 @@ export class MedicineSearchOrchestratorService {
       normalizedQuery,
       query.dosage ? medicineStrengthSignature(query.dosage) : "qualquer_dosagem",
       query.formGroup || "qualquer_forma",
+      query.volumeMl !== undefined ? `${query.volumeMl}ml` : "qualquer_volume",
+      query.sizePreference || "qualquer_tamanho",
       query.packageQuantity !== undefined
         ? `${query.packageQuantity}un`
         : "qualquer_embalagem",

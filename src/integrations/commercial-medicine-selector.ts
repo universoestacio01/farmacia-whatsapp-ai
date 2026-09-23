@@ -58,6 +58,8 @@ export interface ParsedMedicineQuery {
   received: string;
   normalized: string;
   medicineName: string | null;
+  volumeMl?: number;
+  sizePreference?: "larger" | "smaller";
   canonicalName: string | null;
   dosage?: string;
   dosageMg?: number;
@@ -165,13 +167,14 @@ export class CommercialMedicineSelector {
   }
 
   parseMedicineQuery(text: string): ParsedMedicineQuery {
-    const normalized = stripGreetingPrefix(text)
+    const normalized = this.normalize(stripGreetingPrefix(text))
       .replace(/[?!:;]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
     const quantity = this.extractRequestedQuantity(normalized);
     const dosageInfo = this.extractRequestedDosage(normalized);
-    const formGroup = this.getPresentationGroupFromText(normalized);
+    const formGroup = this.getPresentationGroupFromText(normalized.replace(/\bcom\b/g, " "));
+    const volume = removeMedicineStrengths(normalized).match(/\b(\d+(?:[,.]\d+)?)\s*ml\b/);
     let cleaned = removeMedicineStrengths(normalized)
       .replace(/[?!:;]/g, " ")
       .replace(/\bnao\s+tem\b/g, " ")
@@ -196,6 +199,9 @@ export class CommercialMedicineSelector {
       .replace(/\b(?:remedios|remedio|medicamentos|medicamento|produto)\b/g, " ")
       .replace(/\b(?:comprimidos?|capsulas?|caixas?|cartelas?|unidades?|unid|frascos?)\b/g, " ")
       .replace(/\b(?:comprimido|capsula|gotas|xarope|solucao|suspensao|pomada|creme|gel|spray|dragea|nasal|oral)\b/g, " ")
+      .replace(/\b(?:colirios?|oftalmic[ao]|injetave[l]|injetaveis|pastilhas?)\b/g, " ")
+      .replace(/[()[\]{}]/g, " ")
+      .replace(/\b(?:grande|maior|pequeno|pequena|menor)\b/g, " ")
       .replace(/\b(?:da|do|de)\b/g, " ")
       .replace(/\bcom\b/g, " ")
       .replace(/\b(?:tem|teria|vende|vendem)$/g, " ")
@@ -235,6 +241,8 @@ export class CommercialMedicineSelector {
       medicineName,
       canonicalName,
       dosage: dosageInfo.normalized,
+      volumeMl: volume ? Number(volume[1].replace(",", ".")) : undefined,
+      sizePreference: /\b(?:grande|maior)\b/.test(normalized) ? "larger" : /\b(?:pequeno|pequena|menor)\b/.test(normalized) ? "smaller" : undefined,
       dosageMg: dosageInfo.mg,
       formGroup: formGroup === "outro" ? undefined : formGroup,
       quantity,
@@ -268,7 +276,8 @@ export class CommercialMedicineSelector {
     const substanceName = this.normalize(product.substance?.name || "");
     const brands = this.brandByMedicine[canonical] || [];
     const requestedName = this.parseMedicineQuery(query).medicineName || canonical;
-    const exactName = this.hasWordOrPhrase(productName, requestedName);
+    const exactName = this.hasWordOrPhrase(productName, requestedName) ||
+      this.hasAllNameWords(productName, requestedName);
     const explicitBrandVariant = exactName && brands.some((brand) =>
       requestedName !== brand && this.hasWordOrPhrase(requestedName, brand),
     );
@@ -398,6 +407,8 @@ export class CommercialMedicineSelector {
   }
 
   private getPresentationGroupFromText(text: string) {
+    if (/\b(?:colirios?|oftalmic[ao])\b/.test(text) && !/\b(?:pomada|creme|gel)\b/.test(text)) return "oftalmico";
+    if (/\binjetave(?:l|is)\b/.test(text)) return "injetavel";
     if (/\bcomprim|\bcp\b|\bcom\b(?!\s+\d)/.test(text)) return "comprimido";
     if (/\bcaps|\bcap\b/.test(text)) return "capsula";
     if (
@@ -418,7 +429,7 @@ export class CommercialMedicineSelector {
     if (/\bcreme\b/.test(text)) return "creme";
     if (/\bgel\b/.test(text)) return "gel";
     if (/\bspray\b/.test(text)) return "spray";
-    if (/\bpastilha\b/.test(text)) return "pastilha";
+    if (/\bpastilhas?\b/.test(text)) return "pastilha";
     if (/\bdrageas?\b|\bdrg\b/.test(text)) return "dragea";
 
     return "outro";
@@ -465,6 +476,14 @@ export class CommercialMedicineSelector {
     const scored = [...deduped.values()]
       .map((option) => this.scoreRankedOption(medicineName, option, priorityRules))
       .sort((a, b) => b.score - a.score);
+    if (parsedQuery.sizePreference) {
+      const measure = scored.some(item => item.option.packageInfo?.volumeMl) ? "volumeMl" : "unitCount";
+      scored.sort((a, b) => {
+        const left = a.option.packageInfo?.[measure], right = b.option.packageInfo?.[measure];
+        if (!left || !right) return Number(Boolean(right)) - Number(Boolean(left)) || b.score - a.score;
+        return (parsedQuery.sizePreference === "larger" ? right - left : left - right) || b.score - a.score;
+      });
+    }
     const ranked = scored.map((item) => item.option);
 
     if (!ranked.length) {
@@ -475,13 +494,13 @@ export class CommercialMedicineSelector {
     const selectedScored =
       parsedQuery.dosage !== undefined ||
       parsedQuery.formGroup ||
-      parsedQuery.packageQuantity !== undefined
+      parsedQuery.packageQuantity !== undefined || parsedQuery.volumeMl !== undefined
         ? this.selectRequestedQueryOptions(
             requestedScored,
             parsedQuery,
             priorityRules,
           )
-        : this.selectBalancedOptions(scored, priorityRules);
+        : this.selectBalancedOptions(scored, parsedQuery.sizePreference ? [] : priorityRules);
 
     return {
       selected: selectedScored.map(
@@ -536,6 +555,10 @@ export class CommercialMedicineSelector {
       );
 
       filtered = quantityMatches;
+    }
+
+    if (parsedQuery.volumeMl !== undefined) {
+      filtered = filtered.filter((item) => item.option.packageInfo?.volumeMl === parsedQuery.volumeMl);
     }
 
     return filtered;
@@ -1015,17 +1038,10 @@ export class CommercialMedicineSelector {
       return false;
     }
 
-    const sameCommercialName = sameSignature.some(
-      (picked) =>
-        this.normalize(picked.option.productName) ===
-        this.normalize(item.option.productName),
-    );
-
-    if (sameCommercialName) {
-      return true;
-    }
-
-    return sameSignature.length >= 2;
+    // Unknown attributes cannot establish that two distinct products are equal.
+    return Boolean(item.option.strength && item.option.formGroup !== "outro" &&
+      (item.option.packageInfo?.unitCount || item.option.packageInfo?.volumeMl)) ||
+      sameSignature.some((picked) => this.normalize(picked.option.productName) === this.normalize(item.option.productName));
   }
 
   private unitPrice(option: SelectorOption) {
@@ -1480,6 +1496,13 @@ export class CommercialMedicineSelector {
     return new RegExp(`(^|\\b)${escaped}(\\b|$)`).test(text);
   }
 
+  private hasAllNameWords(productName: string, requestedName: string) {
+    // Catalog titles can insert a manufacturer or reorder words. Require every
+    // complete name token in the title, never combine unrelated metadata fields.
+    const words = [...new Set(this.normalize(requestedName).match(/[a-z0-9]+/g) || [])];
+    return words.length > 1 && words.every((word) => this.hasWordOrPhrase(productName, word));
+  }
+
   private hasConflictingKnownMedicine(canonical: string, productText: string) {
     return Object.keys(COMMERCIAL_MEDICINES)
       .filter((medicine) => medicine !== canonical)
@@ -1560,7 +1583,10 @@ export class CommercialMedicineSelector {
     return value
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+      .toLowerCase()
+      .replace(/\belexir\b/g, "elixir")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 }
 

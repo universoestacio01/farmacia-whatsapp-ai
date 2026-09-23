@@ -9,13 +9,14 @@ import { PharmaDbAuthService } from "./pharmadb-auth.service";
 import { backupEnabled, PHARMADB_BASE_URL } from "../config/medicine-backups.config";
 import { sanitizeEnv } from "../config/env-sanitize";
 import { extractMedicineStrengths, removeMedicineStrengths } from "../utils/medicine-strength.util";
+import { providerFailure } from "../utils/provider-failure.util";
 
 interface CacheEntry {
   expiresAt: number;
   value: BackupResult;
 }
 interface SearchBudget { deadline: number; requests: number; }
-interface BackupResult { options: NormalizedMedicineOption[]; status: "ok" | "incomplete" | "unavailable" | "disabled"; }
+interface BackupResult { options: NormalizedMedicineOption[]; status: "ok" | "incomplete" | "unavailable" | "disabled"; failureReason?: string; statusCode?: number; }
 
 @Injectable()
 export class PharmaDbService implements MedicineProvider {
@@ -52,7 +53,7 @@ export class PharmaDbService implements MedicineProvider {
 
     if (this.isTemporarilyUnavailable()) {
       this.logger.warn("PharmaDB temporariamente indisponível, pulando chamada");
-      return { options: [], status: "unavailable" };
+      return { options: [], status: "unavailable", failureReason: "provider_cooldown" };
     }
 
     const normalizedQuery =
@@ -96,7 +97,7 @@ export class PharmaDbService implements MedicineProvider {
         }`,
       );
       this.markTemporarilyUnavailable(error);
-      return { options: [], status: "unavailable" };
+      return { options: [], status: "unavailable", ...providerFailure(error) };
     }
   }
 
@@ -175,7 +176,8 @@ export class PharmaDbService implements MedicineProvider {
     const token = await this.authService.getAccessToken(retried);
 
     if (!token) {
-      throw new Error("PharmaDB token indisponível");
+      const status = this.authService.getFailureStatus?.();
+      throw new Error(status ? `PharmaDB auth HTTP ${status}` : "PharmaDB token indisponível");
     }
 
     const controller = new AbortController();

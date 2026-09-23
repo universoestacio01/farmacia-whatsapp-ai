@@ -1,0 +1,198 @@
+{
+  "at": "2026-09-23T14:29:33.842Z",
+  "requests": [
+    {
+      "term": "maxidex",
+      "http": 200,
+      "count": 2,
+      "names": [
+        "Maxidex Colírio 5ml",
+        "Maxidex Pomada 3.5g"
+      ]
+    },
+    {
+      "term": "metronidazol",
+      "http": 200,
+      "count": 11,
+      "names": [
+        "Metronidazol Metronidazol 250mg Com 20 Comprimido Teuto Generico",
+        "Metronidazol Prati 50g Gel 100mg",
+        "Metronidazol Prati Com 20 Comprimidos 250mg",
+        "Metronidazol +nistatina Creme Vaginal 50g Geolab Generico"
+      ]
+    },
+    {
+      "term": "ozivy",
+      "http": 200,
+      "count": 3,
+      "names": [
+        "Ozivy Semaglutida 1mg 1 Caneta 3,0ml + 4 Agulhas Ems",
+        "Ozivy Semaglutida 0,25/0,5mg 1 Caneta 1,5ml + 6 Agulhas Ems",
+        "Ozivy Semaglutida 1mg 2 Canetas 3ml Cada + 8 Agulhas Ems"
+      ]
+    },
+    {
+      "term": "amoxicilina clavulanato",
+      "http": 200,
+      "count": 23,
+      "names": [
+        "Amoxicilina+clavulanato De Potassio Ranbaxy Com 20 Comprimidos  Revestidos 875+125mg",
+        "Amoxicilina+clavulanato Ranbaxy Com 14 Comprimidos Revestidos 875+125mg  Generico",
+        "Amoxicilina + Clavulanato Sandoz 250mg/5ml 75ml",
+        "Amoxicilina + Clavulanato Ems 70ml 400/57mg"
+      ]
+    },
+    {
+      "term": "olina",
+      "http": 200,
+      "count": 28,
+      "names": [
+        "Olina 60ml",
+        "Olina 100ml",
+        "Olina 15ml Flaconete Solucao Oral 0,18ml+4mg/ml",
+        "Apresolina Com 60 Drageas 50mg"
+      ]
+    },
+    {
+      "term": "tadalafila",
+      "http": 200,
+      "count": 13,
+      "names": [
+        "Tadalafila Eurofarma 20mg Com 4 Comprimidos",
+        "Tadalafila Medley 20mg Com 4 Comprimidos",
+        "Tadalafila Prati 20mg Com 4 Comprimidos",
+        "Tadalafila Prati 20mg Com 2 Comprimidos"
+      ]
+    },
+    {
+      "term": "absorvente sempre livre com 16 unidade",
+      "http": 200,
+      "count": 24,
+      "names": [
+        "Absorvente Interno O.b. Sempre Livre Super 16 Unidades",
+        "Absorvente Sempre Livre Conforto Noturno Suave Com Abas 16 Unidades",
+        "Absorvente Interno O.b. Sempre Livre Médio 16 Unidades",
+        "Absorvente Sempre Livre Conforto Diurno Cobertura Suave Com Abas 16  Unidades"
+      ]
+    },
+    {
+      "term": "absorvente sempre livre",
+      "http": 200,
+      "count": 14,
+      "names": [
+        "Absorvente Sempre Livre Adapt Suave Sem Abas 8 Unidades",
+        "Absorvente Sempre Livre Conforto Noturno Seca Com Abas 8 Unidades",
+        "Absorvente Sempre Livre Conforto Noturno Suave Com Abas 16 Unidades",
+        "Absorvente Sempre Livre Adapt Cobertura Suave Com Abas 8 Unidades"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "query": "Colirio maxidex",
+      "status": "found",
+      "selected": [
+        {
+          "name": "Maxidex Colírio 5ml",
+          "price": 9.99,
+          "form": "oftalmico"
+        }
+      ]
+    },
+    {
+      "query": "Metronidazol (pomada)",
+      "status": "presentation_not_found",
+      "selected": []
+    },
+    {
+      "query": "Ozivy 1mg solucao injetavel",
+      "status": "attributes_unverified",
+      "selected": []
+    },
+    {
+      "query": "Amoxicilina com clavulanato 875mg",
+      "status": "presentation_not_found",
+      "selected": []
+    },
+    {
+      "query": "Olina grande",
+      "status": "found",
+      "selected": [
+        {
+          "name": "Olina 15ml Flaconete Solução Oral 0,18ml+4mg/ml",
+          "price": 4.9,
+          "strength": "4mg/ml",
+          "form": "solucao oral"
+        },
+        {
+          "name": "Olina 60ml",
+          "price": 25.9,
+          "form": "outro"
+        },
+        {
+          "name": "Olina 100ml",
+          "price": 35.9,
+          "form": "outro"
+        }
+      ]
+    },
+    {
+      "query": "Tadalafila 20ml",
+      "status": "presentation_not_found",
+      "selected": []
+    },
+    {
+      "query": "Absorvente sempre livre com16 unidades",
+      "status": "ok",
+      "selected": [
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Super 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Médio 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Sempre Livre Conforto Noturno Suave com Abas 16 Unidades",
+          "price": 21.9,
+          "form": "produto"
+        }
+      ]
+    },
+    {
+      "query": "Absorventes sempre livres",
+      "status": "ok",
+      "selected": [
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Super 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Médio 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Sempre Livre Adapt Suave Sem Abas 8 Unidades",
+          "price": 7.25,
+          "form": "produto"
+        }
+      ]
+    }
+  ],
+  "backups": [
+    {
+      "provider": "pharmadb",
+      "authenticated": false,
+      "status": 401
+    },
+    {
+      "provider": "bulapi",
+      "status": 502
+    }
+  ]
+}

@@ -32,6 +32,7 @@ import { PackageImageReading, packageImageSchema } from "../ai/package-image.typ
 import { extractMedicineStrengths, medicineStrengthMatches } from "../utils/medicine-strength.util";
 import { catalogQuarantineReason } from "../config/catalog-quality.config";
 import { explicitRetailCategories, isGenericRetailCategoryQuery, normalizeRetailSearchQuery } from "../utils/retail-search-query.util";
+import { foldCustomerQuery, hasMultipleProductRequests, namedQueryBeforeSymptom } from "../utils/customer-query.util";
 
 interface CartItem {
   pricePolicy?: string;
@@ -103,6 +104,22 @@ export class ConversationEngineService {
 
     if (openingIntent === "start_order") {
       return this.handleOrderOpening(conversation);
+    }
+
+    const plain = foldCustomerQuery(text).replace(/[?!.]/g, "").trim();
+    if (/\b(?:entrega|entregam|delivery|pedido minimo|valor minimo|minimo do pedido)\b/.test(plain) &&
+        /^(?:voces|vcs|qual|a partir|entrega|entregam|fazem|tem delivery|pedido minimo)/.test(plain)) {
+      return "Para confirmar a disponibilidade de entrega e o valor mínimo na sua região, é necessária a conferência da equipe. Podemos continuar montando seu pedido: qual produto você precisa?";
+    }
+    if (/^(?:vc|vcs|voce|voces)?\s*(?:tem|tem esse|tem essa)?\s*(?:esse|essa|este|esta)?\s*(?:remedio|medicamento|produto)$/.test(plain) ||
+        /^(?:serio|drogaria|oie|oii+|qual opcao|qual opcao 👆|nao tem dessa|nao tem desse)$/.test(plain)) {
+      return "Pode me dizer o nome do produto e a apresentação que procura? Assim consulto a opção certa para você.";
+    }
+    if (/^(?:tem\s+|quero\s+)?(?:colirio|injetavel|pomada)$/.test(plain)) {
+      return "Qual é o nome do medicamento que você procura? Pode escrever como aparece na embalagem para eu consultar a apresentação certa.";
+    }
+    if (/\b(?:modificar|alterar|editar)\s+(?:o |meu )?pedido\b/.test(plain)) {
+      return `${this.formatCartStatus(conversation)}\n\nVocê pode pedir para remover um item, adicionar outro produto ou cancelar o pedido.`;
     }
 
     const medicineQuestion = this.bulaApiService.detectMedicineQuestion(text);
@@ -186,6 +203,23 @@ export class ConversationEngineService {
     // A short answer to a retail question is not a new medicine search.
     if (this.isRetailClarificationReply(conversation, text)) {
       return this.handleWaitingRetailBrand(conversation, text);
+    }
+
+    if (conversation.pendingAction === ConversationState.WAITING_QUANTITY && this.inputService.isQuantityReply(text)) {
+      return this.handleWaitingQuantity(conversation, text);
+    }
+    if (/^(?:\d+\s+)?(?:desse|dessa|desses|dessas|esse|essa|sim|ok)$/.test(plain) &&
+        [ConversationState.IDLE, ConversationState.WAITING_MEDICINE_NAME].includes(conversation.pendingAction as "IDLE" | "WAITING_MEDICINE_NAME")) {
+      return "Qual é o nome do produto a que você se refere? Pode escrever o nome e a apresentação para eu continuar.";
+    }
+    if (hasMultipleProductRequests(text)) {
+      return "Recebi mais de um item. Vamos começar por qual produto? Envie o nome e a apresentação de um por vez para não misturarmos as dosagens. Seu carrinho será mantido.";
+    }
+    const formReply = plain.match(/^(?:(?:sim|so|que|o|e|tem|quero|preciso|prefiro|mas|seria)\s+)*(?:em|de)\s+(gotas|pomada|creme|gel|comprimidos?|capsulas?|xarope)(?:\s+que\s+preciso)?$/);
+    const baseName = conversation.currentMedicineQuery || conversation.lastMedicine;
+    if (formReply && baseName) {
+      return this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: baseName,
+        searchQuery: `${this.bulaApiService.normalizeMedicineName(baseName) || baseName} ${formReply[1]}` });
     }
 
     if (
@@ -322,10 +356,11 @@ export class ConversationEngineService {
       data: { lastIntent: null, candidateOptions: Prisma.JsonNull },
     });
     if (!query || no) return "Claro. Escreva o nome e a dosagem como aparecem na embalagem.";
+    const correctedForm = this.normalize(text).match(/\bem\s+(gotas|pomada|creme|gel|comprimidos?|capsulas?|xarope)\b/);
     // OCR data is only a search term, never a cart choice or a payment instruction.
     return this.resolveReply(
       { ...conversation, lastIntent: null, candidateOptions: null },
-      yes ? `Quero comprar ${query}` : text,
+      yes ? `Quero comprar ${query}` : correctedForm ? `${this.bulaApiService.normalizeMedicineName(query) || query} ${correctedForm[1]}` : text,
     );
   }
 
@@ -352,6 +387,8 @@ export class ConversationEngineService {
 
     const symptomSuggestion = this.medicineSearch.findSymptomSuggestion(text);
 
+    const namedQuery = symptomSuggestion && namedQueryBeforeSymptom(text, symptomSuggestion);
+    if (namedQuery) return this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: namedQuery, searchQuery: namedQuery });
     if (symptomSuggestion) {
       return this.handleSymptomMedicineQuestion(conversation, symptomSuggestion);
     }
@@ -374,6 +411,8 @@ export class ConversationEngineService {
   ) {
     const symptomSuggestion = this.medicineSearch.findSymptomSuggestion(text);
 
+    const namedQuery = symptomSuggestion && namedQueryBeforeSymptom(text, symptomSuggestion);
+    if (namedQuery) return this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: namedQuery, searchQuery: namedQuery });
     if (symptomSuggestion) {
       return this.handleSymptomMedicineQuestion(conversation, symptomSuggestion);
     }
@@ -398,6 +437,7 @@ export class ConversationEngineService {
   private isRetailClarificationReply(conversation: Conversation, text: string) {
     if (conversation.pendingAction !== ConversationState.WAITING_RETAIL_BRAND || !conversation.currentRetailCategory) return false;
     const reply = normalizeRetailSearchQuery(text);
+    if (conversation.lastIntent === "WAITING_DIAPER_AUDIENCE") return /^(?:infantil|bebe|crianca|adulto|geriatrica)$/.test(reply);
     const brands = (this.productSearch.getPopularBrands(conversation.currentRetailCategory) || []).map(normalizeRetailSearchQuery);
     const withoutBrand = brands.reduce((value, brand) => {
       if (value.startsWith(`${brand} `)) return value.slice(brand.length).trim();
@@ -419,6 +459,13 @@ export class ConversationEngineService {
       });
 
       return "Me diga qual produto você quer consultar.";
+    }
+    if (conversation.lastIntent === "WAITING_DIAPER_AUDIENCE") {
+      const audience = foldCustomerQuery(text);
+      if (!/^(?:infantil|bebe|crianca|adulto|geriatrica)$/.test(audience)) return "A fralda é infantil ou para adulto?";
+      return this.handleRetailProductQuestion(conversation.id,
+        `${conversation.currentMedicineQuery || "fralda"} ${/adulto|geriatrica/.test(audience) ? "adulto" : "infantil"}`,
+        { category: "fralda", selectedBrand: "público confirmado" });
     }
 
     if (
@@ -585,6 +632,11 @@ export class ConversationEngineService {
         data: { pendingAction: ConversationState.WAITING_MEDICINE_NAME },
       });
       return "Não encontrei a opção selecionada. Me diga qual produto você quer adicionar.";
+    }
+
+    const requestedPack = this.inputService.packageCountInQuantity(text);
+    if (requestedPack !== undefined && selectedOption.packageInfo?.unitCount !== requestedPack) {
+      return "A quantidade por embalagem que você informou não está confirmada para a opção selecionada. Pode conferir a apresentação antes de adicionarmos ao carrinho?";
     }
 
     const cart = this.getCart(conversation.cart);
@@ -1273,6 +1325,15 @@ export class ConversationEngineService {
       });
 
       return "Claro. Qual FPS você prefere? Pode responder 30, 50, 60 ou 70.";
+    }
+
+    if (effectiveCategory === "fralda" && !/\b(?:infantil|bebe|crianca|adulto|geriatrica|pampers|huggies|pompom|pom pom|mamypoko|mamy poko)\b/.test(foldCustomerQuery(productQuery))) {
+      await this.prisma.conversation.update({ where: { id: conversationId }, data: {
+        lastIntent: "WAITING_DIAPER_AUDIENCE", pendingAction: ConversationState.WAITING_RETAIL_BRAND,
+        currentMedicineQuery: productQuery, currentRetailCategory: "fralda",
+        selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull,
+      } });
+      return "A fralda é infantil ou para adulto?";
     }
 
     if (

@@ -7,6 +7,7 @@ import {
 import { sanitizeEnv } from "../config/env-sanitize";
 import { CommercialMedicineSelector } from "./commercial-medicine-selector";
 import { NormalizedMedicineOption } from "./medicine-provider.interface";
+import { providerFailure } from "../utils/provider-failure.util";
 import {
   medicineStrengthMatches,
   medicineStrengthSignature,
@@ -15,6 +16,8 @@ import {
 
 type Row = Record<string, unknown>;
 interface Result {
+  failureReason?: string;
+  statusCode?: number;
   options: NormalizedMedicineOption[];
   status: "ok" | "incomplete" | "unavailable" | "disabled";
 }
@@ -50,7 +53,7 @@ export class BulapiCatalogService {
     const cached = this.cache.get(query);
     if (cached && cached.expires > Date.now()) return cached.result;
     if (Date.now() < this.unavailableUntil)
-      return { options: [], status: "unavailable" };
+      return { options: [], status: "unavailable", failureReason: "provider_cooldown" };
     if (this.pending.has(query)) return this.pending.get(query)!;
     const request = this.searchCatalog(term, query)
       .then((result) => {
@@ -217,7 +220,7 @@ export class BulapiCatalogService {
           reason,
         }),
       );
-      return { options: [], status: "unavailable" };
+      return { options: [], status: "unavailable", ...providerFailure(error) };
     }
   }
 

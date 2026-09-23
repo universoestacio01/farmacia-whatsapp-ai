@@ -1,0 +1,73 @@
+{
+  "at": "2026-09-23T14:34:36.173Z",
+  "requests": [
+    {
+      "term": "olina",
+      "http": 200,
+      "count": 28,
+      "names": [
+        "Olina 60ml",
+        "Olina 100ml",
+        "Olina 15ml Flaconete Solucao Oral 0,18ml+4mg/ml",
+        "Apresolina Com 60 Drageas 50mg"
+      ]
+    },
+    {
+      "term": "absorvente sempre livre",
+      "http": 200,
+      "count": 14,
+      "names": [
+        "Absorvente Sempre Livre Adapt Suave Sem Abas 8 Unidades",
+        "Absorvente Sempre Livre Conforto Noturno Seca Com Abas 8 Unidades",
+        "Absorvente Sempre Livre Conforto Noturno Suave Com Abas 16 Unidades",
+        "Absorvente Sempre Livre Adapt Cobertura Suave Com Abas 8 Unidades"
+      ]
+    }
+  ],
+  "results": [
+    {
+      "query": "Olina grande",
+      "status": "found",
+      "selected": [
+        {
+          "name": "Olina 100ml",
+          "price": 35.9,
+          "form": "outro"
+        },
+        {
+          "name": "Olina 15ml Flaconete Solução Oral 0,18ml+4mg/ml",
+          "price": 4.9,
+          "strength": "4mg/ml",
+          "form": "solucao oral"
+        },
+        {
+          "name": "Olina 60ml",
+          "price": 25.9,
+          "form": "outro"
+        }
+      ]
+    },
+    {
+      "query": "Absorventes sempre livres",
+      "status": "ok",
+      "selected": [
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Super 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Interno O.b. Sempre Livre Médio 16 Unidades",
+          "price": 23.99,
+          "form": "produto"
+        },
+        {
+          "name": "Absorvente Sempre Livre Adapt Suave Sem Abas 8 Unidades",
+          "price": 7.25,
+          "form": "produto"
+        }
+      ]
+    }
+  ],
+  "backups": []
+}

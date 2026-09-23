@@ -214,6 +214,8 @@ export class ProductSearchOrchestratorService {
     if (context.requestedBrand && text.includes(this.normalize(context.requestedBrand))) {
       score += 40;
     }
+    // A commercial brand field is stronger evidence than an incidental title mention.
+    if (context.requestedBrand && this.normalize(product.brand || "") === this.normalize(context.requestedBrand)) score += 80;
 
     if (context.category && this.matchesCategory(text, context.category)) {
       score += 25;

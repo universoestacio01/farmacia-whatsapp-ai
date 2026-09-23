@@ -1,0 +1,153 @@
+{
+  "startedAt": "2026-09-23T14:02:41.321Z",
+  "context": "local production classes, no production logs or database",
+  "requests": [
+    {
+      "query": "elixir paregorico",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=elixir%20paregorico&_from=0&_to=49",
+      "status": 200,
+      "durationMs": 567
+    },
+    {
+      "query": "paregorico",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=paregorico&_from=0&_to=49",
+      "status": 200,
+      "durationMs": 280
+    },
+    {
+      "query": "dipirona",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=dipirona&_from=0&_to=49",
+      "status": 206,
+      "durationMs": 2306
+    },
+    {
+      "query": "dipirona",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=dipirona&_from=50&_to=99",
+      "status": 200,
+      "durationMs": 3074
+    },
+    {
+      "query": "novalgina",
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=novalgina&_from=0&_to=49",
+      "status": 200,
+      "durationMs": 681
+    }
+  ],
+  "queries": [
+    {
+      "query": "Elexir paregórico",
+      "parsedName": "elixir paregorico",
+      "status": "found",
+      "calls": 1,
+      "selected": [
+        {
+          "name": "Paregórico Catarinense Elixir 30ml",
+          "price": 24.12,
+          "ean": "7896023701436",
+          "source": "preco_popular"
+        }
+      ]
+    },
+    {
+      "query": "Elixir paregórico",
+      "parsedName": "elixir paregorico",
+      "status": "found",
+      "calls": 0,
+      "selected": [
+        {
+          "name": "Paregórico Catarinense Elixir 30ml",
+          "price": 24.12,
+          "ean": "7896023701436",
+          "source": "preco_popular"
+        }
+      ]
+    },
+    {
+      "query": "Tem elexir paregórico?",
+      "parsedName": "elixir paregorico",
+      "status": "found",
+      "calls": 0,
+      "selected": [
+        {
+          "name": "Paregórico Catarinense Elixir 30ml",
+          "price": 24.12,
+          "ean": "7896023701436",
+          "source": "preco_popular"
+        }
+      ]
+    },
+    {
+      "query": "Paregórico",
+      "parsedName": "paregorico",
+      "status": "found",
+      "calls": 1,
+      "selected": [
+        {
+          "name": "Paregórico Catarinense Elixir 30ml",
+          "price": 24.12,
+          "ean": "7896023701436",
+          "source": "preco_popular"
+        }
+      ]
+    },
+    {
+      "query": "dipirona",
+      "parsedName": "dipirona",
+      "status": "found",
+      "calls": 2,
+      "selected": [
+        {
+          "name": "Novalgina Dipirona 500mg 10 comprimidos",
+          "price": 15.75,
+          "ean": "7891058008642",
+          "dosage": "500mg",
+          "source": "preco_popular"
+        },
+        {
+          "name": "Novalgina Infantil Dipirona 500mg/ml Gotas 10ml",
+          "price": 15.75,
+          "ean": "7891058000172",
+          "dosage": "500mg/ml",
+          "source": "preco_popular"
+        },
+        {
+          "name": "Novalgina Dipirona 1g 10 comprimidos",
+          "price": 21.9,
+          "ean": "7891058001155",
+          "dosage": "1g",
+          "source": "preco_popular"
+        }
+      ]
+    },
+    {
+      "query": "novalgina",
+      "parsedName": "novalgina",
+      "status": "found",
+      "calls": 1,
+      "selected": [
+        {
+          "name": "Novalgina Dipirona 500mg 10 comprimidos",
+          "price": 15.75,
+          "ean": "7891058008642",
+          "dosage": "500mg",
+          "source": "preco_popular"
+        },
+        {
+          "name": "Novalgina Infantil Dipirona 500mg/ml Gotas 10ml",
+          "price": 15.75,
+          "ean": "7891058000172",
+          "dosage": "500mg/ml",
+          "source": "preco_popular"
+        },
+        {
+          "name": "Novalgina Dipirona 1g 10 comprimidos",
+          "price": 21.9,
+          "ean": "7891058001155",
+          "dosage": "1g",
+          "source": "preco_popular"
+        }
+      ]
+    }
+  ],
+  "finishedAt": "2026-09-23T14:02:49.012Z"
+}
