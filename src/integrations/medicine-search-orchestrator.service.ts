@@ -50,7 +50,7 @@ export class MedicineSearchOrchestratorService {
       const result = await this.webMedicine.searchWithStatus(query);
       const selected = await this.selectNormalized(parsed, result.options);
       final = selected.length ? { medicineName: primary.medicineName, products: [], options: selected, searchStatus: "found" }
-        : { ...primary, searchStatus: primary.searchStatus === "presentation_not_found" ? "presentation_not_found" : result.status === "unverified" ? "offer_unavailable" : "backup_unavailable", failureReason: result.failureReason };
+        : { ...primary, searchStatus: primary.searchStatus === "presentation_not_found" ? "presentation_not_found" : result.status === "unverified" || result.status === "ok" ? "search_unverified" : "backup_unavailable", failureReason: result.failureReason || "web_results_not_matched" };
     } catch {
       final = { ...primary, searchStatus: "backup_unavailable", failureReason: "web_backup_unavailable" };
     }

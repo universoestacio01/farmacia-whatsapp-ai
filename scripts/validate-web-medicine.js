@@ -367,6 +367,55 @@ test("primary outage activates web backup and preserves source quote", async () 
   assert.equal(result.options[0].pricePolicy, WEB_MEDICINE_PRICE_POLICY);
   assert.equal(result.options[0].webQuote.sourceUrl, URL);
 });
+
+test("unverified web results never claim a product was found or is out of stock", async () => {
+  const { WhatsappCopy } = require("../dist/whatsapp/whatsapp-copy");
+  for (const status of ["ok", "unavailable"]) {
+    const service = new MedicineSearchOrchestratorService(selector, {},
+      { getRulesForPrinciple: async () => [] },
+      { isEnabled: () => true, searchMedicinesWithStatus: async () => ({ status, options: [] }) },
+      { isEnabled: () => true, searchWithStatus: async () => ({ status: "unverified", options: [], failureReason: "no_verified_public_offer" }) });
+    const result = await service.searchMedicine("neosulida");
+    assert.equal(result.searchStatus, "search_unverified");
+    assert.doesNotMatch(WhatsappCopy.catalogSearchProblem(result.searchStatus), /Encontrei o produto|não há uma oferta/);
+    assert.match(WhatsappCopy.catalogSearchProblem(result.searchStatus), /não significa.*em falta/);
+  }
+});
+
+test("Neosulida absent from primary survives fallback validation and final ranking", async () => {
+  const url = "https://drogasil.com.br/neosulida-100mg-12-comprimidos.html";
+  const webOptions = extractVerifiedWebOptions(html(product({ name: "Neosulida Nimesulida 100mg 12 comprimidos", url,
+    offers: offer({ price: "12.79" }) })), url, "neosulida", selector);
+  const service = new MedicineSearchOrchestratorService(selector, {},
+    { getRulesForPrinciple: async () => [] },
+    { isEnabled: () => true, searchMedicinesWithStatus: async () => ({ status: "ok", options: [] }) },
+    { isEnabled: () => true, searchWithStatus: async () => ({ status: "ok", options: webOptions }) });
+  const result = await service.searchMedicine("Tem neosulida?");
+  assert.equal(result.searchStatus, "found");
+  assert.equal(result.options[0].pricePf, 12.79);
+  assert.match(result.options[0].label, /Neosulida/);
+});
+
+test("unusable shortlist checks other retrieved sources without another OpenAI call", async (t) => {
+  const alternative = "https://drogasil.com.br/dipirona-1g-10-comprimidos.html";
+  const f = harness(t, {
+    api: () => new Response(JSON.stringify(discovery([URL], [URL, alternative]))),
+    page: (url) => new Response(url === alternative ? html(product({ url: alternative })) : "<html>No structured offer</html>",
+      { headers: { "content-type": "text/html" } }),
+  });
+  const result = await f.service.searchWithStatus("dipirona 1g");
+  assert.equal(result.status, "ok");
+  assert.equal(result.options[0].webQuote.sourceUrl, alternative);
+  assert.equal(f.calls.filter((c) => c.url.includes("api.openai.com")).length, 1);
+});
+
+test("extra retrieved pages remain bounded and cannot bypass product validation", async (t) => {
+  const sources = [URL, ...Array.from({ length: 20 }, (_, i) => `https://drogasil.com.br/other-${i}.html`)];
+  const f = harness(t, { api: () => new Response(JSON.stringify(discovery([URL], sources))),
+    page: (url) => new Response(html(product({ url, name: "Paracetamol 500mg 20 comprimidos" })), { headers: { "content-type": "text/html" } }) });
+  assert.equal((await f.service.searchWithStatus("dipirona")).status, "unverified");
+  assert.equal(f.calls.length, 4); // One discovery, one shortlisted page, two extra sources.
+});
 test("retired paid providers cannot make calls even with old enabled environment values", async (t) => {
   t.mock.method(global, "fetch", () =>
     assert.fail("Retired provider performed HTTP"),

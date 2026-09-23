@@ -139,7 +139,7 @@ for (const reason of ["no_price", "out_of_stock"]) test(`retail ${reason} is dif
     seller.commertialOffer[reason === "no_price" ? "Price" : "AvailableQuantity"] = 0;
   }
   const h = harness(t, { body });
-  assert.match(await h.send("Soro fisiologico"), /não há uma oferta disponível/);
+  assert.match(await h.send("Soro fisiologico"), /não consegui confirmar uma oferta com preço e disponibilidade/);
   assert.equal(h.conversation.selectedPresentation, null);
 });
 

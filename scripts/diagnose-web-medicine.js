@@ -34,7 +34,9 @@ async function run() {
   );
   if (!service.isEnabled())
     throw new Error("OPENAI_API_KEY is not configured locally.");
-  for (const query of [
+  const requestedQueries = process.argv.slice(2).filter((arg) => arg !== "--live");
+  if (requestedQueries.length > 2) throw new Error("At most two queries per run.");
+  for (const query of requestedQueries.length ? requestedQueries : [
     "dipirona 1g com 10 comprimidos",
     "paracetamol 750mg com 20 comprimidos",
   ]) {

@@ -32,6 +32,7 @@ import { PrecoPopularService } from "../integrations/preco-popular.service";
 import { PackageImageReading, packageImageSchema } from "../ai/package-image.types";
 import { extractMedicineStrengths, medicineStrengthMatches } from "../utils/medicine-strength.util";
 import { catalogQuarantineReason } from "../config/catalog-quality.config";
+import { medicineSpellingSuggestion } from "../config/medicine-spelling.config";
 import { explicitRetailCategories, isGenericRetailCategoryQuery, normalizeRetailSearchQuery } from "../utils/retail-search-query.util";
 import { foldCustomerQuery, hasMultipleProductRequests, namedQueryBeforeSymptom } from "../utils/customer-query.util";
 
@@ -193,6 +194,10 @@ export class ConversationEngineService {
     if (conversation.lastIntent === "WAITING_PACKAGE_IMAGE_CONFIRMATION" &&
         conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
       return this.handlePackageImageConfirmation(conversation, text);
+    }
+    if (conversation.lastIntent === "WAITING_MEDICINE_SPELLING_CONFIRMATION" &&
+        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
+      return this.handleMedicineSpellingConfirmation(conversation, text);
     }
 
     // Address answers must not become medicine/dosage queries (e.g. Rua 1 de Maio).
@@ -365,6 +370,22 @@ export class ConversationEngineService {
       { ...conversation, lastIntent: null, candidateOptions: null },
       yes ? `Quero comprar ${query}` : correctedForm ? `${this.bulaApiService.normalizeMedicineName(query) || query} ${correctedForm[1]}` : text,
     );
+  }
+
+  private async handleMedicineSpellingConfirmation(conversation: Conversation, text: string): Promise<string | string[]> {
+    const stored = conversation.candidateOptions;
+    const query = stored && typeof stored === "object" && !Array.isArray(stored) &&
+      typeof stored.spellingQuery === "string" ? stored.spellingQuery : null;
+    const yes = /^(1|sim|isso|isso mesmo|correto|confirmo|ok)[.!?]*$/.test(this.normalize(text).trim());
+    const no = /^(2|nao)[.!?]*$/.test(this.normalize(text).trim());
+    if (query && !yes && !no && /^\d+$/.test(text.trim())) {
+      return "Confirme o nome: 1 para sim ou 2 para não. Se preferir, escreva o nome correto da embalagem.";
+    }
+    await this.prisma.conversation.update({ where: { id: conversation.id },
+      data: { lastIntent: null, candidateOptions: Prisma.JsonNull } });
+    if (!query || no) return "Tudo bem. Escreva o nome como aparece na embalagem. Não vou trocar por outro medicamento.";
+    return this.resolveReply({ ...conversation, lastIntent: null, candidateOptions: null },
+      yes ? `Quero comprar ${query}` : text);
   }
 
   private async handleIdle(
@@ -1183,6 +1204,17 @@ export class ConversationEngineService {
       this.bulaApiService.normalizeMedicineName(question.medicineName) ||
       question.medicineName;
     const searchQuery = question.searchQuery || medicineName;
+    const spelling = medicineSpellingSuggestion(medicineName);
+    if (spelling) {
+      const spellingQuery = searchQuery.replace(new RegExp(`\\b${medicineName}\\b`, "i"), spelling);
+      await this.prisma.conversation.update({ where: { id: conversationId }, data: {
+        lastIntent: "WAITING_MEDICINE_SPELLING_CONFIRMATION",
+        pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        currentMedicineQuery: null, currentRetailCategory: null, lastMedicine: null,
+        selectedPresentation: Prisma.JsonNull, candidateOptions: this.toJson({ spellingQuery }),
+      } });
+      return `Você quis dizer ${spelling}? Confirme o nome para eu consultar sem trocar o medicamento por engano.\n\n1. Sim\n2. Não, vou escrever o nome da embalagem`;
+    }
     this.logger.log(`Nova busca de medicamento: ${medicineName}`);
 
     await this.prisma.conversation.update({

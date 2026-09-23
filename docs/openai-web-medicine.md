@@ -4,7 +4,7 @@
 
 Preco Popular continua principal, sem desconto adicional. Apenas sem oferta correspondente ou com falha da principal entra OpenAI Web Search (Responses API, gpt-5-mini). Nao ha chamadas PharmaDB, BulAPI ou Cosmos. Adaptadores antigos nao sao registrados no modulo e a habilitacao/autenticacao antiga permanece bloqueada. Cancelamento de assinatura externa nao e realizado pelo codigo.
 
-A IA descobre ate quatro URLs de produtos; nao fornece o preco cobrado. As URLs precisam constar entre as fontes efetivamente consultadas, usar HTTPS e pertencer a Preco Popular, Droga Raia, Drogasil, Drogaria Sao Paulo ou Drogarias Pacheco. Apenas paginas /p ou .html sao aceitas. Nao ha contorno de captcha/bloqueio nem execucao do JavaScript dessas paginas.
+A IA descobre ate quatro URLs de produtos; nao fornece o preco cobrado. Se nenhuma delas tiver oferta verificavel, o sistema confere ate duas outras fontes da mesma pesquisa, priorizando outro dominio e sem nova chamada paga. As URLs precisam constar entre as fontes efetivamente consultadas, usar HTTPS e pertencer a Preco Popular, Droga Raia, Drogasil, Drogaria Sao Paulo ou Drogarias Pacheco. Apenas paginas /p ou .html sao aceitas. Nao ha contorno de captcha/bloqueio nem execucao do JavaScript dessas paginas.
 
 O parser HTML parse5 extrai dados Product/Offer JSON-LD. Regra de venda: 100% do preco publico BRL de uma embalagem, em centavos, sem margem ou desconto adicional. Sem PF/PMC estimado. Exige nome correspondente, marca explicita preservada, dosagem equivalente quando pedida, forma, quantidade/volume, disponibilidade InStock e oferta nao vencida. Oferta agregada so vale quando contem oferta concreta verificavel; lowPrice sozinho nao vale. Precos divergentes, condicionais (CPF/cupom/clube/convenio/quantidade), parcelados ou incompletos sao rejeitados.
 
@@ -40,6 +40,16 @@ Em 23/09/2026, validacao real final encontrou:
 Valores observados naquele instante, nao fixtures usadas para vender. A busca levou aproximadamente 18-20 segundos por termo. Houve duas solicitacoes rejeitadas antes das buscas por incompatibilidade de filtros com gpt-4.1-mini; o modelo padrao foi corrigido para gpt-5-mini. Foram quatro descobertas bem-sucedidas em HTTP 200 durante desenvolvimento (duas antes de corrigir formatos de ofertas, duas depois), alem das duas rejeitadas.
 
 Nem toda pagina publica dados estruturados suficientes; nesses casos nao existe oferta utilizavel mesmo com HTTP 200. A reserva nao promete cobertura total nem disponibilidade local. Higiene e produtos encaminhados ao fluxo de varejo continuam somente no Preco Popular. Nao houve publicacao em producao.
+
+### Correcao do atendimento das 12h43 (23/09/2026)
+
+Leitura somente dos logs de producao confirmou: Neosulida teve zero resultados na principal, HTTP 403 em Drogasil/Raia e HTTP 200 sem oferta verificavel em Pacheco/Sao Paulo. Para a grafia `dramim`, a principal retornou zero e quatro paginas da reserva responderam 403. Isso havia sido indevidamente mapeado para `offer_unavailable`, com a afirmacao "Encontrei o produto". Agora a reserva sem validacao retorna `search_unverified`, sem afirmar estoque, existencia ou preco.
+
+Grafias curadas `dramim` e `dranim` pedem confirmacao de Dramin antes de consultar. Nao sao aliases automaticos; negar a sugestao ou informar outro nome preserva o carrinho. Neosulida nao e corrigida para nimesulida.
+
+Nova validacao local real encontrou Neosulida 100mg/12 comprimidos a R$ 12,79 em Drogasil e R$ 12,99 em Raia. A principal retornou Dramin com ofertas a partir de R$ 20,50 naquele instante. Isso nao demonstra acessibilidade dessas paginas a partir da Hostinger: o 403 externo pode persistir. Quando nenhuma fonte puder ser validada, a cobranca continua bloqueada. Nao foram alterados dados nem pedidos de producao. Nesta investigacao foram feitas duas descobertas OpenAI, alem de consultas publicas sem OpenAI.
+
+Verificacao apos a correcao: build e 573 testes automatizados passaram. O script `diagnose-web-medicine.js --live neosulida dranim` aceita ate dois termos opcionais e nao escreve no banco nem envia WhatsApp.
 
 ## Publicacao
 

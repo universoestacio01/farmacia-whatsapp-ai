@@ -134,6 +134,49 @@ const openings = [
   "Gostaria de fazer um pedido pelo WhatsApp",
 ];
 
+test("dranim requires confirmation before any medicine lookup; preserves dosage and cart", async () => {
+  const f = createFixture();
+  const reply = await f.send("Tem dranim de 50mg?");
+  assert.match(reply, /Você quis dizer Dramin/);
+  assert.equal(f.queries.medicines.length, 0);
+  assert.equal(f.conversation.lastIntent, "WAITING_MEDICINE_SPELLING_CONFIRMATION");
+  assert.match(await f.send("3"), /Confirme o nome/);
+  assert.equal(f.queries.medicines.length, 0);
+  await f.send("sim");
+  assert.equal(f.queries.medicines.length, 1);
+  assert.match(f.queries.medicines[0].toLowerCase(), /dramin.*50\s?mg/);
+  assert.equal(f.conversation.cart.length, 0);
+});
+
+test("declining a spelling suggestion does not search or substitute", async () => {
+  const f = createFixture();
+  await f.send("Tem dranim?");
+  assert.match(await f.send("2"), /Não vou trocar/);
+  assert.equal(f.queries.medicines.length, 0);
+  assert.equal(f.conversation.candidateOptions, null);
+  await f.send("Tem neosulida?");
+  assert.match(f.queries.medicines[0], /neosulida/i);
+});
+
+test("actual production spelling dramim asks confirmation and avoids wasted fallback calls", async () => {
+  const f = createFixture();
+  assert.match(await f.send("Tem dramim?"), /Você quis dizer Dramin/);
+  assert.equal(f.queries.medicines.length, 0);
+  await f.send("1");
+  assert.match(f.queries.medicines[0], /dramin/i);
+});
+
+test("new product overrides pending spelling confirmation; exact Dramin needs no correction", async () => {
+  const f = createFixture();
+  await f.send("dranim");
+  await f.send("dipirona 1g");
+  assert.match(f.queries.medicines[0], /dipirona/);
+  const other = createFixture();
+  await other.send("Tem Dramin?");
+  assert.equal(other.queries.medicines.length, 1);
+  assert.notEqual(other.conversation.lastIntent, "WAITING_MEDICINE_SPELLING_CONFIRMATION");
+});
+
 for (const text of openings) {
   test(`opening without product asks for an item without any lookup: ${text}`, async () => {
     assert.equal(getConversationOpeningIntent(text), "start_order");

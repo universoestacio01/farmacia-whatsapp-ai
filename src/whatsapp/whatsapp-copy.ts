@@ -300,6 +300,9 @@ export const WhatsappCopy = {
   },
 
   catalogSearchProblem(status?: string) {
+    if (status === "search_unverified") {
+      return "Ainda não consegui confirmar uma opção com o nome, a apresentação e o preço corretos nas fontes consultadas. Isso não significa que o produto esteja em falta. Pode conferir o nome e me dizer a dosagem ou a apresentação da embalagem?";
+    }
     if (status === "backup_unavailable") {
       return "Não encontrei uma opção correspondente na consulta principal, e a consulta complementar está indisponível. Isso não confirma que o produto esteja em falta. Pode conferir o nome e a apresentação para tentarmos novamente?";
     }
@@ -313,7 +316,7 @@ export const WhatsappCopy = {
       return "Essa apresentação precisa ser conferida pela equipe da farmácia antes de continuar. Não vou substituir por outra dosagem ou forma de uso.";
     }
     if (status === "offer_unavailable") {
-      return "Encontrei o produto no catálogo, mas não há uma oferta disponível para seguir com o pedido agora. Quer consultar outro produto?";
+      return "O catálogo retornou esse produto, mas não consegui confirmar uma oferta com preço e disponibilidade agora. Isso não confirma falta de estoque na farmácia. Pode me dizer a apresentação da embalagem para conferir a busca?";
     }
     return null;
   },
