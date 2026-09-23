@@ -13,6 +13,13 @@ export interface RetailProductConfig {
 }
 
 export const RETAIL_PRODUCTS: Record<string, RetailProductConfig> = {
+  // Routing metadata only: all offers and prices must come from the live catalog.
+  "soro fisiologico": { aliases: ["soro fisiologico", "solucao fisiologica"], popularBrands: [], options: [] },
+  gaze: { aliases: ["gaze"], popularBrands: [], options: [] },
+  esparadrapo: { aliases: ["esparadrapo"], popularBrands: [], options: [] },
+  alcool: { aliases: [], popularBrands: [], options: [] },
+  termometro: { aliases: ["termometro"], popularBrands: [], options: [] },
+  "agua oxigenada": { aliases: ["agua oxigenada"], popularBrands: [], options: [] },
   shampoo: {
     aliases: [
       "shampoo",
@@ -372,6 +379,7 @@ export const RETAIL_PRODUCTS: Record<string, RetailProductConfig> = {
       "gillette",
       "gilete",
       "prestobarba",
+      "mach3",
       "aparelho de barbear",
       "lamina de barbear",
       "lâmina de barbear",

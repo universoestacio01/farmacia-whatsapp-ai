@@ -2,11 +2,13 @@ const assert = require("node:assert/strict");
 const { Logger } = require("@nestjs/common");
 const { ConversationState } = require("@prisma/client");
 const { extractMedicineStrengths } = require("../dist/utils/medicine-strength.util");
+const { ManualRetailProductService } = require("../dist/integrations/manual-retail-product.service");
 const {
   ConversationEngineService,
 } = require("../dist/whatsapp/conversation-engine.service");
 
 Logger.overrideLogger(false);
+const retailMetadata = new ManualRetailProductService();
 
 function normalize(value) {
   return String(value || "")
@@ -225,6 +227,7 @@ function createEngine(conversation, options = {}) {
   };
   const productSearch = {
     isRetailProductQuery: (text) => Boolean(retailCategory(text)),
+    isAnyBrandReply: (text) => retailMetadata.isAnyBrandReply(text),
     findGenericCategory(query) {
       const category = retailCategory(query);
       return category && normalize(query).trim() === category ? category : null;

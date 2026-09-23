@@ -8,6 +8,7 @@ import {
   NormalizedRetailProduct,
   ProductProvider,
 } from "./product-provider.interface";
+import { explicitRetailCategory, extractRetailGtin, normalizeRetailSearchQuery, normalizeRetailTerms, retailTextContains } from "../utils/retail-search-query.util";
 
 @Injectable()
 export class ManualRetailProductService implements ProductProvider {
@@ -64,7 +65,9 @@ export class ManualRetailProductService implements ProductProvider {
   }
 
   findCatalogKey(query: string) {
-    const normalized = this.normalize(query);
+    const normalized = normalizeRetailSearchQuery(query);
+    const explicitCategory = explicitRetailCategory(normalized);
+    if (explicitCategory) return explicitCategory;
 
     for (const [key, config] of Object.entries(RETAIL_PRODUCTS)) {
       if (
@@ -80,7 +83,7 @@ export class ManualRetailProductService implements ProductProvider {
   }
 
   findGenericCategory(query: string) {
-    const normalized = this.normalize(query)
+    const normalized = normalizeRetailSearchQuery(query)
       .replace(/[?!.:,;]/g, " ")
       .replace(/\s+/g, " ")
       .trim();
@@ -113,7 +116,7 @@ export class ManualRetailProductService implements ProductProvider {
       return null;
     }
 
-    const normalized = this.normalize(reply).trim();
+    const normalized = normalizeRetailSearchQuery(reply);
     const numberMatch = normalized.match(/^\d+$/);
 
     if (numberMatch) {
@@ -135,7 +138,7 @@ export class ManualRetailProductService implements ProductProvider {
       (candidate) => this.normalize(candidate) === normalized,
     );
 
-    return brand || reply.trim();
+    return brand || normalized;
   }
 
   isAnyBrandReply(reply: string) {
@@ -146,28 +149,18 @@ export class ManualRetailProductService implements ProductProvider {
   }
 
   extractBrandFromQuery(category: string, query: string) {
-    const normalized = this.normalize(query)
-      .replace(/[?!.:,;]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const normalizedCategory = this.normalize(category);
-    const cleaned = normalized
-      .replace(new RegExp(`\\b${normalizedCategory}\\b`, "g"), " ")
-      .replace(/\b(tem|teria|vende|vendem|quero|queria|preciso|valor|preco|quanto custa)\b/g, " ")
-      .replace(/\b(do|da|de|o|a|um|uma)\b/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    return cleaned || null;
+    const brands = [...new Set([
+      ...(RETAIL_PRODUCTS[category]?.popularBrands || []),
+      ...Object.values(RETAIL_PRODUCTS).flatMap((config) => config.popularBrands),
+      "Gillette", "Kérastase",
+    ])].sort((a, b) => b.length - a.length);
+    // Unknown text can be a volume, model, variant or an unknown brand. Keep it
+    // in the query, but do not turn the entire suffix into a mandatory brand.
+    return brands.find((brand) => retailTextContains(query, brand)) || null;
   }
 
   isRetailProductQuery(query: string) {
-    return Boolean(this.findCatalogKey(query) || this.extractGtin(query));
-  }
-
-  private extractGtin(query: string) {
-    const digits = query.replace(/\D/g, "");
-    return [8, 12, 13, 14].includes(digits.length) ? digits : null;
+    return Boolean(this.findCatalogKey(query) || extractRetailGtin(query));
   }
 
   private hasWordOrPhrase(text: string, phrase: string) {
@@ -176,10 +169,7 @@ export class ManualRetailProductService implements ProductProvider {
   }
 
   private normalize(value: string) {
-    return value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+    return normalizeRetailTerms(value);
   }
 
   private formatManualDisplayName(

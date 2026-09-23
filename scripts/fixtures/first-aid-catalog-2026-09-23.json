@@ -1,0 +1,2009 @@
+{
+  "capturedAt": "2026-09-23T04:03:23.015Z",
+  "baseUrl": "https://www.precopopular.com.br",
+  "requests": [
+    {
+      "query": "soro fisiologico",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=soro%20fisiologico&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/7",
+      "body": [
+        {
+          "productId": "2744",
+          "productName": "Soro Fisiologico Adv 500ml",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2888",
+              "name": "Soro Fisiologico Adv 500ml",
+              "nameComplete": "Soro Fisiologico Adv 500ml",
+              "ean": "7896230304574",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167166/706414.jpg?v=639233527713730000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 9.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "2742",
+          "productName": "Soro Fisiologico Adv 100ml",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2886",
+              "name": "Soro Fisiologico Adv 100ml",
+              "nameComplete": "Soro Fisiologico Adv 100ml",
+              "ean": "7896230304550",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167162/706412.jpg?v=639233527715730000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.79,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "2743",
+          "productName": "Soro Fisiológico Adv 250ml",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2887",
+              "name": "Soro Fisiologico Adv 250ml",
+              "nameComplete": "Soro Fisiológico Adv 250ml Soro Fisiologico Adv 250ml",
+              "ean": "7896230304567",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167164/706413.jpg?v=639233527715500000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 9.2,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "2215",
+          "productName": "Soro Fisiológico L.b.s 100ml",
+          "brand": "Lbs",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2301",
+              "name": "Soro Fisiologico L.b.s 100ml",
+              "nameComplete": "Soro Fisiológico L.b.s 100ml Soro Fisiologico L.b.s 100ml",
+              "ean": "7896830001569",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167697/701626.jpg?v=639233528598870000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 3.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1145",
+          "productName": "Soro Fisiologico L.b.s 500ml",
+          "brand": "Lbs",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "1112",
+              "name": "Soro Fisiologico L.b.s 500ml",
+              "nameComplete": "Soro Fisiologico L.b.s 500ml",
+              "ean": "7896830000661",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/166944/687146.jpg?v=639234509857670000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 6.7,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1144",
+          "productName": "Soro Fisiologico L.b.s 250ml",
+          "brand": "Lbs",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "1111",
+              "name": "Soro Fisiologico L.b.s 250ml",
+              "nameComplete": "Soro Fisiologico L.b.s 250ml",
+              "ean": "7896830000517",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/166943/687145.jpg?v=639234509857770000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 6.79,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "5375",
+          "productName": "Soro Fisiologico Adv 0,9% Com 10 Ampolas De 5ml",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Soro Fisiológico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "5811",
+              "name": "Soro Fisiologico Adv 0,9% Com 10 Ampolas De 5ml",
+              "nameComplete": "Soro Fisiologico Adv 0,9% Com 10 Ampolas De 5ml",
+              "ean": "7896230304536",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/168509/725569.jpg?v=639233522130970000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 14.7,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 7,
+        "valid": 7,
+        "medicines": 0,
+        "retail": 7,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 0,
+          "quarantined": 0
+        }
+      }
+    },
+    {
+      "query": "gaze",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=gaze&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/8",
+      "body": [
+        {
+          "productId": "8466",
+          "productName": "Compressa De Gaze Não Aderente Lunis 10 Unidades",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "9245",
+              "name": "Compressa De Gaze Nao Aderente Lunis 10 Unidades",
+              "nameComplete": "Compressa De Gaze Não Aderente Lunis 10 Unidades Compressa De Gaze Nao Aderente Lunis 10 Unidades",
+              "ean": "7898108611661",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/228318/734100.jpg?v=639233513784370000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.29,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "4555",
+          "productName": "Compressa Gaze Sancare Nao Aderente Com 10 Unidades",
+          "brand": "Sanfarma",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "4900",
+              "name": "Compressa Gaze Sancare Nao Aderente Com 10 Unidades",
+              "nameComplete": "Compressa Gaze Sancare Nao Aderente Com 10 Unidades",
+              "ean": "17898108640842",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/169056/720940.jpg?v=639233524265000000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.25,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "8465",
+          "productName": "Compressa De Gaze Macia E Absorvente Lunis 10 Unidades",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "9244",
+              "name": "Compressa De Gaze Macia E Absorvente Lunis 10 Unidades",
+              "nameComplete": "Compressa De Gaze Macia E Absorvente Lunis 10 Unidades",
+              "ean": "7898108641217",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/228317/734099.jpg?v=639233513786430000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 3.99,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "478",
+          "productName": "Compressa Gaze Cremer C/5 15cmx30cm",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "5149",
+              "name": "Compressa Gaze Cremer C/5 15cmx30cm",
+              "nameComplete": "Compressa Gaze Cremer C/5 15cmx30cm",
+              "ean": "7891800197525",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/207081/534009.jpg?v=639233523799000000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 2.55,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16734",
+          "productName": "Compressa Gaze 3m Nexcare Com 10 70cmx70cm Esteril",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16733",
+              "name": "Compressa Gaze 3m Nexcare Com 10 70cmx70cm Esteril",
+              "nameComplete": "Compressa Gaze 3m Nexcare Com 10 70cmx70cm Esteril",
+              "ean": "7891040083046",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/187539/691841.jpg?v=639233499204230000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 3.79,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16733",
+          "productName": "Compressa Gaze 3m Nexcare Com 5 70cmx70cm Esteril",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16732",
+              "name": "Compressa Gaze 3m Nexcare Com 5 70cmx70cm Esteril",
+              "nameComplete": "Compressa Gaze 3m Nexcare Com 5 70cmx70cm Esteril",
+              "ean": "7891040083039",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/187538/691682.jpg?v=639233499209570000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 2.7,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "2719",
+          "productName": "Compressa Gaze Cremer C/5 15cmx30cm Esteril",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2860",
+              "name": "Compressa Gaze Cremer C/5 15cmx30cm Esteril",
+              "nameComplete": "Compressa Gaze Cremer C/5 15cmx30cm Esteril",
+              "ean": "7891800197600",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/207082/706101.jpg?v=639233527754000000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 3.59,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "462",
+          "productName": "Compressa Gaze Cremer Iris 9 Fios 7,5x7,5 Com 500 Unidades",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Atadura e Gaze/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "4972",
+              "name": "Compressa Gaze Cremer Iris 9 Fios 7,5x7,5 Com 500 Unidades",
+              "nameComplete": "Compressa Gaze Cremer Iris 9 Fios 7,5x7,5 Com 500 Unidades",
+              "ean": "7891800001426",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/169132/522989.jpg?v=639233524124430000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 70.7,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 8,
+        "valid": 8,
+        "medicines": 0,
+        "retail": 8,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 0,
+          "quarantined": 0
+        }
+      }
+    },
+    {
+      "query": "esparadrapo",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=esparadrapo&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/13",
+      "body": [
+        {
+          "productId": "286",
+          "productName": "Esparadrapo Cremer 10cmx4,5m Branco",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "3016",
+              "name": "Esparadrapo Cremer 10cmx4,5m Branco",
+              "nameComplete": "Esparadrapo Cremer 10cmx4,5m Branco",
+              "ean": "7891800801958",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167281/74431.jpg?v=639233527527800000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 30.51,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "285",
+          "productName": "Esparadrapo Cremer 5cmx4,5m Branco",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "3005",
+              "name": "Esparadrapo Cremer 5cmx4,5m Branco",
+              "nameComplete": "Esparadrapo Cremer 5cmx4,5m Branco",
+              "ean": "7891800276527",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167273/74423.jpg?v=639233527538470000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 23.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "283",
+          "productName": "Esparadrapo Cremer 2,5cmx0,9m Branco",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2983",
+              "name": "Esparadrapo Cremer 2,5cmx0,9m Branco",
+              "nameComplete": "Esparadrapo Cremer 2,5cmx0,9m Branco",
+              "ean": "7891800364781",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167255/74407.jpg?v=639233527575730000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.29,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1554",
+          "productName": "Esparadrapo 3m Nexcare Impermeavel 12mmx3m",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "1566",
+              "name": "Esparadrapo 3m Nexcare Impermeavel 12mmx3m",
+              "nameComplete": "Esparadrapo 3m Nexcare Impermeavel 12mmx3m",
+              "ean": "7891040089956",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/185543/694255_0.jpg?v=639233529685430000"
+                },
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/185544/694255_1.jpg?v=639233529690970000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 8.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "284",
+          "productName": "Esparadrapo Cremer 2,5cmx4,5m Branco",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "2994",
+              "name": "Esparadrapo Cremer 2,5cmx4,5m Branco",
+              "nameComplete": "Esparadrapo Cremer 2,5cmx4,5m Branco",
+              "ean": "7891800364804",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167263/74415.jpg?v=639233527554700000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 13.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "3310",
+          "productName": "Esparadrapo Missner Impermeável 2,5cmx4,5m",
+          "brand": "Missner",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "3518",
+              "name": "Esparadrapo Missner Impermeavel 2,5cmx4,5m",
+              "nameComplete": "Esparadrapo Missner Impermeável 2,5cmx4,5m Esparadrapo Missner Impermeavel 2,5cmx4,5m",
+              "ean": "7896544925458",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167817/710646.jpg?v=639233526627400000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 8.29,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1555",
+          "productName": "Esparadrapo 3m Nexcare Impermeavel 25mmx3m",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "1567",
+              "name": "Esparadrapo 3m Nexcare Impermeavel 25mmx3m",
+              "nameComplete": "Esparadrapo 3m Nexcare Impermeavel 25mmx3m",
+              "ean": "7891040089963",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/185545/694256.jpg?v=639233529686170000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 12.4,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "632",
+          "productName": "Esparadrapo Cremer 1,2cmx4,5m Branco",
+          "brand": "Cremer",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "6861",
+              "name": "Esparadrapo Cremer 1,2cmx4,5m Branco",
+              "nameComplete": "Esparadrapo Cremer 1,2cmx4,5m Branco",
+              "ean": "7891800364798",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/169879/590592.jpg?v=639233518831200000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 8.2,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "25037",
+          "productName": "Esparadrapo Impermeável Lunis Branco 2,5cm X 4,5m",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "25060",
+              "name": "Esparadrapo Impermeavel Lunis Branco 2,5cm X 4,5m",
+              "nameComplete": "Esparadrapo Impermeável Lunis Branco 2,5cm X 4,5m Esparadrapo Impermeavel Lunis Branco 2,5cm X 4,5m",
+              "ean": "7898918966784",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/234358/750382-Lunis-Esparadrapo-Branco-25cmx45m.jpg?v=639234463209630000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 9.99,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "24032",
+          "productName": "Esparadrapo Missner 1,2cm X 4,5m Impermeavel Branco",
+          "brand": "Missner",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "24049",
+              "name": "Esparadrapo Missner 1,2cm X 4,5m Impermeavel Branco",
+              "nameComplete": "Esparadrapo Missner 1,2cm X 4,5m Impermeavel Branco",
+              "ean": "7896544900073",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/223186/749700-Esparadrapo-Missner-12cm-X-45m-Impermeavel-Branco.jpg?v=639234463650700000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16732",
+          "productName": "Esparadrapo 3m Nexcare 12mmx3m Impermeavel Bege",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16731",
+              "name": "Esparadrapo 3m Nexcare 12mmx3m Impermeavel Bege",
+              "nameComplete": "Esparadrapo 3m Nexcare 12mmx3m Impermeavel Bege",
+              "ean": "7891040211517",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/187550/742278.jpg?v=639234501867700000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 8.55,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16738",
+          "productName": "Esparadrapo 3m Nexcare 50mmx3m Impermeavel Bege",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16737",
+              "name": "Esparadrapo 3m Nexcare 50mmx3m Impermeavel Bege",
+              "nameComplete": "Esparadrapo 3m Nexcare 50mmx3m Impermeavel Bege",
+              "ean": "7891040211548",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/187554/742282.jpg?v=639233499188330000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 19.7,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16735",
+          "productName": "Esparadrapo 3m Nexcare 25mmx3m Impermeavel Bege",
+          "brand": "Nexcare",
+          "categories": [
+            "/Primeiros Socorros/Esparadrapos/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16734",
+              "name": "Esparadrapo 3m Nexcare 25mmx3m Impermeavel Bege",
+              "nameComplete": "Esparadrapo 3m Nexcare 25mmx3m Impermeavel Bege",
+              "ean": "7891040211531",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/187551/742279.jpg?v=639234501866100000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 12.4,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 13,
+        "valid": 13,
+        "medicines": 0,
+        "retail": 13,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 0,
+          "quarantined": 0
+        }
+      }
+    },
+    {
+      "query": "alcool 70",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=alcool%2070&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/6",
+      "body": [
+        {
+          "productId": "24726",
+          "productName": "Lbs Álcool 70% Solução 50ml",
+          "brand": "Lbs",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "24744",
+              "name": "Lbs Alcool 70% Solucao 50ml",
+              "nameComplete": "Lbs Álcool 70% Solução 50ml Lbs Alcool 70% Solucao 50ml",
+              "ean": "7896830007028",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/228530/702805.jpg?v=639233482955270000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.59,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "16721",
+          "productName": "Alcool Em Gel 70% Antisseptico Lunis 500ml",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "16720",
+              "name": "Alcool Em Gel 70% Antisseptico Lunis 500ml",
+              "nameComplete": "Alcool Em Gel 70% Antisseptico Lunis 500ml",
+              "ean": "7896602866846",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/211624/742268_Lunis_Antisseptico_500ml.png?v=639234501873670000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 17.35,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "14130",
+          "productName": "Alcool Em Gel 70% Antisseptico Lunis 250ml",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "14130",
+              "name": "Alcool Em Gel 70% Antisseptico Lunis 250ml",
+              "nameComplete": "Alcool Em Gel 70% Antisseptico Lunis 250ml",
+              "ean": "7896602866716",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/211625/739904_Lunis_Antisseptico_250ml.jpg?v=639234503201230000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 14.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "14129",
+          "productName": "Alcool Em Gel 70% Antisseptico Lunis 60ml",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "14129",
+              "name": "Alcool Em Gel 70% Antisseptico Lunis 60ml",
+              "nameComplete": "Alcool Em Gel 70% Antisseptico Lunis 60ml",
+              "ean": "7896602866723",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/211623/739903_Lunis_Antisseptico_60ml.jpg?v=639234503206130000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 7.08,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "18922",
+          "productName": "Alcool Etilico Adv 30ml Spray 70%",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "18920",
+              "name": "Alcool Etilico Adv 30ml Spray 70%",
+              "nameComplete": "Alcool Etilico Adv 30ml Spray 70%",
+              "ean": "7896230304390",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/206669/7896230304390--1-.jpg?v=639234500634100000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 9.45,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "14414",
+          "productName": "Álcool Em Gel 70% Desinfetante 480g",
+          "brand": "Quimidrol",
+          "categories": [
+            "/Medicamentos/Pele e Mucosa/Antisséptico/",
+            "/Medicamentos/Pele e Mucosa/",
+            "/Medicamentos/"
+          ],
+          "items": [
+            {
+              "itemId": "14414",
+              "name": "Álcool Em Gel 70% Desinfetante 480g",
+              "nameComplete": "Álcool Em Gel 70% Desinfetante 480g",
+              "ean": "7896602817510",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/185045/rotulo_pp_receita.jpg?v=639234503078970000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 14.9,
+                    "AvailableQuantity": 0,
+                    "IsAvailable": false
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 6,
+        "valid": 5,
+        "medicines": 0,
+        "retail": 5,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 1,
+          "quarantined": 0
+        }
+      }
+    },
+    {
+      "query": "termometro",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=termometro&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/16",
+      "body": [
+        {
+          "productId": "15623",
+          "productName": "Termometro Multilaser Digital Frog",
+          "brand": "Multilaser",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "15622",
+              "name": "Termometro Multilaser Digital Frog",
+              "nameComplete": "Termometro Multilaser Digital Frog",
+              "ean": "7899838836638",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/182627/741044.jpg?v=639234502496670000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 27.9,
+                    "AvailableQuantity": 1,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "13783",
+          "productName": "Termometro Multilaser Digital Sem Contato",
+          "brand": "Multilaser",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "13783",
+              "name": "Termometro Multilaser Digital Sem Contato",
+              "nameComplete": "Termometro Multilaser Digital Sem Contato",
+              "ean": "7899838899671",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/177700/739581.jpg?v=639233506148430000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 179.9,
+                    "AvailableQuantity": 10,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "15621",
+          "productName": "Termometro Multilaser Digital Hc070",
+          "brand": "Multilaser",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "15620",
+              "name": "Termometro Multilaser Digital Hc070",
+              "nameComplete": "Termometro Multilaser Digital Hc070",
+              "ean": "7898506470761",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/182625/741042.jpg?v=639234502495830000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 16.7,
+                    "AvailableQuantity": 10,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "22002",
+          "productName": "Termômetro Clínico Digital Lunis",
+          "brand": "Lunis",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "22000",
+              "name": "Termometro Clinico Digital Lunis",
+              "nameComplete": "Termômetro Clínico Digital Lunis Termometro Clinico Digital Lunis",
+              "ean": "7898918966388",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/215453/747490-Termometro-Lunis-Termo-Med-Digital-Ponta-Rigida.jpg?v=639234464720770000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 18.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "13702",
+          "productName": "Termometro Omron Digital Mc246",
+          "brand": "Omron",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "13702",
+              "name": "Termometro Omron Digital Mc246",
+              "nameComplete": "Termometro Omron Digital Mc246",
+              "ean": "0073796246280",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/177738/739485_.jpg?v=639233506313670000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 34.5,
+                    "AvailableQuantity": 100,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "11117",
+          "productName": "Termometro Digital Branco Techline Ts-101",
+          "brand": "Techline",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "11117",
+              "name": "Termometro Digital Branco Techline Ts-101",
+              "nameComplete": "Termometro Digital Branco Techline Ts-101",
+              "ean": "0840646000077",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/173856/738229_.jpg?v=639234504613100000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 25.9,
+                    "AvailableQuantity": 1,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "11114",
+          "productName": "Termometro Digital Techline Colors Ts-101",
+          "brand": "Techline",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "11114",
+              "name": "Termometro Digital Techline Colors Ts-101",
+              "nameComplete": "Termometro Digital Techline Colors Ts-101",
+              "ean": "0840646004426",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/173852/738218_.jpg?v=639234504618800000"
+                },
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/173853/738218_2.jpg?v=639234504624570000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 25.9,
+                    "AvailableQuantity": 100,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "7118",
+          "productName": "Termômetro Digital G-tech Sem Contato",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "7748",
+              "name": "Termometro Digital G-tech Sem Contato",
+              "nameComplete": "Termômetro Digital G-tech Sem Contato Termometro Digital G-tech Sem Contato",
+              "ean": "7898301057556",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/170113/731357.jpg?v=639233516460570000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 259.9,
+                    "AvailableQuantity": 10,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "3222",
+          "productName": "Termômetro Kuka Para Banho Tartaruga Ref.7171",
+          "brand": "Kuka",
+          "categories": [
+            "/Mamãe e Bebê/Hora do banho/",
+            "/Mamãe e Bebê/"
+          ],
+          "items": [
+            {
+              "itemId": "3420",
+              "name": "Termometro Kuka Para Banho Tartaruga Ref.7171",
+              "nameComplete": "Termômetro Kuka Para Banho Tartaruga Ref.7171 Termometro Kuka Para Banho Tartaruga Ref.7171",
+              "ean": "7896000671714",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/241783/709786-termometro-kuka-para-banho-tartaruga.jpg?v=639234508654430000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 38.9,
+                    "AvailableQuantity": 100,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "6163",
+          "productName": "Termômetro Digital G-tech Ponta Flexível Th400",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "6687",
+              "name": "Termometro Digital G-tech Ponta Flexivel Th400",
+              "nameComplete": "Termômetro Digital G-tech Ponta Flexível Th400 Termometro Digital G-tech Ponta Flexivel Th400",
+              "ean": "7898301057006",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/169611/728235.jpg?v=639234506795330000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 20.96,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "26794",
+          "productName": "Termometro Digital Omron Mc-f300 Sem Contato",
+          "brand": "Omron",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "26819",
+              "name": "Termometro Digital Omron Mc-f300 Sem Contato",
+              "nameComplete": "Termometro Digital Omron Mc-f300 Sem Contato",
+              "ean": "7896436906886",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/242814/752845-termometro-digital-omron-mc-f300-sem-contato.jpg?v=639234462253870000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 189.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "18108",
+          "productName": "Termometro G-tech Go Digital Infravermelho Branco",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "18108",
+              "name": "Termometro G-tech Go Digital Infravermelho Branco",
+              "nameComplete": "Termometro G-tech Go Digital Infravermelho Branco",
+              "ean": "7898639692849",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/196207/743707_0.jpg?v=639234501045600000"
+                },
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/196208/743707.jpg?v=639234501053870000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 112.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "10996",
+          "productName": "Termômetro Digital Azul G-tech Ponta Rígida",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "10996",
+              "name": "Termometro Digital Azul G-tech Ponta Rigida",
+              "nameComplete": "Termômetro Digital Azul G-tech Ponta Rígida Termometro Digital Azul G-tech Ponta Rigida",
+              "ean": "7898301056955",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/166892/738127.jpg?v=639233510464000000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 28.79,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "6164",
+          "productName": "Termômetro Digital G-tech Ponta Rígida Th150",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "6688",
+              "name": "Termometro Digital G-tech Ponta Rigida Th150",
+              "nameComplete": "Termômetro Digital G-tech Ponta Rígida Th150 Termometro Digital G-tech Ponta Rigida Th150",
+              "ean": "7898301056993",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/169613/728236.jpg?v=639234506794170000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 22.41,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "4069",
+          "productName": "Termometro Clinico Digital Incoterm Baby Confort",
+          "brand": "Incoterm",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "4360",
+              "name": "Termometro Clinico Digital Incoterm Baby Confort",
+              "nameComplete": "Termometro Clinico Digital Incoterm Baby Confort",
+              "ean": "7896540780686",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/168346/715597.jpg?v=639233525136270000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 49.9,
+                    "AvailableQuantity": 1,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "26702",
+          "productName": "Termômetro Infravermelho Sem Contato Easy Sensor G-tech Modelo Thgtsc3",
+          "brand": "G-tech",
+          "categories": [
+            "/Aparelhos/Termômetros/",
+            "/Aparelhos/"
+          ],
+          "items": [
+            {
+              "itemId": "26726",
+              "name": "Termometro Infravermelho Sem Contato Easy Sensor G-tech Modelo Thgtsc3",
+              "nameComplete": "Termômetro Infravermelho Sem Contato Easy Sensor G-tech Modelo Thgtsc3 Termometro Infravermelho Sem Contato Easy Sensor G-tech Modelo Thgtsc3",
+              "ean": "7898639694171",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/242328/752746-termometro-infravermelho-sem-contato-easy-sensor-g-tech-modelo-thgtsc3.jpg?v=639234462294330000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 145.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 16,
+        "valid": 16,
+        "medicines": 0,
+        "retail": 16,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 0,
+          "quarantined": 0
+        }
+      }
+    },
+    {
+      "query": "agua oxigenada",
+      "url": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=agua%20oxigenada&_from=0&_to=49",
+      "status": 200,
+      "range": "0-49/8",
+      "body": [
+        {
+          "productId": "327",
+          "productName": "Água Oxigenada Catarinense 10 Volumes 100ml",
+          "brand": "Catarinense Pharma",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "3472",
+              "name": "Agua Oxigenada Catarinense 10 Volumes 100ml",
+              "nameComplete": "Água Oxigenada Catarinense 10 Volumes 100ml Agua Oxigenada Catarinense 10 Volumes 100ml",
+              "ean": "7896023705557",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167773/112166.jpg?v=639233526721830000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 6.79,
+                    "AvailableQuantity": 10,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "9559",
+          "productName": "Água Oxigenada Lunis 10 Volumes 100ml",
+          "brand": "Lunis",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "10459",
+              "name": "Agua Oxigenada Lunis 10 Volumes 100ml",
+              "nameComplete": "Água Oxigenada Lunis 10 Volumes 100ml Agua Oxigenada Lunis 10 Volumes 100ml",
+              "ean": "7896902217560",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/229008/735991.jpg?v=639233511495070000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 4.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1510",
+          "productName": "Água Oxigenada Encasa Cremosa 40 Volumes 80ml",
+          "brand": "Encasa",
+          "categories": [
+            "/Higiene/Depilação e descoloração/Descolorante/",
+            "/Higiene/Depilação e descoloração/",
+            "/Higiene/"
+          ],
+          "items": [
+            {
+              "itemId": "1518",
+              "name": "Agua Oxigenada Encasa Cremosa 40 Volumes 80ml",
+              "nameComplete": "Água Oxigenada Encasa Cremosa 40 Volumes 80ml Agua Oxigenada Encasa Cremosa 40 Volumes 80ml",
+              "ean": "7897150500169",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167150/693319.jpg?v=639233529741200000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.09,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "10801",
+          "productName": "Água Oxigenada 40 Volumes Lunis Encanto 90ml",
+          "brand": "Lunis Encanto",
+          "categories": [
+            "/Higiene/Depilação e descoloração/Descolorante/",
+            "/Higiene/Depilação e descoloração/",
+            "/Higiene/"
+          ],
+          "items": [
+            {
+              "itemId": "894",
+              "name": "Agua Oxigenada 40 Volumes Lunis Encanto 90ml",
+              "nameComplete": "Água Oxigenada 40 Volumes Lunis Encanto 90ml Agua Oxigenada 40 Volumes Lunis Encanto 90ml",
+              "ean": "7896902286061",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/241247/737859-agua-oxigenada-cremosa-descolorante-lunis-encanto--40-volumes.jpg?v=639234509958630000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "10799",
+          "productName": "Água Oxigenada 20 Volumes Lunis Encanto 90ml",
+          "brand": "Lunis Encanto",
+          "categories": [
+            "/Higiene/Depilação e descoloração/Descolorante/",
+            "/Higiene/Depilação e descoloração/",
+            "/Higiene/"
+          ],
+          "items": [
+            {
+              "itemId": "890",
+              "name": "Agua Oxigenada 20 Volumes Lunis Encanto 90ml",
+              "nameComplete": "Água Oxigenada 20 Volumes Lunis Encanto 90ml Agua Oxigenada 20 Volumes Lunis Encanto 90ml",
+              "ean": "7896902286047",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/241245/737857-agua-oxigenada-cremosa-descolorante-lunis-encanto-20-volumes.jpg?v=639234509959770000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "10800",
+          "productName": "Água Oxigenada 30 Volumes Lunis Encanto 90ml",
+          "brand": "Lunis Encanto",
+          "categories": [
+            "/Higiene/Depilação e descoloração/Descolorante/",
+            "/Higiene/Depilação e descoloração/",
+            "/Higiene/"
+          ],
+          "items": [
+            {
+              "itemId": "893",
+              "name": "Agua Oxigenada 30 Volumes Lunis Encanto 90ml",
+              "nameComplete": "Água Oxigenada 30 Volumes Lunis Encanto 90ml Agua Oxigenada 30 Volumes Lunis Encanto 90ml",
+              "ean": "7898918966319",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/241246/737858-agua-oxigenada-cremosa-descolorante-lunis-encanto-30-volumes-.jpg?v=639234509958630000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.9,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "3565",
+          "productName": "Água Oxigenada Adv 10 Volumes Spray 100ml",
+          "brand": "Adv",
+          "categories": [
+            "/Primeiros Socorros/Antisséptico/",
+            "/Primeiros Socorros/"
+          ],
+          "items": [
+            {
+              "itemId": "3800",
+              "name": "Agua Oxigenada Adv 10 Volumes Spray 100ml",
+              "nameComplete": "Água Oxigenada Adv 10 Volumes Spray 100ml Agua Oxigenada Adv 10 Volumes Spray 100ml",
+              "ean": "7896230301412",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/168082/712548.jpg?v=639233526156100000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 15.29,
+                    "AvailableQuantity": 99999,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "productId": "1511",
+          "productName": "Água Oxigenada Encasa Cremosa 30 Volumes 80ml",
+          "brand": "Encasa",
+          "categories": [
+            "/Higiene/Depilação e descoloração/Descolorante/",
+            "/Higiene/Depilação e descoloração/",
+            "/Higiene/"
+          ],
+          "items": [
+            {
+              "itemId": "1519",
+              "name": "Agua Oxigenada Encasa Cremosa 30 Volumes 80ml",
+              "nameComplete": "Água Oxigenada Encasa Cremosa 30 Volumes 80ml Agua Oxigenada Encasa Cremosa 30 Volumes 80ml",
+              "ean": "7897150500152",
+              "images": [
+                {
+                  "imageUrl": "https://precopopular.vteximg.com.br/arquivos/ids/167152/693320.jpg?v=639233529738970000"
+                }
+              ],
+              "sellers": [
+                {
+                  "sellerDefault": true,
+                  "commertialOffer": {
+                    "Price": 5.09,
+                    "AvailableQuantity": 10,
+                    "IsAvailable": true
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "diagnostic": {
+        "retailRoutingRecognized": false,
+        "raw": 8,
+        "valid": 8,
+        "medicines": 0,
+        "retail": 8,
+        "discarded": {
+          "invalid": 0,
+          "noPrice": 0,
+          "unavailable": 0,
+          "quarantined": 0
+        }
+      }
+    }
+  ],
+  "raiaCompatibility": {
+    "url": "https://www.drogaraia.com.br/api/catalog_system/pub/products/search?ft=soro%20fisiologico&_from=0&_to=49",
+    "status": 404,
+    "contentType": "text/html; charset=utf-8",
+    "isCatalogArray": false
+  }
+}

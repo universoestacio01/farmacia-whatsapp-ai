@@ -1,0 +1,59 @@
+{
+  "startedAt": "2026-09-23T04:08:45.892Z",
+  "requests": [
+    {
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=soro%20fisiologico&_from=0&_to=49",
+      "status": 200,
+      "resources": "0-49/7"
+    },
+    {
+      "endpoint": "https://www.precopopular.com.br/api/catalog_system/pub/products/search?ft=soro%20fisiologico%20500ml&_from=0&_to=49",
+      "status": 200,
+      "resources": "0-49/12"
+    }
+  ],
+  "conversations": [
+    {
+      "message": "Tem soro fisiológico ?",
+      "reply": "Encontrei estas opções de Soro Fisiologico:\n\n1. Soro Fisiologico Adv 500ml - R$ 9,90\n2. Soro Fisiológico Adv 250ml - R$ 9,20\n3. Soro Fisiologico L.b.s 500ml - R$ 6,70\n\nQual opção você prefere?\n\nDigite apenas o número da opção.",
+      "options": [
+        {
+          "name": "Soro Fisiologico Adv 500ml",
+          "price": 9.9,
+          "sourceId": "2888",
+          "type": "retail_product"
+        },
+        {
+          "name": "Soro Fisiológico Adv 250ml",
+          "price": 9.2,
+          "sourceId": "2887",
+          "type": "retail_product"
+        },
+        {
+          "name": "Soro Fisiologico L.b.s 500ml",
+          "price": 6.7,
+          "sourceId": "1112",
+          "type": "retail_product"
+        }
+      ]
+    },
+    {
+      "message": "Tem soro fisiologico 500ml?",
+      "reply": "Encontrei estas opções de Soro Fisiologico:\n\n1. Soro Fisiologico Adv 500ml - R$ 9,90\n2. Soro Fisiologico L.b.s 500ml - R$ 6,70\n\nQual opção você prefere?\n\nDigite apenas o número da opção.",
+      "options": [
+        {
+          "name": "Soro Fisiologico Adv 500ml",
+          "price": 9.9,
+          "sourceId": "2888",
+          "type": "retail_product"
+        },
+        {
+          "name": "Soro Fisiologico L.b.s 500ml",
+          "price": 6.7,
+          "sourceId": "1112",
+          "type": "retail_product"
+        }
+      ]
+    }
+  ]
+}

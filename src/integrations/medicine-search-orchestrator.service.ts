@@ -87,7 +87,7 @@ export class MedicineSearchOrchestratorService {
           if (reason) this.logger.log(JSON.stringify({ event: "MEDICINE_FILTER", query, sourceId: option.sourceId, product: option.productName, reason }));
           return !reason;
         });
-        const selected = await this.selectNormalized(parsedQuery, options);
+        const selected = options.length ? await this.selectNormalized(parsedQuery, options) : [];
         if (selected.length) {
           const summary: MedicineLookupSummary = { medicineName: normalizedQuery, products: [], options: selected, searchStatus: result.status === "incomplete" ? "incomplete" : "found" };
           if (result.status === "ok") this.setCache(`preco_popular:${cacheQuery}`, summary, 300);
@@ -96,6 +96,7 @@ export class MedicineSearchOrchestratorService {
         const failureReason = "failureReason" in result ? result.failureReason : undefined;
         return {
           medicineName: normalizedQuery, products: [], options: [], failureReason,
+          retailFallbackQuery: !result.options.length && "retailFallbackQuery" in result ? result.retailFallbackQuery : undefined,
           searchStatus: result.status === "incomplete" ? "incomplete"
             : unverified || failureReason === "quarantined" ? "attributes_unverified"
               : restricted ? "restricted"

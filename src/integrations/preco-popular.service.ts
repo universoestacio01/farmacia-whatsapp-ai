@@ -14,6 +14,7 @@ import { NormalizedMedicineOption } from "./medicine-provider.interface";
 import { NormalizedRetailProduct } from "./product-provider.interface";
 import { extractMedicineStrengths, removeMedicineStrengths } from "../utils/medicine-strength.util";
 import { CATALOG_QUARANTINE } from "../config/catalog-quality.config";
+import { normalizeRetailSearchQuery } from "../utils/retail-search-query.util";
 
 export type CatalogSearchStatus = "ok" | "incomplete" | "unavailable" | "disabled";
 interface CatalogSearchResult {
@@ -150,15 +151,21 @@ export class PrecoPopularService {
           priceConsumer: product.price,
         };
       });
-    return { options, status: result.status, failureReason: result.failureReason };
+    const retailCount = result.products.filter((product) => !product.isMedicine).length;
+    this.logger.log(JSON.stringify({ event: "CATALOG_CLASSIFICATION", provider: this.name, query, term,
+      medicineCount: options.length, retailCount, reason: retailCount && !options.length ? "retail_results_not_medicines" : undefined }));
+    return { options, status: result.status, failureReason: result.failureReason,
+      retailFallbackQuery: !options.length && retailCount > 0 ? term : undefined };
   }
 
   async searchRetail(query: string): Promise<NormalizedRetailProduct[]> {
     return (await this.searchRetailWithStatus(query)).options;
   }
 
-  async searchRetailWithStatus(query: string) {
-    const result = await this.searchCatalog(this.cleanRetailQuery(query));
+  async searchRetailWithStatus(query: string, catalogQuery?: string) {
+    // A taxonomy fallback reuses the original name lookup; the caller still
+    // filters the full customer query, including volume/model/concentration.
+    const result = await this.searchCatalog(catalogQuery ?? this.cleanRetailQuery(query));
     const options = result.products
       .filter((product) => !product.isMedicine)
       .map((product) => this.toRetail(product));
@@ -465,14 +472,7 @@ export class PrecoPopularService {
   }
 
   private cleanRetailQuery(query: string) {
-    return this.normalize(query)
-      .replace(/[?!:;]/g, " ")
-      .replace(
-        /^(?:ola\s+)?(?:tem|teria|quero|preciso|gostaria)(?:\s+(?:de|do|da|um|uma))?\s+/,
-        "",
-      )
-      .replace(/\s+/g, " ")
-      .trim();
+    return normalizeRetailSearchQuery(query);
   }
 
   private normalize(value: string) {

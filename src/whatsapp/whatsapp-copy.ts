@@ -141,10 +141,9 @@ export const WhatsappCopy = {
 
   askRetailBrand(category: string, brands: string[]) {
     const lines = [
-      `Claro. Para ${formatProductDisplayName(category)}, separei as marcas mais pedidas.`,
-      "Você tem alguma marca de preferência?",
+      `Claro. Você tem alguma marca de preferência para ${formatProductDisplayName(category)}?`,
       "",
-      "Marcas mais pedidas:",
+      "Algumas marcas para consultar:",
     ];
 
     brands.slice(0, 5).forEach((brand, index) => {
@@ -456,6 +455,10 @@ export function sanitizeCustomerText(value: unknown): string {
     .replace(/\bsolucao\b/gi, (match) =>
       match[0] === match[0].toUpperCase() ? "Solução" : "solução",
     )
+    .replace(/\b(?:fisiologico|fisiologica|alcool|termometro)\b/gi, (match) => {
+      const accented = { fisiologico: "fisiológico", fisiologica: "fisiológica", alcool: "álcool", termometro: "termômetro" }[match.toLowerCase()]!;
+      return match[0] === match[0].toUpperCase() ? accented[0].toUpperCase() + accented.slice(1) : accented;
+    })
     .trim();
 }
 

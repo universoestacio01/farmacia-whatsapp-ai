@@ -5,6 +5,7 @@ import { ManualRetailProductService } from "./manual-retail-product.service";
 import { NormalizedRetailProduct } from "./product-provider.interface";
 import { PrecoPopularService } from "./preco-popular.service";
 import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
+import { extractRetailGtin, matchesRetailCategory, matchesRetailQuery, normalizeRetailSearchQuery, normalizeRetailTerms, retailTextContains } from "../utils/retail-search-query.util";
 
 export interface RetailProductLookupSummary {
   query: string;
@@ -12,7 +13,7 @@ export interface RetailProductLookupSummary {
   manualFallback: boolean;
   category?: string;
   requestedBrand?: string;
-  searchStatus?: "ok" | "incomplete" | "unavailable" | "disabled";
+  searchStatus?: "ok" | "incomplete" | "unavailable" | "disabled" | "offer_unavailable";
 }
 
 interface RetailCacheEntry {
@@ -38,6 +39,10 @@ export class ProductSearchOrchestratorService {
     return this.manualRetailProductService.findGenericCategory(query);
   }
 
+  findProductCategory(query: string) {
+    return this.manualRetailProductService.findCatalogKey(query);
+  }
+
   getPopularBrands(category: string) {
     return this.manualRetailProductService.getPopularBrands(category);
   }
@@ -50,17 +55,19 @@ export class ProductSearchOrchestratorService {
     return this.manualRetailProductService.isAnyBrandReply(reply);
   }
 
-  async searchProducts(query: string): Promise<RetailProductLookupSummary> {
+  async searchProducts(query: string, catalogQuery?: string): Promise<RetailProductLookupSummary> {
+    const receivedQuery = query;
+    query = normalizeRetailSearchQuery(query);
     this.logger.log("PRODUCT INTENT DETECTED");
-    this.logger.log(`RETAIL PRODUCT QUERY: ${query}`);
-    const cacheKey = this.normalize(query);
+    this.logger.log(JSON.stringify({ event: "RETAIL_QUERY", receivedQuery, normalizedQuery: query }));
+    const cacheKey = `${this.normalize(query)}:${catalogQuery || "direct"}`;
     const cached = this.getFromCache(cacheKey);
 
     if (cached) {
       return cached;
     }
 
-    const gtin = this.extractGtin(query);
+    const gtin = extractRetailGtin(query);
     const category = this.findCategoryForQuery(query);
     const requestedBrand = this.findRequestedBrand(query, category);
     const allowKits = this.allowsKits(query);
@@ -69,7 +76,7 @@ export class ProductSearchOrchestratorService {
         const result = gtin
           ? { options: [await this.precoPopularService.findRetailByGtin(gtin)].filter((product): product is NormalizedRetailProduct => product !== null), status: "ok" as const }
           : this.precoPopularService.searchRetailWithStatus
-            ? await this.precoPopularService.searchRetailWithStatus(query)
+            ? await this.precoPopularService.searchRetailWithStatus(query, catalogQuery)
             : { options: await this.precoPopularService.searchRetail(query), status: "ok" as const };
         const catalogProducts = result.options;
         const selected = this.selectCommercialProducts(catalogProducts, {
@@ -86,7 +93,9 @@ export class ProductSearchOrchestratorService {
           if (result.status === "ok") this.setCache(cacheKey, summary, 300);
           return summary;
         }
-        return { query, options: [], manualFallback: false, searchStatus: result.status };
+        const failureReason = "failureReason" in result ? result.failureReason : undefined;
+        return { query, options: [], manualFallback: false,
+          searchStatus: result.status === "ok" && ["no_price", "out_of_stock"].includes(failureReason || "") ? "offer_unavailable" : result.status };
       } catch (error) {
         this.logger.warn(`PRECO POPULAR RETAIL SEARCH FAILED: ${error instanceof Error ? error.message : "erro desconhecido"}`);
         return { query, options: [], manualFallback: false, searchStatus: "unavailable" };
@@ -103,9 +112,9 @@ export class ProductSearchOrchestratorService {
   }
 
   buildQueryFromBrandSelection(category: string, brand: string) {
-    return this.manualRetailProductService.isAnyBrandReply(brand)
+    return normalizeRetailSearchQuery(this.manualRetailProductService.isAnyBrandReply(brand)
       ? category
-      : `${category} ${brand}`;
+      : `${category} ${normalizeRetailSearchQuery(brand)}`);
   }
 
   private selectCommercialProducts(
@@ -144,6 +153,10 @@ export class ProductSearchOrchestratorService {
       allowKits: boolean;
     },
   ) {
+    const reject = (reason: string) => {
+      this.logger.log(JSON.stringify({ event: "RETAIL_FILTER", query: context.query, sourceId: product.sourceId, reason }));
+      return false;
+    };
     const text = this.normalize(
       [
         product.displayName,
@@ -156,28 +169,31 @@ export class ProductSearchOrchestratorService {
         .join(" "),
     );
 
-    if (product.source !== "preco_popular" || !Number.isFinite(product.salePrice) || (product.salePrice ?? 0) <= 0) return false;
+    if (product.source !== "preco_popular" || !Number.isFinite(product.salePrice) || (product.salePrice ?? 0) <= 0) return reject("invalid_source_or_price");
 
     if (!product.displayName?.trim() && !product.productName?.trim()) {
-      return false;
+      return reject("missing_name");
     }
 
+    if (/\b(?:injetavel|intravenos[ao]|endovenos[ao]|uso hospitalar|infusao)\b/.test(text)) return reject("restricted_retail_presentation");
+
     if (!context.allowKits && this.looksLikeKit(text)) {
-      return false;
+      return reject("kit_not_requested");
     }
 
     if (context.category && !this.matchesCategory(text, context.category)) {
-      return false;
+      return reject("different_category");
     }
 
     if (
       context.requestedBrand &&
-      !text.includes(this.normalize(context.requestedBrand))
+      !retailTextContains(text, context.requestedBrand)
     ) {
-      return false;
+      return reject("different_brand");
     }
 
-    return text.length <= 180;
+    if (!extractRetailGtin(context.query) && !matchesRetailQuery(text, context.query, context.category)) return reject("requested_details_not_matched");
+    return (product.productName || product.displayName).length <= 400 || reject("oversized_name");
   }
 
   private scoreProduct(
@@ -276,13 +292,7 @@ export class ProductSearchOrchestratorService {
       return null;
     }
 
-    const brands = this.manualRetailProductService.getPopularBrands(category);
-    const normalizedQuery = this.normalize(query);
-
-    return (
-      brands.find((brand) => normalizedQuery.includes(this.normalize(brand))) ||
-      this.manualRetailProductService.extractBrandFromQuery(category, query)
-    );
+    return this.manualRetailProductService.extractBrandFromQuery(category, query);
   }
 
   private allowsKits(query: string) {
@@ -296,23 +306,7 @@ export class ProductSearchOrchestratorService {
   }
 
   private matchesCategory(text: string, category: string) {
-    const normalizedCategory = this.normalize(category);
-
-    if (normalizedCategory === "gillette") {
-      return /\b(gillette|gilete|prestobarba|barbear|lamina)\b/.test(text);
-    }
-
-    if (normalizedCategory === "creme dental") {
-      return /\b(creme dental|pasta de dente|dental|colgate|oral b|sensodyne|closeup)\b/.test(
-        text,
-      );
-    }
-
-    if (normalizedCategory === "lenco umedecido") {
-      return /\b(lenco|lenço|toalha umedecida|umedecido)\b/.test(text);
-    }
-
-    return text.includes(normalizedCategory);
+    return matchesRetailCategory(text, category);
   }
 
   private hasCommonSize(text: string) {
@@ -341,11 +335,6 @@ export class ProductSearchOrchestratorService {
     );
   }
 
-  private extractGtin(query: string) {
-    const digits = query.replace(/\D/g, "");
-    return [8, 12, 13, 14].includes(digits.length) ? digits : null;
-  }
-
   private getFromCache(key: string) {
     const cached = this.cache.get(key);
 
@@ -370,9 +359,6 @@ export class ProductSearchOrchestratorService {
   }
 
   private normalize(value: string) {
-    return value
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase();
+    return normalizeRetailTerms(value);
   }
 }

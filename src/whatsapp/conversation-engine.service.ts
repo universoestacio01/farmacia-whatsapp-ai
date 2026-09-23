@@ -29,6 +29,7 @@ import { PrecoPopularService } from "../integrations/preco-popular.service";
 import { PackageImageReading, packageImageSchema } from "../ai/package-image.types";
 import { extractMedicineStrengths, medicineStrengthMatches } from "../utils/medicine-strength.util";
 import { catalogQuarantineReason } from "../config/catalog-quality.config";
+import { explicitRetailCategories, isGenericRetailCategoryQuery, normalizeRetailSearchQuery } from "../utils/retail-search-query.util";
 
 interface CartItem {
   pricePolicy?: string;
@@ -179,6 +180,11 @@ export class ConversationEngineService {
       return this.handleWaitingAddressComplement(conversation, text);
     }
 
+    // A short answer to a retail question is not a new medicine search.
+    if (this.isRetailClarificationReply(conversation, text)) {
+      return this.handleWaitingRetailBrand(conversation, text);
+    }
+
     if (
       this.isCheapestRequest(text) ||
       this.isRecommendationRequest(text) ||
@@ -206,7 +212,7 @@ export class ConversationEngineService {
       this.getCandidateOptions(conversation.candidateOptions).find(
         (option) => option.type !== "retail_product",
       );
-    const dosageChangeReply = await this.handleDosageChangeFromContext(
+    const dosageChangeReply = retailProductQuery ? null : await this.handleDosageChangeFromContext(
       conversation,
       text,
       dosageContextOption,
@@ -245,7 +251,7 @@ export class ConversationEngineService {
 
     if (
       retailProductQuery &&
-      this.hasExplicitMedicineSearchIntent(text) &&
+      (this.hasExplicitMedicineSearchIntent(text) || conversation.pendingAction === ConversationState.WAITING_QUANTITY) &&
       conversation.pendingAction !== ConversationState.WAITING_MEDICINE_NAME
     ) {
       return this.handleRetailProductQuestion(conversation.id, text);
@@ -384,6 +390,20 @@ export class ConversationEngineService {
     }
 
     return "Me diga o nome do medicamento que eu procuro as melhores opções para você.";
+  }
+
+  private isRetailClarificationReply(conversation: Conversation, text: string) {
+    if (conversation.pendingAction !== ConversationState.WAITING_RETAIL_BRAND || !conversation.currentRetailCategory) return false;
+    const reply = normalizeRetailSearchQuery(text);
+    const brands = (this.productSearch.getPopularBrands(conversation.currentRetailCategory) || []).map(normalizeRetailSearchQuery);
+    const withoutBrand = brands.reduce((value, brand) => {
+      if (value.startsWith(`${brand} `)) return value.slice(brand.length).trim();
+      if (value.endsWith(` ${brand}`)) return value.slice(0, -brand.length).trim();
+      return value;
+    }, reply);
+    if (conversation.lastIntent === "WAITING_DIAPER_SIZE") return /^(?:tamanho\s*)?(?:rn|xxg|xg|gg|g|m|p)$/.test(withoutBrand);
+    if (conversation.lastIntent === "WAITING_SUNSCREEN_FPS") return /^(?:fps\s*)?\d{1,3}$/.test(withoutBrand);
+    return brands.includes(reply) || this.productSearch.isAnyBrandReply(reply);
   }
 
   private async handleWaitingRetailBrand(conversation: Conversation, text: string) {
@@ -1129,6 +1149,11 @@ export class ConversationEngineService {
     }
 
     if (summary.options.length === 0) {
+      if (summary.retailFallbackQuery && summary.searchStatus === "not_found") {
+        this.logger.log(JSON.stringify({ event: "CATALOG_ROUTING_FALLBACK", query: searchQuery,
+          catalogQuery: summary.retailFallbackQuery, from: "medicine", to: "retail", reason: "catalog_contains_retail_products" }));
+        return this.handleRetailProductQuestion(conversationId, searchQuery, { catalogQuery: summary.retailFallbackQuery });
+      }
       await this.prisma.conversation.update({
         where: { id: conversationId },
         data: {
@@ -1184,14 +1209,27 @@ export class ConversationEngineService {
       category?: string;
       selectedBrand?: string;
       preferCheapest?: boolean;
+      catalogQuery?: string;
     },
   ) {
     const productQuery = this.extractRetailProductQuery(message);
+    const categories = explicitRetailCategories(productQuery);
+    if (categories.length > 1 && /\be\b|\+|,/i.test(message) && !/\b(?:kit|combo|conjunto|2\s*em\s*1)\b/.test(productQuery)) {
+      await this.prisma.conversation.update({
+        where: { id: conversationId },
+        data: {
+          pendingAction: ConversationState.WAITING_MEDICINE_NAME, lastIntent: "RETAIL_MULTIPLE_PRODUCTS",
+          currentMedicineQuery: null, currentRetailCategory: null,
+          selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull,
+        },
+      });
+      return `Claro. Vamos começar por qual produto: ${categories.map(formatProductDisplayName).join(" ou ")}?`;
+    }
     this.logger.log(`RETAIL PRODUCT QUERY: ${productQuery}`);
     const genericCategory =
       context?.category || this.productSearch.findGenericCategory(productQuery);
     const effectiveCategory =
-      genericCategory || this.detectRetailCategoryFromQuery(productQuery);
+      genericCategory || this.productSearch.findProductCategory?.(productQuery) || this.detectRetailCategoryFromQuery(productQuery);
 
     if (
       effectiveCategory === "fralda" &&
@@ -1236,6 +1274,7 @@ export class ConversationEngineService {
 
     if (
       effectiveCategory &&
+      this.productSearch.getPopularBrands(effectiveCategory).length > 0 &&
       !["gillette", "minancora"].includes(effectiveCategory) &&
       !context?.selectedBrand &&
       this.isOnlyGenericRetailCategoryQuery(productQuery, effectiveCategory)
@@ -1270,7 +1309,7 @@ export class ConversationEngineService {
     });
     this.logger.log("Contexto anterior limpo");
 
-    const summary = await this.productSearch.searchProducts(productQuery);
+    const summary = await this.productSearch.searchProducts(productQuery, context?.catalogQuery);
     const orderedSummary = context?.preferCheapest
       ? this.sortSummaryByCheapest(summary)
       : summary;
@@ -1337,7 +1376,7 @@ export class ConversationEngineService {
         : "Qual FPS você prefere? Pode responder 30, 50, 60 ou 70.";
     }
 
-    const query = `${baseQuery} ${attributeName} ${attributeValue}`;
+    const query = `${baseQuery} ${normalizeRetailSearchQuery(text)} ${attributeName} ${attributeValue}`;
     return this.handleRetailProductQuestion(conversation.id, query, {
       category: conversation.currentRetailCategory || undefined,
       selectedBrand: "atributo confirmado",
@@ -1851,39 +1890,11 @@ export class ConversationEngineService {
   }
 
   private extractRetailProductQuery(message: string) {
-    const normalized = this.normalize(message)
-      .replace(/[?!.:,;]/g, " ")
-      .replace(/\bvoces?\s+(?:tem|teriam|vendem)\b/g, " ")
-      .replace(/\b(?:tem|teria|vende|vendem|quero|queria|preciso)\b/g, " ")
-      .replace(/\b(?:preco|valor|quanto custa|qual valor)\b/g, " ")
-      .replace(/\b(?:por favor|pfv|pra mim|para mim)\b/g, " ")
-      .replace(/\b(?:do|da|de|um|uma|o|a)\b/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-
-    return normalized.length >= 2 ? normalized : message.trim();
+    return normalizeRetailSearchQuery(message);
   }
 
   private isOnlyGenericRetailCategoryQuery(query: string, category: string) {
-    const normalizedQuery = this.normalize(query)
-      .replace(/[?!.:,;]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const normalizedCategory = this.normalize(category);
-    const genericTerms: Record<string, string[]> = {
-      shampoo: ["shampoo", "xampu"],
-      condicionador: ["condicionador"],
-      sabonete: ["sabonete"],
-      desodorante: ["desodorante"],
-      fralda: ["fralda", "fraldas"],
-      gillette: ["gillette", "gilete"],
-      "creme dental": ["creme dental", "pasta de dente"],
-      "protetor solar": ["protetor solar"],
-    };
-
-    return (genericTerms[normalizedCategory] || [normalizedCategory]).includes(
-      normalizedQuery,
-    );
+    return isGenericRetailCategoryQuery(query, category);
   }
 
   private detectRetailCategoryFromQuery(query: string) {
@@ -2793,8 +2804,8 @@ export class ConversationEngineService {
   }
 
   private extractSunscreenFps(text: string) {
-    const normalized = this.normalize(text);
-    const match = normalized.match(/\b(?:fps\s*)?(30|50|60|70|80|90|99|100)\b/);
+    const normalized = normalizeRetailSearchQuery(text);
+    const match = normalized.match(/\b(?:fps|spf)\s*(\d{1,3})\b/) || normalized.trim().match(/^(\d{1,3})$/);
     return match?.[1] || null;
   }
 
