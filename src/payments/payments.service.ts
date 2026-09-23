@@ -18,6 +18,8 @@ import {
   SigiloPayWebhookEvent,
 } from "./payment.types";
 import { DirectPixService } from "./direct-pix.service";
+import { BadRequestException } from "@nestjs/common";
+import { missingAddressField } from "../whatsapp/delivery-address";
 import { SigiloPayService } from "./sigilopay.service";
 
 interface CheckoutCartItem {
@@ -96,6 +98,18 @@ export class PaymentsService {
   async confirmCheckout(
     input: ConfirmCheckoutInput,
   ): Promise<ConfirmCheckoutResult> {
+    const address = input.address;
+    const missingField = missingAddressField(address ? {
+      cep: address.cep,
+      logradouro: address.logradouro || address.street,
+      bairro: address.bairro || address.neighborhood,
+      localidade: address.localidade || address.city,
+      uf: address.uf || address.state,
+      number: address.number,
+    } : null);
+    if (missingField) {
+      throw new BadRequestException(`Endereço de entrega incompleto: ${missingField}`);
+    }
     const totalCents = this.calculateCartTotalCents(input.cart);
     const checkoutKey = this.createCheckoutKey(input, totalCents);
     const order = input.existingOrderId

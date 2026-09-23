@@ -282,11 +282,31 @@ export const WhatsappCopy = {
     ].join("\n");
   },
 
-  medicineNotFound() {
+  medicineNotFound(canReadImages = false) {
     return [
       "Não localizei esse medicamento agora.",
       "",
-      "Pode conferir o nome ou enviar uma foto da embalagem?",
+      canReadImages
+        ? "Pode conferir o nome e a dosagem? Se preferir, envie uma foto nítida da frente da embalagem."
+        : "Pode escrever o nome e a dosagem como aparecem na embalagem? Exemplo: Dipirona 1g.",
+    ].join("\n");
+  },
+
+  packageImageFallback(status: "unavailable" | "unreadable" | "failed" | "unsupported") {
+    const explanation = status === "unreadable"
+      ? "Recebi sua foto, mas não consegui identificar o nome com segurança."
+      : status === "unsupported"
+        ? "Recebi o arquivo, mas não consegui ler a embalagem nesse formato."
+        : "Recebi sua foto, mas a leitura automática não está disponível neste momento.";
+    return [explanation, "", "Pode escrever o nome e a dosagem que aparecem na embalagem? Assim continuo a busca para você."].join("\n");
+  },
+
+  confirmPackageImage(label: string) {
+    return [
+      "Recebi sua foto. Li estas informações na embalagem:",
+      "", sanitizeCustomerText(label), "",
+      "Confere com o que você procura?",
+      "", "1. Sim, buscar esse produto", "2. Não, corrigir o nome ou a dosagem",
     ].join("\n");
   },
 

@@ -30,6 +30,7 @@ export interface MedicineQuestion {
 }
 
 export interface CommercialMedicineOption {
+  pricePolicy?: string;
   optionId: number;
   productId: number;
   presentationId: number;
@@ -419,7 +420,7 @@ export class BulaApiService {
     return [
       "No momento não encontrei esse medicamento disponível.",
       "",
-      "Você pode conferir o nome do medicamento ou me enviar uma foto da embalagem?",
+      "Pode escrever o nome e a dosagem como aparecem na embalagem?",
     ].join("\n");
   }
 
@@ -935,18 +936,9 @@ export class BulaApiService {
       .join(" ");
   }
 
-  private async fetchJson<T>(url: string): Promise<T> {
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`BulAPI respondeu ${response.status} em ${url}`);
-    }
-
-    return (await response.json()) as T;
+  private async fetchJson<T>(_url: string): Promise<T> {
+    // This service remains only for local parsing/formatting of conversations.
+    throw new Error("BulAPI disabled: use PrecoPopularService");
   }
 
   private getBaseUrl() {

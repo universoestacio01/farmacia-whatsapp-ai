@@ -107,40 +107,30 @@ function mockFetch(t, response) {
   return calls;
 }
 
-function medicineSearch(service, fallbacks = {}) {
+function medicineSearch(service) {
   return new MedicineSearchOrchestratorService(
-    config(),
     selector,
-    { search: fallbacks.pharma || never },
-    { lookupMedicine: fallbacks.bula || never },
-    {
-      search: fallbacks.manual || never,
-      findSymptomSuggestion: () => null,
-      findSymptomOptions: () => null,
-    },
+    { search: never, findSymptomSuggestion: () => null, findSymptomOptions: () => null },
     rules,
-    undefined,
     service,
   );
 }
 
-function retailSearch(service, cosmos = { search: never, findByGtin: never }) {
-  return new ProductSearchOrchestratorService(
-    cosmos,
-    new ManualRetailProductService(),
-    undefined,
-    service,
-  );
+function retailSearch(service) {
+  const manual = new ManualRetailProductService();
+  manual.search = never;
+  manual.createManualProduct = never;
+  return new ProductSearchOrchestratorService(manual, service);
 }
 
-test("10 percent discount is rounded in cents and invalid prices are rejected", () => {
-  assert.equal(calculatePrecoPopularSalePrice(100), 90);
-  assert.equal(calculatePrecoPopularSalePrice(21.9), 19.71);
-  assert.equal(calculatePrecoPopularSalePrice(5.19), 4.67);
-  assert.equal(calculatePrecoPopularSalePrice(15.75), 14.18);
-  assert.equal(calculatePrecoPopularSalePrice(429.9), 386.91);
-  assert.equal(calculatePrecoPopularSalePrice(12.9), 11.61);
-  assert.equal(calculatePrecoPopularSalePrice(100, 0.85), 85);
+test("full catalog prices are rounded in cents; old discount settings are ignored", () => {
+  assert.equal(calculatePrecoPopularSalePrice(100), 100);
+  assert.equal(calculatePrecoPopularSalePrice(21.9), 21.9);
+  assert.equal(calculatePrecoPopularSalePrice(5.19), 5.19);
+  assert.equal(calculatePrecoPopularSalePrice(15.75), 15.75);
+  assert.equal(calculatePrecoPopularSalePrice(429.9), 429.9);
+  assert.equal(calculatePrecoPopularSalePrice(12.9), 12.9);
+  assert.equal(calculatePrecoPopularSalePrice(100, 0.85), 100);
   for (const price of [0, -1, NaN, Infinity])
     assert.throws(() => calculatePrecoPopularSalePrice(price));
 });
@@ -181,7 +171,7 @@ test("all SKUs preserved, Venvanse 30/50/70 ranked, no manual override or half P
     "70mg",
   ]);
   for (const option of summary.options) {
-    assert.equal(option.pricePf, 386.91);
+    assert.equal(option.pricePf, 429.9);
     assert.equal(option.source, "preco_popular");
     assert.equal(option.formGroup, "capsula");
     assert.equal(option.packageInfo.unitCount, 28);
@@ -221,7 +211,7 @@ test("1g and 1000mg equivalent; tablets and bottle concentrations stay distinct"
   const summary =
     await medicineSearch(service).searchMedicine("Dipirona 1000mg");
   assert.equal(summary.options.length, 1);
-  assert.equal(summary.options[0].pricePf, 19.71);
+  assert.equal(summary.options[0].pricePf, 21.9);
   assert.equal(summary.options[0].packageInfo.unitCount, 10);
   assert.match(summary.options[0].label, /1g/);
 });
@@ -251,7 +241,7 @@ test("retail price/image/EAN preserved; Cosmos and PharmaDB not called", async (
     new PrecoPopularService(config(), selector),
   ).searchProducts("sabonete dove");
   assert.equal(summary.manualFallback, false);
-  assert.equal(summary.options[0].pricePf, 4.67);
+  assert.equal(summary.options[0].pricePf, 5.19);
   assert.equal(summary.options[0].source, "preco_popular");
   assert.ok(summary.options[0].imageUrl && summary.options[0].ean);
 });
@@ -321,7 +311,7 @@ test("missing price, unavailable offers and invalid rows are not sold as valid o
   ).searchMedicines("venvanse");
   assert.equal(result.length, 1);
   assert.equal(result[0].dosage, "70mg");
-  assert.equal(result[0].salePrice, 18);
+  assert.equal(result[0].salePrice, 20);
 });
 
 test("medicine and retail categories cannot leak into the other flow", async (t) => {
@@ -392,53 +382,41 @@ test("8-second timeout aborts request without uncaught rejection", async (t) => 
   assert.ok(timeouts.includes(8000));
 });
 
-test("empty primary results use existing medicine fallback, preserving old price rules", async (t) => {
-  mockFetch(t, () => respond([]));
-  let pharmaCalls = 0;
-  const orchestrator = medicineSearch(
-    new PrecoPopularService(config(), selector),
-    {
-      pharma: async () => {
-        pharmaCalls++;
-        return [
-          {
-            source: "pharmadb",
-            sourceId: "1",
-            productName: "Venvanse",
-            displayName: "Venvanse 30mg",
-            dosage: "30mg",
-            form: "capsula",
-            presentation: "30 MG CAP CT X 28",
-            priceConsumer: 100,
-          },
-        ];
-      },
-      manual: async () => [],
-    },
-  );
-  const summary = await orchestrator.searchMedicine("venvanse");
-  assert.ok(pharmaCalls > 0);
-  assert.equal(summary.options[0].source, "pharmadb");
-  assert.equal(summary.options[0].pricePf, 50);
+for (const status of [200, 401, 429, 500]) {
+  test(`empty/failed sole catalog HTTP ${status} never uses old providers or manual prices`, async (t) => {
+    const calls = mockFetch(t, () => respond(status === 200 ? [] : {}, status));
+    const catalog = new PrecoPopularService(config({ MEDICINE_PRIMARY_PROVIDER: "pharmadb" }), selector);
+    assert.deepEqual((await medicineSearch(catalog).searchMedicine("venvanse")).options, []);
+    const retail = await retailSearch(catalog).searchProducts("sabonete dove");
+    assert.deepEqual(retail.options, []);
+    assert.equal(retail.manualFallback, false);
+    assert.ok(calls.every((call) => call.url.host === "www.precopopular.com.br"));
+  });
+}
+
+test("any brand uses real catalog offers, never fabricated category prices", async (t) => {
+  const calls = mockFetch(t, () => respond([product(1, "Shampoo Seda 325ml", 23.49, "Seda", false)]));
+  const summary = await retailSearch(new PrecoPopularService(config(), selector)).searchProducts("shampoo");
+  assert.equal(calls.length, 1);
+  assert.equal(summary.manualFallback, false);
+  assert.equal(summary.options[0].pricePf, 23.49);
 });
 
-test("failed primary falls back to Cosmos, then manual if Cosmos fails", async (t) => {
-  mockFetch(t, () => respond({}, 500));
-  let cosmosCalls = 0;
-  const cosmos = {
-    search: async () => {
-      cosmosCalls++;
-      throw new Error("offline");
-    },
-  };
-  const summary = await retailSearch(
-    new PrecoPopularService(config(), selector),
-    cosmos,
-  ).searchProducts("sabonete dove");
-  assert.equal(cosmosCalls, 1);
-  assert.equal(summary.manualFallback, true);
-  assert.equal(summary.options[0].source, "manual_catalog");
-  assert.equal(summary.options[0].pricePf, 4.99);
+test("legacy multiplier 0.9 does not discount medicine or retail", async (t) => {
+  mockFetch(t, () => respond([
+    product(1, "Venvanse 30mg Com 28 Capsulas", 429.9),
+    product(2, "Sabonete Dove 90g", 5.19, "Dove", false),
+  ]));
+  const catalog = new PrecoPopularService(config({ PRECO_POPULAR_PRICE_MULTIPLIER: 0.9 }), selector);
+  assert.equal((await catalog.searchMedicines("venvanse"))[0].salePrice, 429.9);
+  assert.equal((await catalog.searchRetail("sabonete dove"))[0].salePrice, 5.19);
+});
+
+test("retired BulAPI HTTP transport is blocked even on accidental direct use", async (t) => {
+  const calls = mockFetch(t, never);
+  const bula = new BulaApiService(config(), selector, rules);
+  assert.equal(await bula.lookupMedicine("dipirona"), null);
+  assert.equal(calls.length, 0);
 });
 
 test("mixed cart preserves final price, image, EAN and subtotal without discounting twice", async (t) => {
@@ -459,10 +437,10 @@ test("mixed cart preserves final price, image, EAN and subtotal without discount
     engine.buildCartItem(medicine, 1),
     engine.buildCartItem(retail, 2),
   ];
-  assert.equal(cart[0].unitPrice, 386.91);
-  assert.equal(cart[1].unitPrice, 4.67);
-  assert.equal(cart[1].total, 9.34);
-  assert.ok(Math.abs(engine.cartSubtotal(cart) - 396.25) < 0.00001);
+  assert.equal(cart[0].unitPrice, 429.9);
+  assert.equal(cart[1].unitPrice, 5.19);
+  assert.equal(cart[1].total, 10.38);
+  assert.ok(Math.abs(engine.cartSubtotal(cart) - 440.28) < 0.00001);
   assert.deepEqual(
     cart.map((item) => item.type),
     ["medicine", "retail_product"],
@@ -474,25 +452,29 @@ test("mixed cart preserves final price, image, EAN and subtotal without discount
   );
 });
 
-test("health is config-only, exposes effective primary and discount without fetching", () => {
+test("health is config-only, exposes sole catalog and full price without fetching", () => {
   const health = new HealthController(
     config({ MEDICINE_PRIMARY_PROVIDER: "pharmadb" }),
     {},
   );
   const result = health.providers();
   assert.equal(result.primaryProvider, "preco_popular");
-  assert.equal(result.medicineFallbackProvider, "pharmadb");
+  assert.equal(result.medicineFallbackProvider, null);
   assert.equal(result.retailPrimaryProvider, "preco_popular");
-  assert.equal(result.providers.preco_popular.priceMultiplier, 0.9);
+  assert.equal(result.providers.preco_popular.priceMultiplier, 1);
   assert.equal(result.providers.preco_popular.lazy, true);
+  for (const provider of ["pharmadb", "bulapi", "cosmos"]) {
+    assert.equal(result.providers[provider].enabled, false);
+    assert.equal(result.providers[provider].retired, true);
+  }
   const disabled = new HealthController(
     config({ PRECO_POPULAR_ENABLED: false }),
     {},
   ).providers();
-  assert.equal(disabled.primaryProvider, "pharmadb");
+  assert.equal(disabled.primaryProvider, null);
 });
 
-test("environment validation defaults new provider on, with 0.9 multiplier", () => {
+test("environment validation defaults new provider on, with multiplier 1", () => {
   const required = {
     DATABASE_URL: "mysql://test:test@localhost/test",
     WHATSAPP_ACCESS_TOKEN: "offline",
@@ -502,18 +484,16 @@ test("environment validation defaults new provider on, with 0.9 multiplier", () 
   };
   const env = validateEnv(required);
   assert.equal(env.PRECO_POPULAR_ENABLED, true);
-  assert.equal(env.PRECO_POPULAR_PRICE_MULTIPLIER, 0.9);
+  assert.equal(env.PRECO_POPULAR_PRICE_MULTIPLIER, 1);
   assert.equal(
     validateEnv({ ...required, PRECO_POPULAR_ENABLED: "false" })
       .PRECO_POPULAR_ENABLED,
     false,
   );
-  assert.throws(() =>
-    validateEnv({ ...required, PRECO_POPULAR_PRICE_MULTIPLIER: 0 }),
-  );
+  assert.equal(validateEnv({ ...required, PRECO_POPULAR_PRICE_MULTIPLIER: 0.9 }).PRECO_POPULAR_PRICE_MULTIPLIER, 1);
 });
 
-test("real conversation engine: dosage change, mixed cart, address and checkout use discounted amount", async (t) => {
+test("real conversation engine: dosage change, mixed cart, address and checkout use full catalog amount", async (t) => {
   const calls = mockFetch(t, (url) =>
     new URL(url).searchParams.get("ft") === "venvanse"
       ? respond(
@@ -582,31 +562,31 @@ test("real conversation engine: dosage change, mixed cart, address and checkout 
   assert.match(opening, /Qual medicamento ou produto/);
   assert.equal(calls.length, 0, "Opening without a product must not query any catalog");
   const initialOptions = await send("Tem Venvanse?");
-  assert.match(initialOptions, /386,91/);
+  assert.match(initialOptions, /429,90/);
   assert.equal((initialOptions.match(/28/g) || []).length, 3);
   assert.equal(conversation.candidateOptions.length, 3);
   await send("Tem de 50mg?");
   assert.equal(conversation.selectedPresentation.strength, "50mg");
-  assert.equal(conversation.selectedPresentation.pricePf, 386.91);
+  assert.equal(conversation.selectedPresentation.pricePf, 429.9);
   await send("1");
   await send("adicionar mais");
   await send("Tem sabonete Dove?");
-  assert.equal(conversation.selectedPresentation.pricePf, 4.67);
+  assert.equal(conversation.selectedPresentation.pricePf, 5.19);
   await send("2");
   const cartReply = await send("ver carrinho");
-  assert.match(cartReply, /396,25/);
+  assert.match(cartReply, /440,28/);
   assert.equal(conversation.cart.length, 2);
   await send("finalizar");
   await send("01001000");
   await send("123");
   const summary = await send("nao");
-  assert.match(summary, /396,25/);
+  assert.match(summary, /440,28/);
   const pix = await send("1");
   assert.equal(checkouts.length, 1);
-  assert.equal(checkouts[0].cart[0].unitPrice, 386.91);
-  assert.equal(checkouts[0].cart[1].unitPrice, 4.67);
+  assert.equal(checkouts[0].cart[0].unitPrice, 429.9);
+  assert.equal(checkouts[0].cart[1].unitPrice, 5.19);
   assert.equal(conversation.pendingAction, ConversationState.WAITING_PIX);
-  assert.match(pix[0], /396,25/);
+  assert.match(pix[0], /440,28/);
   assert.equal(calls.length, 2);
 });
 
@@ -634,6 +614,15 @@ test("Nest module registers and injects new provider without network or database
   try {
     await module.init();
     const service = module.get(PrecoPopularService);
+    for (const [path, name] of [
+      ["pharmadb.service", "PharmaDbService"],
+      ["pharmadb-auth.service", "PharmaDbAuthService"],
+      ["cosmos.service", "CosmosService"],
+      ["cosmos-token-pool.service", "CosmosTokenPoolService"],
+    ]) {
+      const retired = require(`../dist/integrations/${path}`)[name];
+      assert.throws(() => module.get(retired), /does not exist/);
+    }
     assert.equal(
       module.get(MedicineSearchOrchestratorService).precoPopularService,
       service,

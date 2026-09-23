@@ -835,9 +835,6 @@ export class AdminService {
 
   providers() {
     const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
-    const cosmosTokens =
-      this.tokenList("COSMOS_API_TOKENS").length ||
-      this.tokenList("COSMOS_API_TOKEN").length;
 
     return {
       database: {
@@ -854,18 +851,16 @@ export class AdminService {
         apiVersion: this.env("WHATSAPP_API_VERSION") || "v25.0",
       },
       medicines: {
-        primaryProvider: precoPopularEnabled ? "preco_popular" : this.env("MEDICINE_PRIMARY_PROVIDER") || "pharmadb",
-        pharmadbConfigured: Boolean(this.env("PHARMADB_API_KEY")),
-        bulapiConfigured: Boolean(this.env("BULA_API_BASE_URL")),
-        manualFallback: true,
+        primaryProvider: precoPopularEnabled ? "preco_popular" : null,
+        pharmadbConfigured: false,
+        bulapiConfigured: false,
+        manualFallback: false,
       },
       retailProducts: {
-        primaryProvider: precoPopularEnabled ? "preco_popular" : "cosmos",
-        cosmosConfigured: Boolean(
-          this.env("COSMOS_API_BASE_URL") && cosmosTokens > 0,
-        ),
-        cosmosTokenCount: cosmosTokens,
-        manualFallback: true,
+        primaryProvider: precoPopularEnabled ? "preco_popular" : null,
+        cosmosConfigured: false,
+        cosmosTokenCount: 0,
+        manualFallback: false,
       },
       precoPopular: {
         enabled: precoPopularEnabled,

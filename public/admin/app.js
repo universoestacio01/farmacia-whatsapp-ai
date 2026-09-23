@@ -1232,19 +1232,8 @@ function renderProviders(data) {
       "Preço Popular",
       Boolean(data.precoPopular?.enabled),
       data.precoPopular?.enabled
-        ? `Catálogo principal. Desconto: ${Math.round((1 - data.precoPopular.priceMultiplier) * 100)}%`
+        ? "Única fonte de produtos e preços. Preço integral do catálogo."
         : "Desativado",
-    ],
-    [
-      "PharmaDB",
-      data.medicines.pharmadbConfigured,
-      "Catálogo alternativo de medicamentos",
-    ],
-    ["BulAPI", data.medicines.bulapiConfigured, "Fallback de medicamentos"],
-    [
-      "Cosmos",
-      data.retailProducts.cosmosConfigured,
-      `${data.retailProducts.cosmosTokenCount} token(s)`,
     ],
     [
       "Pix direto",

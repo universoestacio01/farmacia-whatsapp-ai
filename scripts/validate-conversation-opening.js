@@ -60,8 +60,8 @@ function createFixture(state = ConversationState.IDLE, overrides = {}) {
     },
   };
   const products = new ProductSearchOrchestratorService(
-    { search: never, findByGtin: never },
     new ManualRetailProductService(),
+    { isEnabled: () => true, searchRetail: never, findRetailByGtin: never },
   );
   products.searchProducts = async (query) => {
     queries.retail.push(query);
@@ -81,6 +81,7 @@ function createFixture(state = ConversationState.IDLE, overrides = {}) {
           presentationId: id,
           type: "medicine",
           source: "preco_popular",
+          pricePolicy: "preco_popular_full_v1",
           medicineName: parsed.medicineName,
           productName: parsed.medicineName,
           label: `${parsed.medicineName} ${parsed.dosage || "500mg"} caixa ${id * 10}`,

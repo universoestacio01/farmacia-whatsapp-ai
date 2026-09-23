@@ -4,7 +4,6 @@ import { ProviderRequestOutcome } from "@prisma/client";
 import { z } from "zod";
 import {
   calculatePrecoPopularSalePrice,
-  getPrecoPopularMultiplier,
   isPrecoPopularEnabled,
   PRECO_POPULAR_BASE_URL,
 } from "../config/preco-popular.config";
@@ -151,11 +150,25 @@ export class PrecoPopularService {
     gtin: string,
   ): Promise<NormalizedRetailProduct | null> {
     if (!/^(?:\d{8}|\d{12,14})$/.test(gtin)) return null;
-    const products = await this.searchCatalog(gtin, true);
+    const products = await this.searchCatalog(gtin, "ean");
     const product = products.find(
       (item) => item.ean === gtin && !item.isMedicine,
     );
     return product ? this.toRetail(product) : null;
+  }
+
+  async findCurrentOffer(item: { source?: string; sourceId?: string; ean?: string }) {
+    const useEan = /^(?:\d{8}|\d{12,14})$/.test(item.ean || "");
+    const useSku = item.source === this.name && /^\d+$/.test(item.sourceId || "");
+    if (!useEan && !useSku) return null;
+    const products = await this.searchCatalog(
+      useEan ? item.ean! : item.sourceId!,
+      useEan ? "ean" : "sku",
+    );
+    const match = products.find((product) => useEan
+      ? product.ean === item.ean
+      : product.skuId === item.sourceId);
+    return match ? { source: this.name, sourceId: match.skuId, ean: match.ean, price: match.salePrice } : null;
   }
 
   private toRetail(product: CatalogProduct): NormalizedRetailProduct {
@@ -171,22 +184,22 @@ export class PrecoPopularService {
       imageUrl: product.imageUrl,
       referencePrice: product.price,
       salePrice: product.salePrice,
-      salePriceSource: "preco_popular_discount",
+      salePriceSource: "preco_popular",
     };
   }
 
   private async searchCatalog(
     term: string,
-    gtin = false,
+    queryType: "name" | "ean" | "sku" = "name",
   ): Promise<CatalogProduct[]> {
     if (!this.isEnabled() || term.length < 2 || term.length > 200) return [];
-    const key = `${gtin ? "ean" : "name"}:${this.normalize(term)}`;
+    const key = `${queryType}:${this.normalize(term)}`;
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.products;
     if (this.cooldownUntil > Date.now()) return [];
     const pending = this.inFlight.get(key);
     if (pending) return pending;
-    const request = this.fetchCatalog(term, gtin)
+    const request = this.fetchCatalog(term, queryType)
       .then((products) => {
         if (this.cache.size >= 200)
           this.cache.delete(this.cache.keys().next().value!);
@@ -203,7 +216,7 @@ export class PrecoPopularService {
 
   private async fetchCatalog(
     term: string,
-    gtin: boolean,
+    queryType: "name" | "ean" | "sku",
   ): Promise<CatalogProduct[]> {
     const startedAt = Date.now();
     const controller = new AbortController();
@@ -219,8 +232,8 @@ export class PrecoPopularService {
           PRECO_POPULAR_BASE_URL,
         );
         url.searchParams.set(
-          gtin ? "fq" : "ft",
-          gtin ? `alternateIds_Ean:${term}` : term,
+          queryType === "name" ? "ft" : "fq",
+          queryType === "ean" ? `alternateIds_Ean:${term}` : queryType === "sku" ? `skuId:${term}` : term,
         );
         url.searchParams.set("_from", String(page * 50));
         url.searchParams.set("_to", String(page * 50 + 49));
@@ -261,7 +274,7 @@ export class PrecoPopularService {
         );
         await this.record({
           provider: this.name,
-          operation: gtin ? "catalog_gtin_search" : "catalog_search",
+          operation: queryType === "name" ? "catalog_search" : `catalog_${queryType}_search`,
           query: term,
           endpoint,
           statusCode: status,
@@ -289,7 +302,7 @@ export class PrecoPopularService {
       this.logger.warn(
         JSON.stringify({
           provider: this.name,
-          event: "PRECO POPULAR FAILED, FALLING BACK",
+          event: "PRECO POPULAR SEARCH FAILED",
           term,
           endpoint,
           status,
@@ -315,9 +328,6 @@ export class PrecoPopularService {
   private normalizeProducts(body: unknown[]) {
     const products: CatalogProduct[] = [];
     const discarded = { invalid: 0, noPrice: 0, unavailable: 0 };
-    const multiplier = getPrecoPopularMultiplier(
-      this.config.get("PRECO_POPULAR_PRICE_MULTIPLIER"),
-    );
     for (const raw of body) {
       const parsed = productSchema.safeParse(raw);
       if (!parsed.success) {
@@ -384,7 +394,7 @@ export class PrecoPopularService {
           isMedicine,
           imageUrl: image,
           price,
-          salePrice: calculatePrecoPopularSalePrice(price, multiplier),
+          salePrice: calculatePrecoPopularSalePrice(price),
         });
       }
     }

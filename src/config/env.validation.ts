@@ -73,36 +73,12 @@ const envSchema = z.object({
     .trim()
     .min(1, "WHATSAPP_APP_SECRET nao pode ficar vazia"),
   WHATSAPP_API_VERSION: z.string().trim().default("v25.0"),
-  OPENAI_API_KEY: z.string().trim().optional(),
+  OPENAI_API_KEY: sanitizedOptionalString,
+  OPENAI_VISION_MODEL: sanitizedOptionalString,
   OPENAI_MODEL: z.string().trim().default("gpt-4o-mini"),
   PRECO_POPULAR_ENABLED: sanitizedBoolean.default(true),
-  PRECO_POPULAR_PRICE_MULTIPLIER: z.coerce.number().positive().max(1).default(0.9),
-  PHARMADB_API_BASE_URL: z
-    .string()
-    .trim()
-    .url()
-    .default("https://api.pharmadb.com.br/v1"),
-  PHARMADB_API_KEY: z.string().trim().optional(),
-  PHARMADB_PMC_PRICE_MULTIPLIER: z.coerce
-    .number()
-    .positive()
-    .default(0.5),
-  MEDICINE_PRIMARY_PROVIDER: z
-    .enum(["pharmadb", "bulapi", "popular_manual"])
-    .default("pharmadb"),
-  BULA_API_BASE_URL: z.string().trim().url().optional(),
+  PRECO_POPULAR_PRICE_MULTIPLIER: z.unknown().transform(() => 1),
   VIACEP_BASE_URL: z.string().trim().url().optional(),
-  COSMOS_API_BASE_URL: z
-    .string()
-    .trim()
-    .url()
-    .default("https://api.cosmos.bluesoft.com.br"),
-  COSMOS_API_TOKEN: z.string().trim().optional(),
-  COSMOS_API_TOKENS: z.string().trim().optional(),
-  COSMOS_USER_AGENT: z.string().trim().default("farmacia-whatsapp-ai"),
-  COSMOS_PRICE_MULTIPLIER: z.coerce.number().positive().default(1),
-  COSMOS_CACHE_TTL_HOURS: z.coerce.number().positive().default(24),
-  COSMOS_TOKEN_429_COOLDOWN_MINUTES: z.coerce.number().positive().default(30),
   PIX_PROVIDER: sanitizedString.default("pix_direct"),
   PIX_KEY: sanitizedString.default(DEFAULT_PIX_KEY),
   PIX_STATIC_KEY: sanitizedOptionalString,

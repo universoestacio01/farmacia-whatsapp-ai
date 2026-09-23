@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import { parseAddressField } from "./delivery-address";
 
 @Injectable()
 export class ConversationInputService {
@@ -29,13 +30,11 @@ export class ConversationInputService {
   }
 
   parseCep(text: string) {
-    const digits = text.replace(/\D/g, "");
-    return digits.length === 8 ? digits : null;
+    return parseAddressField("cep", text);
   }
 
   isLikelyAddressNumber(text: string) {
-    const normalized = text.trim();
-    return /^[0-9A-Za-zÀ-ÿ][0-9A-Za-zÀ-ÿ\s/-]{0,20}$/.test(normalized);
+    return parseAddressField("number", text) !== null;
   }
 
   normalizeForIntent(text: string) {

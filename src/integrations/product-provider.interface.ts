@@ -1,5 +1,6 @@
 export type ProductProviderName = "preco_popular" | "cosmos" | "manual_catalog";
 export type RetailProductPriceSource =
+  | "preco_popular"
   | "preco_popular_discount"
   | "cosmos_avg_price"
   | "cosmos_max_price"

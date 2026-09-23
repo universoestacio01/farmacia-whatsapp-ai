@@ -1,13 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { ProviderRequestOutcome } from "@prisma/client";
-import { calculateRetailSalePrice } from "../config/retail-price-rules.config";
-import { ProviderRequestLogService } from "../observability/provider-request-log.service";
 import { formatProductDisplayName } from "../whatsapp/whatsapp-copy";
 import { CommercialMedicineOption } from "./bula-api.service";
-import { CosmosService } from "./cosmos.service";
 import { ManualRetailProductService } from "./manual-retail-product.service";
 import { NormalizedRetailProduct } from "./product-provider.interface";
 import { PrecoPopularService } from "./preco-popular.service";
+import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
 
 export interface RetailProductLookupSummary {
   query: string;
@@ -28,10 +25,8 @@ export class ProductSearchOrchestratorService {
   private readonly cache = new Map<string, RetailCacheEntry>();
 
   constructor(
-    private readonly cosmosService: CosmosService,
     private readonly manualRetailProductService: ManualRetailProductService,
-    private readonly providerRequestLog?: ProviderRequestLogService,
-    private readonly precoPopularService?: PrecoPopularService,
+    private readonly precoPopularService: PrecoPopularService,
   ) {}
 
   isRetailProductQuery(message: string) {
@@ -68,27 +63,6 @@ export class ProductSearchOrchestratorService {
     const category = this.findCategoryForQuery(query);
     const requestedBrand = this.findRequestedBrand(query, category);
     const allowKits = this.allowsKits(query);
-    let products: NormalizedRetailProduct[] = [];
-    const startedAt = Date.now();
-
-    if (category && this.isGenericCategoryQuery(query, category) && !requestedBrand) {
-      const manualProducts = await this.getManualFallbackProducts(
-        query,
-        category,
-        requestedBrand,
-      );
-
-      const summary = {
-        query,
-        category,
-        requestedBrand: undefined,
-        options: this.toCommercialOptions(manualProducts).slice(0, 3),
-        manualFallback: true,
-      };
-      this.setCache(cacheKey, summary, 300);
-      return summary;
-    }
-
     if (this.precoPopularService?.isEnabled()) {
       try {
         const catalogProducts = gtin
@@ -108,106 +82,17 @@ export class ProductSearchOrchestratorService {
           return summary;
         }
       } catch (error) {
-        this.logger.warn(`PRECO POPULAR RETAIL FALLBACK: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+        this.logger.warn(`PRECO POPULAR RETAIL SEARCH FAILED: ${error instanceof Error ? error.message : "erro desconhecido"}`);
       }
     }
 
-    try {
-      if (gtin) {
-        const product = await this.cosmosService.findByGtin(gtin);
-        products = product ? [product] : [];
-      } else {
-        products = await this.cosmosService.search(query);
-      }
-      await this.providerRequestLog?.record({
-        provider: "cosmos",
-        operation: gtin ? "retail_gtin_search" : "retail_name_search",
-        query,
-        durationMs: Date.now() - startedAt,
-        resultsFound: products.length,
-        outcome: products.length
-          ? ProviderRequestOutcome.SUCCESS
-          : ProviderRequestOutcome.EMPTY,
-      });
-    } catch (error) {
-      this.logger.warn(
-        `COSMOS FAILED, FALLING BACK TO MANUAL CATALOG: ${
-          error instanceof Error ? error.message : "erro desconhecido"
-        }`,
-      );
-      await this.providerRequestLog?.record({
-        provider: "cosmos",
-        operation: gtin ? "retail_gtin_search" : "retail_name_search",
-        query,
-        durationMs: Date.now() - startedAt,
-        outcome: ProviderRequestOutcome.FAILED,
-        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
-      });
-      products = [];
-    }
-
-    this.logger.log(`COSMOS RAW RESULTS COUNT: ${products.length}`);
-
-    if (products.length > 0) {
-      let selectedProducts = this.selectCommercialProducts(products, {
-        query,
-        category,
-        requestedBrand,
-        allowKits,
-      });
-      let manualFallback = false;
-      await this.providerRequestLog?.record({
-        provider: "cosmos",
-        operation: "retail_commercial_filter",
-        query,
-        durationMs: Date.now() - startedAt,
-        resultsFound: products.length,
-        resultsAfterFilter: selectedProducts.length,
-        outcome: selectedProducts.length
-          ? ProviderRequestOutcome.SUCCESS
-          : ProviderRequestOutcome.FALLBACK,
-        failureReason: selectedProducts.length
-          ? undefined
-          : "Nenhum produto passou no filtro comercial",
-      });
-
-      if (selectedProducts.length === 0 && category) {
-        this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
-        selectedProducts = await this.getManualFallbackProducts(
-          query,
-          category,
-          requestedBrand,
-        );
-        manualFallback = true;
-      }
-
-      const summary = {
-        query,
-        category: category || undefined,
-        requestedBrand: requestedBrand || undefined,
-        options: this.toCommercialOptions(selectedProducts).slice(0, 3),
-        manualFallback,
-      };
-      this.setCache(cacheKey, summary, 300);
-      return summary;
-    }
-
-    this.logger.warn("COSMOS FALLING BACK TO MANUAL CATALOG");
-    const manualProducts = await this.getManualFallbackProducts(
-      query,
-      category,
-      requestedBrand,
-    );
-
-    const summary = {
+    return {
       query,
       category: category || undefined,
       requestedBrand: requestedBrand || undefined,
-      options: this.toCommercialOptions(manualProducts).slice(0, 3),
-      manualFallback: true,
+      options: [],
+      manualFallback: false,
     };
-    this.setCache(cacheKey, summary, summary.options.length ? 300 : 60);
-    return summary;
   }
 
   buildQueryFromBrandSelection(category: string, brand: string) {
@@ -263,6 +148,8 @@ export class ProductSearchOrchestratorService {
         .filter(Boolean)
         .join(" "),
     );
+
+    if (product.source !== "preco_popular" || !Number.isFinite(product.salePrice) || (product.salePrice ?? 0) <= 0) return false;
 
     if (!product.displayName?.trim() && !product.productName?.trim()) {
       return false;
@@ -330,15 +217,9 @@ export class ProductSearchOrchestratorService {
     products: NormalizedRetailProduct[],
   ): CommercialMedicineOption[] {
     return products.map((product, index) => {
-      const salePrice =
-        product.salePrice !== undefined && product.salePrice > 0
-          ? {
-              price: product.salePrice,
-              source: product.salePriceSource || "default_category_price",
-            }
-          : calculateRetailSalePrice(product);
-      this.logger.log(`RETAIL PRICE SOURCE: ${salePrice.source}`);
-      this.logger.log(`RETAIL FINAL PRICE: ${salePrice.price}`);
+      const salePrice = product.salePrice!;
+      this.logger.log("RETAIL PRICE SOURCE: preco_popular");
+      this.logger.log(`RETAIL FINAL PRICE: ${salePrice}`);
 
       return {
         optionId: index + 1,
@@ -353,7 +234,8 @@ export class ProductSearchOrchestratorService {
         label: this.formatLabel(product),
         formGroup: "produto",
         packageDescription: product.description,
-        pricePf: salePrice.price,
+        pricePf: salePrice,
+        pricePolicy: CATALOG_PRICE_POLICY,
         selectionReason: `fonte ${product.source}`,
         brand: product.brand,
         description: product.description || product.displayName,
@@ -382,16 +264,6 @@ export class ProductSearchOrchestratorService {
     return key || null;
   }
 
-  private isGenericCategoryQuery(query: string, category: string) {
-    const normalizedQuery = this.normalize(query)
-      .replace(/[?!.:,;]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const normalizedCategory = this.normalize(category);
-
-    return normalizedQuery === normalizedCategory;
-  }
-
   private findRequestedBrand(query: string, category: string | null) {
     if (!category) {
       return null;
@@ -404,28 +276,6 @@ export class ProductSearchOrchestratorService {
       brands.find((brand) => normalizedQuery.includes(this.normalize(brand))) ||
       this.manualRetailProductService.extractBrandFromQuery(category, query)
     );
-  }
-
-  private async getManualFallbackProducts(
-    query: string,
-    category: string | null,
-    requestedBrand: string | null,
-  ) {
-    if (category) {
-      if (!requestedBrand || this.manualRetailProductService.isAnyBrandReply(requestedBrand)) {
-        return this.manualRetailProductService.search(category);
-      }
-
-      return [
-        this.manualRetailProductService.createManualProduct(
-          query,
-          category,
-          requestedBrand || undefined,
-        ),
-      ];
-    }
-
-    return [];
   }
 
   private allowsKits(query: string) {
@@ -505,6 +355,7 @@ export class ProductSearchOrchestratorService {
     value: RetailProductLookupSummary,
     ttlSeconds: number,
   ) {
+    if (this.cache.size >= 200) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, {
       value,
       expiresAt: Date.now() + ttlSeconds * 1000,

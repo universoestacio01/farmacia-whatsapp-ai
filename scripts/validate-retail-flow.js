@@ -1,8 +1,4 @@
 const assert = require("node:assert/strict");
-const { CosmosService } = require("../dist/integrations/cosmos.service");
-const {
-  CosmosTokenPoolService,
-} = require("../dist/integrations/cosmos-token-pool.service");
 const {
   ManualRetailProductService,
 } = require("../dist/integrations/manual-retail-product.service");
@@ -14,13 +10,7 @@ const {
   WhatsappCopy,
 } = require("../dist/whatsapp/whatsapp-copy");
 
-function config(values) {
-  return {
-    get(key) {
-      return values[key];
-    },
-  };
-}
+global.fetch = async () => assert.fail("Unexpected network call");
 
 async function run() {
   const manual = new ManualRetailProductService();
@@ -54,200 +44,37 @@ async function run() {
     /Você tem alguma marca de preferência/,
   );
 
-  let cosmosCalls = 0;
-  const fakeCosmos = {
-    async search(query) {
-      cosmosCalls += 1;
-      assert.equal(query, "shampoo pantene");
-      return [
-        {
-          source: "cosmos",
-          productName: "Kit Shampoo Pantene + Condicionador",
-          displayName: "Kit Shampoo Pantene + Condicionador",
-          description: "Kit Shampoo Pantene + Condicionador",
-          brand: "Pantene",
-          salePrice: 39.9,
-        },
-        {
-          source: "cosmos",
-          productName: "Shampoo Pantene 400ml",
-          displayName: "Shampoo Pantene 400ml",
-          description: "Shampoo Pantene 400ml",
-          brand: "Pantene",
-          salePrice: 18.5,
-          imageUrl: "https://example.com/pantene.png",
-        },
-        {
-          source: "cosmos",
-          productName: "Shampoo Pantene sem preco",
-          displayName: "Shampoo Pantene sem preco",
-          description: "Shampoo Pantene sem preco",
-          brand: "Pantene",
-        },
-      ];
-    },
-    async findByGtin() {
-      return null;
-    },
-  };
-  const orchestrator = new ProductSearchOrchestratorService(fakeCosmos, manual);
+  manual.search = async () => assert.fail("Manual catalog prices are retired");
+  manual.createManualProduct = () => assert.fail("Do not fabricate offers");
+  const offers = [
+    { source: "preco_popular", sourceId: "1", productName: "Shampoo Pantene 400ml", displayName: "Shampoo Pantene 400ml", brand: "Pantene", salePrice: 32.59 },
+    { source: "preco_popular", sourceId: "2", productName: "Kit Shampoo Pantene + Condicionador", displayName: "Kit Shampoo Pantene + Condicionador", brand: "Pantene", salePrice: 49.9 },
+    { source: "preco_popular", sourceId: "3", productName: "Shampoo Seda 325ml", displayName: "Shampoo Seda 325ml", brand: "Seda", salePrice: 18.75 },
+  ];
+  let calls = 0;
+  const catalog = { isEnabled: () => true, searchRetail: async () => { calls++; return offers; } };
+  const orchestrator = new ProductSearchOrchestratorService(manual, catalog);
   const summary = await orchestrator.searchProducts("shampoo pantene");
-
-  assert.equal(cosmosCalls, 1);
-  assert.equal(summary.options.length, 2);
-  assert.equal(summary.options[0].label, "Shampoo Pantene 400ml");
-  assert.equal(summary.options[0].pricePf, 18.5);
-
-  const noPriceOrchestrator = new ProductSearchOrchestratorService(
-    {
-      async search() {
-        return [
-          {
-            source: "cosmos",
-            productName: "Sabonete Dove",
-            displayName: "Sabonete Dove",
-            description: "Sabonete Dove",
-            brand: "Dove",
-          },
-        ];
-      },
-      async findByGtin() {
-        return null;
-      },
-    },
-    manual,
-  );
-  const noPriceSummary = await noPriceOrchestrator.searchProducts("sabonete dove");
-  assert.equal(noPriceSummary.options.length, 1);
-  assert.equal(noPriceSummary.options[0].pricePf, 4.99);
-  assert.doesNotMatch(
-    WhatsappCopy.showRetailOptions(
-      noPriceSummary.category,
-      noPriceSummary.requestedBrand,
-      noPriceSummary.options,
-      (value) => `R$ ${Number(value).toFixed(2)}`,
-    ),
-    /orcamento|orçamento|sem preco|sem preço|UNKNOWN|undefined|null|NaN|\[object Object\]/i,
-  );
-  assert.match(
-    WhatsappCopy.showRetailOptions(
-      noPriceSummary.category,
-      noPriceSummary.requestedBrand,
-      noPriceSummary.options,
-      (value) => `R$ ${Number(value).toFixed(2)}`,
-    ),
-    /Digite apenas o número da opção/,
-  );
-
-  const premiumFallbackSummary = await new ProductSearchOrchestratorService(
-    {
-      async search() {
-        return [];
-      },
-      async findByGtin() {
-        return null;
-      },
-    },
-    manual,
-  ).searchProducts("shampoo kerastase");
-  assert.equal(premiumFallbackSummary.options.length, 1);
-  assert.equal(premiumFallbackSummary.options[0].pricePf, 119.9);
-
-  let genericCategoryCosmosCalls = 0;
-  const genericCategorySummary = await new ProductSearchOrchestratorService(
-    {
-      async search() {
-        genericCategoryCosmosCalls += 1;
-        return [];
-      },
-      async findByGtin() {
-        return null;
-      },
-    },
-    manual,
-  ).searchProducts("shampoo");
-  assert.equal(genericCategoryCosmosCalls, 0);
-  assert.equal(genericCategorySummary.options.length, 3);
-  assert.match(genericCategorySummary.options[0].label, /Shampoo/);
-
-  const deodorantFallbackSummary = await new ProductSearchOrchestratorService(
-    {
-      async search() {
-        return [];
-      },
-      async findByGtin() {
-        return null;
-      },
-    },
-    manual,
-  ).searchProducts("desodorante rexona");
-  assert.equal(deodorantFallbackSummary.options[0].pricePf, 13.9);
-
-  const diaperFallbackSummary = await new ProductSearchOrchestratorService(
-    {
-      async search() {
-        return [];
-      },
-      async findByGtin() {
-        return null;
-      },
-    },
-    manual,
-  ).searchProducts("fralda pampers");
-  assert.equal(diaperFallbackSummary.options[0].pricePf, 39.9);
-
-  let fetchCalls = 0;
-  const originalFetch = global.fetch;
-  global.fetch = async () => {
-    fetchCalls += 1;
-    return {
-      ok: true,
-      status: 200,
-      async json() {
-        return {
-          products: [
-            {
-              description: "SABONETE DOVE 90G",
-              gtin: "7890000000000",
-              avg_price: 4.75,
-            },
-          ],
-        };
-      },
-    };
-  };
-
-  const cosmosConfig = config({
-    COSMOS_API_TOKEN: "token-a",
-    COSMOS_API_BASE_URL: "https://api.cosmos.bluesoft.com.br",
-    COSMOS_USER_AGENT: "farmacia-whatsapp-ai",
-    COSMOS_CACHE_TTL_HOURS: 24,
+  assert.equal(summary.options.length, 1);
+  assert.equal(summary.options[0].pricePf, 32.59);
+  assert.equal(summary.options[0].source, "preco_popular");
+  assert.equal(summary.manualFallback, false);
+  const anyBrand = await orchestrator.searchProducts(orchestrator.buildQueryFromBrandSelection("shampoo", "qualquer marca"));
+  assert.equal(anyBrand.options.length, 2);
+  assert.ok(anyBrand.options.every((item) => item.pricePf > 0));
+  assert.equal(calls, 2);
+  const empty = new ProductSearchOrchestratorService(manual, {
+    isEnabled: () => true, searchRetail: async () => [],
   });
-  const tokenPool = new CosmosTokenPoolService(cosmosConfig);
-  const cosmos = new CosmosService(cosmosConfig, tokenPool);
-  await cosmos.search("sabonete dove");
-  await cosmos.search("sabonete dove");
-  assert.equal(fetchCalls, 1);
-  global.fetch = originalFetch;
-
-  const pool = new CosmosTokenPoolService(
-    config({
-      COSMOS_API_TOKENS: "token-a,token-b",
-      COSMOS_TOKEN_429_COOLDOWN_MINUTES: 30,
-    }),
-  );
-  const first = pool.selectToken();
-  assert.equal(first.index, 0);
-  pool.markRateLimited(0);
-  const second = pool.selectToken();
-  assert.equal(second.index, 1);
-  pool.markInvalid(1);
-  assert.equal(pool.selectToken(), null);
-
-  console.log("Retail flow manual tests passed");
+  assert.deepEqual((await empty.searchProducts("sabonete dove")).options, []);
+  const failed = new ProductSearchOrchestratorService(manual, {
+    isEnabled: () => true, searchRetail: async () => { throw new Error("offline"); },
+  });
+  assert.deepEqual((await failed.searchProducts("fralda pampers")).options, []);
+  const noPrice = new ProductSearchOrchestratorService(manual, {
+    isEnabled: () => true, searchRetail: async () => offers.map((item) => ({ ...item, salePrice: undefined })),
+  });
+  assert.deepEqual((await noPrice.searchProducts("shampoo")).options, []);
+  console.log("Retail routing, copy, actual prices and sole-catalog validations passed.");
 }
-
-run().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+run().catch((error) => { console.error(error); process.exitCode = 1; });

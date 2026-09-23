@@ -1,192 +1,10 @@
 const assert = require("node:assert/strict");
-
-const {
-  CommercialMedicineSelector,
-} = require("../dist/integrations/commercial-medicine-selector");
-const {
-  MedicineSearchOrchestratorService,
-} = require("../dist/integrations/medicine-search-orchestrator.service");
-const { PharmaDbService } = require("../dist/integrations/pharmadb.service");
-const {
-  DEFAULT_MEDICINE_PRIORITY_RULES,
-} = require("../dist/config/medicine-priority-rules.config");
-
-function option(
-  productName,
-  displayName,
-  substance,
-  dosage,
-  presentation,
-  source = "pharmadb",
-) {
-  return {
-    source,
-    sourceId: `${productName}-${dosage}-${presentation}`,
-    productName,
-    displayName,
-    substance,
-    activeIngredient: substance,
-    dosage,
-    presentation,
-    form: presentation,
-    priceConsumer: 20,
-  };
-}
-
-function createOrchestrator(pharmaSearch, manualSearch = async () => []) {
-  const selector = new CommercialMedicineSelector();
-  const config = { get: (name) => (name === "MEDICINE_PRIMARY_PROVIDER" ? "pharmadb" : undefined) };
-  const pharmaDb = { search: pharmaSearch };
-  const bulaApi = { lookupMedicine: async () => null };
-  const manual = { search: manualSearch, findSymptomOptions: () => null };
-  const priorityRules = {
-    getRulesForPrinciple: async (principle) =>
-      DEFAULT_MEDICINE_PRIORITY_RULES.filter(
-        (rule) => rule.principleActive === principle,
-      ),
-  };
-
-  return {
-    selector,
-    orchestrator: new MedicineSearchOrchestratorService(
-      config,
-      selector,
-      pharmaDb,
-      bulaApi,
-      manual,
-      priorityRules,
-    ),
-  };
-}
-
-async function testRetailCurationPreferredOverRawApi() {
-  const { orchestrator } = createOrchestrator(
-    async (term) => {
-      if (term === "dipirona" || term === "novalgina") {
-        return [
-          option(
-            "Lqfex - Dipirona",
-            "Lqfex - Dipirona Comprimido 500mg",
-            "dipirona",
-            "500mg",
-            "500 MG COM CT BL X 20",
-          ),
-          option(
-            "Dipirona Sodica",
-            "Dipirona Sodica Sol Inj",
-            "dipirona",
-            "500mg/ml",
-            "500 MG/ML SOL INJ CX 100 AMP VD AMB X 2 ML",
-          ),
-          option(
-            "Novalgina",
-            "Novalgina Comprimido 1g",
-            "dipirona",
-            "1g",
-            "1 G COM CT BL X 10",
-          ),
-        ];
-      }
-
-      return [];
-    },
-    async (query) => {
-      const canonical = new CommercialMedicineSelector().getCanonicalMedicineName(query);
-
-      if (canonical !== "dipirona") {
-        return [];
-      }
-
-      return [
-        option(
-          "Novalgina",
-          "Novalgina Comprimido 500mg",
-          "dipirona",
-          "500mg",
-          "500 MG COM CT BL X 10",
-          "popular_manual",
-        ),
-        option(
-          "Dipirona",
-          "Dipirona genérica Comprimido 500mg",
-          "dipirona",
-          "500mg",
-          "500 MG COM CT BL X 10",
-          "popular_manual",
-        ),
-        option(
-          "Novalgina",
-          "Novalgina Gotas / solução oral",
-          "dipirona",
-          "500mg/ml",
-          "500 MG/ML SOL OR CT FR GOT X 20 ML",
-          "popular_manual",
-        ),
-      ];
-    },
-  );
-
-  const summary = await orchestrator.searchMedicine("Preciso de dipirona");
-  const labels = summary.options.map((item) => item.label).join(" | ");
-
-  assert.match(labels, /Novalgina Comprimido 500mg/i);
-  assert.match(labels, /Novalgina Comprimido 1g/i);
-  assert.match(labels, /Gotas|solução oral/i);
-  assert.doesNotMatch(labels, /Lqfex|Sol Inj|Amp/i);
-}
-
-async function testDorflexRetailLabels() {
-  const { orchestrator } = createOrchestrator(
-    async (term) => {
-      if (term === "dorflex") {
-        return [
-          option(
-            "Dorflex",
-            "Dorflex",
-            "dorflex",
-            "35mg",
-            "(35 + 300 + 50) MG COM CT BL X 8",
-          ),
-        ];
-      }
-
-      return [];
-    },
-    async () => [
-      option(
-        "Dorflex",
-        "Dorflex Comprimido",
-        "dorflex",
-        undefined,
-        "(35 + 300 + 50) MG COM CT BL X 8",
-        "popular_manual",
-      ),
-      option(
-        "Dorflex",
-        "Dorflex Comprimido",
-        "dorflex",
-        undefined,
-        "(35 + 300 + 50) MG COM CT BL X 16",
-        "popular_manual",
-      ),
-      option(
-        "Dorflex Uno",
-        "Dorflex Uno 1g",
-        "dorflex",
-        "1g",
-        "1 G COM CT BL X 10",
-        "popular_manual",
-      ),
-    ],
-  );
-
-  const summary = await orchestrator.searchMedicine("Tem dorflex?");
-  const labels = summary.options.map((item) => item.label).join(" | ");
-
-  assert.match(labels, /Dorflex Comprimido/i);
-  assert.match(labels, /Dorflex Uno 1g/i);
-  assert.doesNotMatch(labels, /35mg/i);
-}
+const { Logger } = require("@nestjs/common");
+const { CommercialMedicineSelector } = require("../dist/integrations/commercial-medicine-selector");
+const { MedicineSearchOrchestratorService } = require("../dist/integrations/medicine-search-orchestrator.service");
+const { DEFAULT_MEDICINE_PRIORITY_RULES } = require("../dist/config/medicine-priority-rules.config");
+Logger.overrideLogger(false);
+global.fetch = async () => assert.fail("Unexpected network call");
 
 async function testParser() {
   const selector = new CommercialMedicineSelector();
@@ -208,118 +26,6 @@ async function testParser() {
     assert.equal(parsed.canonicalName, canonical, input);
     assert.equal(parsed.dosageMg, dose, input);
     assert.equal(parsed.quantity, quantity, input);
-  }
-}
-
-async function testSearchFallbacksAndRanking() {
-  const calls = [];
-  const { orchestrator } = createOrchestrator(async (term) => {
-    calls.push(term);
-
-    if (["tadala", "tadalafila", "cialis"].includes(term)) {
-      return [
-        option("Tadalafila", "Tadalafila 5mg", "tadalafila", "5mg", "comprimido"),
-        option("Tadalafila", "Tadalafila 20mg", "tadalafila", "20mg", "comprimido"),
-      ];
-    }
-
-    if (["allegra", "fexofenadina", "cloridrato de fexofenadina"].includes(term)) {
-      return [option("Allegra", "Allegra 120mg", "fexofenadina", "120mg", "comprimido")];
-    }
-
-    if (["ciprofloxacina", "ciprofloxacino", "cloridrato de ciprofloxacina"].includes(term)) {
-      return [
-        option(
-          "Cloridrato de Ciprofloxacino",
-          "Cloridrato de Ciprofloxacino 500mg",
-          "ciprofloxacino",
-          "500mg",
-          "comprimido",
-        ),
-      ];
-    }
-
-    if (term === "dipirona" || term === "novalgina") {
-      return [
-        option("Novalgina", "Novalgina 500mg", "dipirona", "500mg", "comprimido"),
-        option("Novalgina", "Novalgina 1g", "dipirona", "1g", "comprimido"),
-      ];
-    }
-
-    return [];
-  });
-
-  const tadalafila = await orchestrator.searchMedicine("10 tadala de 20 pro meu amigo Diego");
-  assert.ok(tadalafila.options.length > 0);
-  assert.match(tadalafila.options[0].label, /20mg/i);
-  assert.ok(calls.includes("tadalafila"));
-
-  const allegra = await orchestrator.searchMedicine("Cloridrato de fexofenadina");
-  assert.ok(allegra.options.length > 0);
-  assert.match(allegra.options[0].label, /Allegra|Fexofenadina/i);
-
-  const cipro = await orchestrator.searchMedicine("Cloridrato de ciprofloxacina");
-  assert.ok(cipro.options.length > 0);
-  assert.match(cipro.options[0].label, /Ciproflox/i);
-
-  const dipirona1g = await orchestrator.searchMedicine("Dipirona 1g");
-  assert.ok(dipirona1g.options.length > 0);
-  assert.match(dipirona1g.options[0].label, /1g|1000mg/i);
-}
-
-async function testPharmaDbPagination() {
-  const selector = new CommercialMedicineSelector();
-  const config = { get: () => "https://api.pharmadb.test/v1" };
-  const auth = {
-    hasApiKey: () => true,
-    getAccessToken: async () => "token",
-    clearToken: () => undefined,
-  };
-  const service = new PharmaDbService(config, auth, selector);
-  const endpoints = [];
-  const originalFetch = global.fetch;
-
-  global.fetch = async (url) => {
-    const endpoint = String(url).replace("https://api.pharmadb.test/v1", "");
-    endpoints.push(endpoint);
-
-    if (endpoint.includes("/produtos/busca") && endpoint.includes("page=1")) {
-      return response({
-        data: [{ id: "p1", nome: "Produto fora da dose" }],
-        meta: { current_page: 1, last_page: 2, per_page: 20, total: 2 },
-      });
-    }
-
-    if (endpoint.includes("/produtos/busca") && endpoint.includes("page=2")) {
-      return response({
-        data: [{ id: "p2", nome: "Tadalafila" }],
-        meta: { current_page: 2, last_page: 2, per_page: 20, total: 2 },
-      });
-    }
-
-    if (endpoint === "/produtos/p1") {
-      return response({ id: "p1", nome: "Produto fora da dose", substancia: "outra" });
-    }
-
-    if (endpoint === "/produtos/p2") {
-      return response({
-        id: "p2",
-        nome: "Tadalafila",
-        substancia: "tadalafila",
-        apresentacao: "20 MG COM CT BL X 4",
-        pmc: 30,
-      });
-    }
-
-    return response({}, 404);
-  };
-
-  try {
-    const results = await service.search("tadalafila");
-    assert.ok(endpoints.some((endpoint) => endpoint.includes("page=2")));
-    assert.ok(results.some((item) => item.productName === "Tadalafila"));
-  } finally {
-    global.fetch = originalFetch;
   }
 }
 
@@ -410,68 +116,39 @@ async function testConfigurableCommercialRanking() {
   );
 }
 
-async function testVenvanseDosageDiversity() {
-  const { orchestrator } = createOrchestrator(async (term) => {
-    if (term === "venvanse" || term === "venvanse 30mg") {
-      return [
-        option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR X 28"),
-        option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR PLAS X 28"),
-      ];
-    }
 
-    if (term === "venvanse 50mg") {
-      return [
-        option("Venvanse", "Venvanse Cápsula 50mg", "venvanse", "50mg", "50 MG CAP CT FR X 28"),
-      ];
-    }
-
-    return [];
-  });
-
-  orchestrator.popularManualService = {
-    search: async () => [
-      option("Venvanse", "Venvanse Cápsula 30mg", "venvanse", "30mg", "30 MG CAP CT FR X 28"),
-      option("Venvanse", "Venvanse Cápsula 50mg", "venvanse", "50mg", "50 MG CAP CT FR X 28"),
-      option("Venvanse", "Venvanse Cápsula 70mg", "venvanse", "70mg", "70 MG CAP CT FR X 28"),
-    ],
-  };
-
-  const summary = await orchestrator.searchMedicine("Tem venvanse?");
-  const labels = summary.options.map((item) => item.label).join(" | ");
-
-  assert.match(labels, /30mg/i);
-  assert.match(labels, /50mg/i);
-  assert.match(labels, /70mg/i);
-  assert.equal(
-    new Set(summary.options.map((item) => item.strength?.toLowerCase())).size,
-    3,
+async function testSoleCatalogRanking() {
+  const selector = new CommercialMedicineSelector();
+  const raw = [30, 30, 50, 70].map((dose, index) => ({
+    source: "preco_popular", sourceId: String(index + 1),
+    productName: `Venvanse ${dose}mg com 28 capsulas`,
+    displayName: `Venvanse ${dose}mg com 28 capsulas`,
+    brand: "Venvanse", activeIngredient: "lisdexanfetamina",
+    dosage: `${dose}mg`, form: "capsula", presentation: `capsula ${dose}mg com 28 unidades`,
+    packageInfo: { raw: "capsula 28 unidades", unitCount: 28 }, salePrice: 429.9,
+  }));
+  let calls = 0;
+  const orchestrator = new MedicineSearchOrchestratorService(
+    selector,
+    { search: async () => assert.fail("Manual catalog must not replace actual offers") },
+    { getRulesForPrinciple: async (name) => DEFAULT_MEDICINE_PRIORITY_RULES.filter((rule) => rule.principleActive === name) },
+    { isEnabled: () => true, searchMedicines: async () => { calls++; return raw; } },
   );
-
-  const exactSummary = await orchestrator.searchMedicine("Tem venvanse de 70mg?");
-  assert.equal(exactSummary.options.length, 1);
-  assert.match(exactSummary.options[0].label, /70mg/i);
-}
-
-function response(body, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  };
+  const broad = await orchestrator.searchMedicine("Tem venvanse?");
+  assert.deepEqual(broad.options.map((item) => item.strength).sort(), ["30mg", "50mg", "70mg"]);
+  const exact = await orchestrator.searchMedicine("Tem venvanse de 70mg?");
+  assert.equal(exact.options.length, 1);
+  assert.equal(exact.options[0].strength, "70mg");
+  assert.equal(exact.options[0].pricePf, 429.9);
+  const unavailable = await orchestrator.searchMedicine("venvanse 80mg");
+  assert.equal(unavailable.options.length, 0);
+  assert.equal(calls, 3);
 }
 
 async function run() {
   await testParser();
-  await testRetailCurationPreferredOverRawApi();
-  await testDorflexRetailLabels();
-  await testSearchFallbacksAndRanking();
-  await testPharmaDbPagination();
   await testConfigurableCommercialRanking();
-  await testVenvanseDosageDiversity();
-  console.log("Medicine search regression tests passed.");
+  await testSoleCatalogRanking();
+  console.log("Medicine parsing, ranking and sole-catalog regression tests passed.");
 }
-
-run().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+run().catch((error) => { console.error(error); process.exitCode = 1; });

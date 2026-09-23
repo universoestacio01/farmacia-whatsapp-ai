@@ -26,6 +26,8 @@ function option(id, type, medicineName, label, price, formGroup = "produto", bra
     formGroup,
     packageDescription: label,
     pricePf: price,
+    source: "preco_popular",
+    pricePolicy: "preco_popular_full_v1",
     brand,
     selectionReason: "conversation-flow-test",
   };

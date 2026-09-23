@@ -26,26 +26,12 @@ export class HealthController {
   @Get("providers")
   providers() {
     const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
-    const fallbackProvider =
-      this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") || "pharmadb";
-    const primaryProvider = precoPopularEnabled ? "preco_popular" : fallbackProvider;
-    const pharmaDbBaseUrl = this.configService.get<string>(
-      "PHARMADB_API_BASE_URL",
-    );
-    const pharmaDbApiKey = this.configService.get<string>("PHARMADB_API_KEY");
-    const bulaApiBaseUrl =
-      this.configService.get<string>("BULA_API_BASE_URL") ||
-      "https://bulapi.com.br/api/v1";
-    const cosmosApiBaseUrl =
-      this.configService.get<string>("COSMOS_API_BASE_URL") ||
-      "https://api.cosmos.bluesoft.com.br";
-    const cosmosTokenCount = this.getCosmosTokenCount();
 
     return {
       status: "ok",
-      primaryProvider,
-      medicineFallbackProvider: fallbackProvider,
-      retailPrimaryProvider: precoPopularEnabled ? "preco_popular" : "cosmos",
+      primaryProvider: precoPopularEnabled ? "preco_popular" : null,
+      medicineFallbackProvider: null,
+      retailPrimaryProvider: precoPopularEnabled ? "preco_popular" : null,
       payments: {
         provider: "pix_direct",
         enabled: true,
@@ -63,17 +49,19 @@ export class HealthController {
           lazy: true,
         },
         pharmadb: {
-          configured: Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim()),
-          lazyAuth: true,
+          configured: false,
+          enabled: false,
+          retired: true,
         },
         bulapi: {
-          configured: Boolean(bulaApiBaseUrl),
+          configured: false,
+          enabled: false,
+          retired: true,
         },
         cosmos: {
-          configured: Boolean(cosmosApiBaseUrl && cosmosTokenCount > 0),
-          tokenCount: cosmosTokenCount,
-          cacheEnabled: true,
-          lazy: true,
+          configured: false,
+          enabled: false,
+          retired: true,
         },
       },
     };
@@ -81,12 +69,11 @@ export class HealthController {
 
   @Get("bootstrap")
   bootstrap() {
-    const cosmosTokenCount = this.getCosmosTokenCount();
-
     return {
-      cosmosConfigured: cosmosTokenCount > 0,
-      cosmosTokenCount,
-      pharmadbConfigured: this.isPharmaDbConfigured(),
+      precoPopularEnabled: isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED")),
+      cosmosConfigured: false,
+      cosmosTokenCount: 0,
+      pharmadbConfigured: false,
       databaseConfigured: Boolean(
         this.configService.get<string>("DATABASE_URL")?.trim(),
       ),
@@ -170,27 +157,6 @@ export class HealthController {
     };
   }
 
-  private getCosmosTokenCount() {
-    const multiTokenValue = this.configService.get<string>("COSMOS_API_TOKENS");
-    const multiTokens = this.parseTokenList(multiTokenValue);
-
-    if (multiTokens.length > 0) {
-      return Math.min(multiTokens.length, 4);
-    }
-
-    return this.parseTokenList(
-      this.configService.get<string>("COSMOS_API_TOKEN"),
-    ).length;
-  }
-
-  private isPharmaDbConfigured() {
-    const pharmaDbBaseUrl = this.configService.get<string>(
-      "PHARMADB_API_BASE_URL",
-    );
-    const pharmaDbApiKey = this.configService.get<string>("PHARMADB_API_KEY");
-
-    return Boolean(pharmaDbBaseUrl && pharmaDbApiKey?.trim());
-  }
 
   private isDirectPixConfigured() {
     return Boolean(
@@ -262,11 +228,5 @@ export class HealthController {
     );
   }
 
-  private parseTokenList(value: string | undefined) {
-    return (value || "")
-      .split(",")
-      .map((token) => token.trim())
-      .filter(Boolean);
-  }
 }
 

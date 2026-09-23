@@ -261,13 +261,13 @@ function createAdminPreview() {
       return res.json({
         database: { configured: true },
         whatsapp: { configured: true, apiVersion: "v25.0" },
-        precoPopular: { enabled: true, priceMultiplier: 0.9 },
+        precoPopular: { enabled: true, priceMultiplier: 1 },
         medicines: {
           primaryProvider: "preco_popular",
-          pharmadbConfigured: true,
-          bulapiConfigured: true,
+          pharmadbConfigured: false,
+          bulapiConfigured: false,
         },
-        retailProducts: { cosmosConfigured: true, cosmosTokenCount: 1 },
+        retailProducts: { primaryProvider: "preco_popular", cosmosConfigured: false, cosmosTokenCount: 0 },
         payments: { directPixConfigured: true },
         admin: { protected: true },
       });

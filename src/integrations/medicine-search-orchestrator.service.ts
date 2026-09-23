@@ -1,10 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
-import { ConfigService } from "@nestjs/config";
-import { ProviderRequestOutcome } from "@prisma/client";
 import { SymptomMedicineRule } from "../config/symptom-medicine.config";
-import { ProviderRequestLogService } from "../observability/provider-request-log.service";
 import {
-  BulaApiService,
   CommercialMedicineOption,
   MedicineLookupSummary,
 } from "./bula-api.service";
@@ -14,9 +10,9 @@ import {
 } from "./commercial-medicine-selector";
 import { NormalizedMedicineOption } from "./medicine-provider.interface";
 import { MedicinePriorityRulesService } from "./medicine-priority-rules.service";
-import { PharmaDbService } from "./pharmadb.service";
 import { PopularManualMedicineService } from "./popular-manual-medicine.service";
 import { PrecoPopularService } from "./preco-popular.service";
+import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
 
 interface CacheEntry {
   expiresAt: number;
@@ -29,14 +25,10 @@ export class MedicineSearchOrchestratorService {
   private readonly cache = new Map<string, CacheEntry>();
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly selector: CommercialMedicineSelector,
-    private readonly pharmaDbService: PharmaDbService,
-    private readonly bulaApiService: BulaApiService,
     private readonly popularManualService: PopularManualMedicineService,
     private readonly priorityRulesService: MedicinePriorityRulesService,
-    private readonly providerRequestLog?: ProviderRequestLogService,
-    private readonly precoPopularService?: PrecoPopularService,
+    private readonly precoPopularService: PrecoPopularService,
   ) {}
 
   async searchMedicine(query: string): Promise<MedicineLookupSummary | null> {
@@ -76,58 +68,10 @@ export class MedicineSearchOrchestratorService {
           return summary;
         }
       } catch (error) {
-        this.logger.warn(`PRECO POPULAR MEDICINE FALLBACK: ${error instanceof Error ? error.message : "erro desconhecido"}`);
+        this.logger.warn(`PRECO POPULAR MEDICINE SEARCH FAILED: ${error instanceof Error ? error.message : "erro desconhecido"}`);
       }
     }
-    const provider =
-      this.configService.get<string>("MEDICINE_PRIMARY_PROVIDER") ||
-      "pharmadb";
-    const orderedProviders =
-      provider === "bulapi" ? ["bulapi", "pharmadb"] : ["pharmadb", "bulapi"];
-
-    for (const providerName of orderedProviders) {
-      const cached = this.getFromCache(`${providerName}:${cacheQuery}`);
-
-      if (cached) {
-        return cached;
-      }
-
-      if (providerName === "pharmadb") {
-        const summary = await this.safeSearchPharmaDb(parsedQuery);
-
-        if (summary && summary.options.length > 0) {
-          const enhanced = await this.enhanceWithManualOptions(
-            canonicalQuery,
-            query,
-            summary,
-          );
-          this.setCache(`pharmadb:${cacheQuery}`, enhanced, 300);
-          return enhanced;
-        }
-      }
-
-      if (providerName === "bulapi") {
-        const summary = await this.safeSearchBulaApi(canonicalQuery);
-
-        if (summary && summary.options.length > 0) {
-          const enhanced = await this.enhanceWithManualOptions(
-            canonicalQuery,
-            query,
-            summary,
-          );
-          this.setCache(`bulapi:${cacheQuery}`, enhanced, 300);
-          return enhanced;
-        }
-      }
-    }
-
-    const manualSummary = await this.searchManual(query, canonicalQuery);
-    this.setCache(
-      `popular_manual:${cacheQuery}`,
-      manualSummary,
-      manualSummary.options.length > 0 ? 300 : 60,
-    );
-    return manualSummary;
+    return { medicineName: canonicalQuery, products: [], options: [] };
   }
 
   findSymptomOptions(message: string) {
@@ -136,261 +80,6 @@ export class MedicineSearchOrchestratorService {
 
   findSymptomSuggestion(message: string): SymptomMedicineRule | null {
     return this.popularManualService.findSymptomSuggestion(message);
-  }
-
-  private async safeSearchPharmaDb(query: ParsedMedicineQuery) {
-    const startedAt = Date.now();
-    try {
-      const summary = await this.searchPharmaDb(query);
-      await this.providerRequestLog?.record({
-        provider: "pharmadb",
-        operation: "medicine_search",
-        query: query.received,
-        durationMs: Date.now() - startedAt,
-        resultsFound: summary?.options.length ?? 0,
-        resultsAfterFilter: summary?.options.length ?? 0,
-        outcome: summary?.options.length
-          ? ProviderRequestOutcome.SUCCESS
-          : ProviderRequestOutcome.EMPTY,
-      });
-      return summary;
-    } catch (error) {
-      this.logger.warn(
-        `PHARMADB SEARCH FAILED, FALLING BACK TO BULAPI: ${
-          error instanceof Error ? error.message : "erro desconhecido"
-        }`,
-      );
-      await this.providerRequestLog?.record({
-        provider: "pharmadb",
-        operation: "medicine_search",
-        query: query.received,
-        durationMs: Date.now() - startedAt,
-        outcome: ProviderRequestOutcome.FAILED,
-        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
-      });
-      return null;
-    }
-  }
-
-  private async safeSearchBulaApi(query: string) {
-    const startedAt = Date.now();
-    try {
-      const summary = await this.bulaApiService.lookupMedicine(query);
-      await this.providerRequestLog?.record({
-        provider: "bulapi",
-        operation: "medicine_search",
-        query,
-        durationMs: Date.now() - startedAt,
-        resultsFound: summary?.options.length ?? 0,
-        resultsAfterFilter: summary?.options.length ?? 0,
-        outcome: summary?.options.length
-          ? ProviderRequestOutcome.SUCCESS
-          : ProviderRequestOutcome.EMPTY,
-      });
-      return summary;
-    } catch (error) {
-      this.logger.warn(
-        `BulAPI falhou, usando catálogo manual: ${
-          error instanceof Error ? error.message : "erro desconhecido"
-        }`,
-      );
-      await this.providerRequestLog?.record({
-        provider: "bulapi",
-        operation: "medicine_search",
-        query,
-        durationMs: Date.now() - startedAt,
-        outcome: ProviderRequestOutcome.FAILED,
-        errorMessage: error instanceof Error ? error.message : "erro desconhecido",
-      });
-      return null;
-    }
-  }
-
-  private async searchPharmaDb(query: ParsedMedicineQuery) {
-    const queryTerms = this.getCommercialQueryTerms(query);
-    this.logger.log(`PHARMADB SEARCH TERMS: ${queryTerms.join(", ")}`);
-    const rawResults: NormalizedMedicineOption[] = [];
-
-    for (const term of queryTerms) {
-      rawResults.push(...(await this.pharmaDbService.search(term)));
-    }
-
-    const rawOptions = this.dedupeNormalizedOptions(rawResults);
-
-    if (rawOptions.length === 0) {
-      return null;
-    }
-
-    const selected = await this.selectNormalized(query, rawOptions);
-
-    return {
-      medicineName: query.canonicalName || query.medicineName || query.received,
-      products: [],
-      options: selected,
-    };
-  }
-
-  private async searchManual(
-    query: string,
-    medicineName = query,
-  ): Promise<MedicineLookupSummary> {
-    const rawOptions = await this.popularManualService.search(query);
-    const selected = await this.selectNormalized(
-      this.selector.parseMedicineQuery(query),
-      rawOptions,
-    );
-
-    return {
-      medicineName,
-      products: [],
-      options: selected,
-    };
-  }
-
-  private async enhanceWithManualOptions(
-    canonicalQuery: string,
-    manualQuery: string,
-    summary: MedicineLookupSummary,
-  ) {
-    const manualOptions = await this.popularManualService.search(manualQuery);
-
-    const manualSelected = await this.selectNormalized(
-      this.selector.parseMedicineQuery(manualQuery),
-      manualOptions,
-    );
-    const merged = this.dedupeCommercialOptions([
-      ...manualSelected,
-      ...summary.options,
-    ]);
-    const priorityRules =
-      await this.priorityRulesService.getRulesForPrinciple(canonicalQuery);
-    const ranking = this.selector.rankCommercialOptions(
-      manualQuery,
-      merged,
-      priorityRules,
-    );
-
-    this.logger.log(
-      `CURADORIA CATALOGO POPULAR: medicamento=${canonicalQuery} api=${summary.options.length} manual=${manualSelected.length} final=${ranking.selected.length}`,
-    );
-
-    return {
-      ...summary,
-      options: ranking.selected.map((option, index) => ({
-        ...option,
-        optionId: index + 1,
-      })),
-    };
-  }
-
-  private dedupeCommercialOptions(options: CommercialMedicineOption[]) {
-    const deduped = new Map<string, CommercialMedicineOption>();
-
-    for (const option of options) {
-      const key = this.normalize(
-        [
-          option.productName,
-          option.label,
-          option.formGroup,
-          option.strength,
-          option.packageInfo?.unitCount,
-          option.packageInfo?.volumeMl,
-        ]
-          .filter(Boolean)
-          .join("|"),
-      );
-
-      if (!deduped.has(key)) {
-        deduped.set(key, option);
-      }
-    }
-
-    return [...deduped.values()];
-  }
-
-  private getCommercialQueryTerms(query: ParsedMedicineQuery) {
-    const normalized =
-      query.medicineName ||
-      query.canonicalName ||
-      this.selector.getCanonicalMedicineName(query.received);
-    const canonical =
-      query.canonicalName || this.selector.getCanonicalMedicineName(normalized);
-
-    const terms = [...query.fallbackTerms, normalized, canonical];
-    const expansions: Record<string, string[]> = {
-      dipirona: ["novalgina", "dipirona generico", "dipirona monoidratada"],
-      ibuprofeno: ["ibuprofeno generico", "alivium", "advil"],
-      paracetamol: ["paracetamol generico", "tylenol"],
-      nimesulida: ["neosulida"],
-      neosulida: ["nimesulida"],
-      tadalafila: ["tadala", "cialis"],
-      sildenafila: ["viagra", "sildenafil"],
-      fexofenadina: ["allegra", "cloridrato de fexofenadina"],
-      ciprofloxacino: ["ciprofloxacina", "cloridrato de ciprofloxacina"],
-      clonazepam: ["rivotril"],
-      hidroclorotiazida: ["diurix"],
-      venvanse: [
-        "venvanse 30mg",
-        "venvanse 50mg",
-        "venvanse 70mg",
-        "lisdexanfetamina",
-        "lisdexamfetamina",
-      ],
-    };
-
-    return this.dedupeQueryTermsForProvider([
-      ...terms,
-      ...(expansions[canonical] || []),
-    ]);
-  }
-
-  private dedupeQueryTermsForProvider(terms: string[]) {
-    const uniqueTerms = new Map<string, string>();
-
-    for (const term of terms) {
-      const cleanTerm = term.trim();
-
-      if (!cleanTerm) {
-        continue;
-      }
-
-      const providerQuery =
-        this.selector.normalizeMedicineName(cleanTerm) ||
-        this.selector.getCanonicalMedicineName(cleanTerm) ||
-        cleanTerm;
-      const key = this.normalize(providerQuery).replace(/\s+/g, "");
-
-      if (!uniqueTerms.has(key)) {
-        uniqueTerms.set(key, cleanTerm);
-      }
-    }
-
-    return [...uniqueTerms.values()];
-  }
-
-  private dedupeNormalizedOptions(options: NormalizedMedicineOption[]) {
-    const deduped = new Map<string, NormalizedMedicineOption>();
-
-    for (const option of options) {
-      const key = this.normalize(
-        [
-          option.source,
-          option.sourceId,
-          option.ean,
-          option.productName,
-          option.presentation,
-          option.dosage,
-        ]
-          .filter(Boolean)
-          .join("|"),
-      );
-
-      if (!deduped.has(key)) {
-        deduped.set(key, option);
-      }
-    }
-
-    return [...deduped.values()];
   }
 
   private async selectNormalized(
@@ -402,6 +91,7 @@ export class MedicineSearchOrchestratorService {
     this.logger.log(`TERM CONSULTADO/FILTRO: ${filterTerm}`);
     this.logger.log(`RESULTS FOUND: ${options.length}`);
     const validOptions = options.filter((option) =>
+      option.source === "preco_popular" && Number.isFinite(option.salePrice) && (option.salePrice ?? 0) > 0 &&
       this.selector.isSameMedicine(filterTerm, {
         id: this.toNumericId(option.sourceId, 0),
         name: option.productName,
@@ -448,12 +138,13 @@ export class MedicineSearchOrchestratorService {
         productName: option.productName,
         medicineName:
           option.substance || option.activeIngredient || option.productName,
-        label: this.formatLabel(option, formGroup),
+        label: option.displayName,
         formGroup,
         strength: option.dosage,
         packageDescription: this.formatPackageDescription(option),
         packageInfo,
-        pricePf: this.calculateSalePrice(option),
+        pricePf: option.salePrice,
+        pricePolicy: CATALOG_PRICE_POLICY,
         brand: option.brand,
         imageUrl: option.imageUrl,
         ean: option.ean,
@@ -487,85 +178,6 @@ export class MedicineSearchOrchestratorService {
     );
 
     return ranking.selected.map((option, index) => ({ ...option, optionId: index + 1 }));
-  }
-
-  private calculateSalePrice(option: NormalizedMedicineOption) {
-    if (option.source === "preco_popular") {
-      return option.salePrice;
-    }
-    if (option.priceFactory !== undefined) {
-      return this.roundCurrency(option.priceFactory);
-    }
-
-    if (option.source !== "pharmadb") {
-      return option.priceConsumer !== undefined
-        ? this.roundCurrency(option.priceConsumer)
-        : undefined;
-    }
-
-    const pmcPrice = option.pmcWithIcms ?? option.priceConsumer;
-
-    if (pmcPrice === undefined) {
-      return undefined;
-    }
-
-    const multiplier = this.getPharmaDbPmcMultiplier();
-    const salePrice = this.roundCurrency(pmcPrice * multiplier);
-    this.logger.log(`Preço base PharmaDB PMC: ${pmcPrice}`);
-    this.logger.log(`Multiplicador aplicado: ${multiplier}`);
-    this.logger.log(`Preço final de venda: ${salePrice}`);
-    return salePrice;
-  }
-
-  private getPharmaDbPmcMultiplier() {
-    const rawMultiplier =
-      this.configService.get<number | string>("PHARMADB_PMC_PRICE_MULTIPLIER") ??
-      0.5;
-    const multiplier = Number(rawMultiplier);
-
-    return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 0.5;
-  }
-
-  private roundCurrency(value: number) {
-    return Number(value.toFixed(2));
-  }
-
-  private formatLabel(option: NormalizedMedicineOption, formGroup: string) {
-    if (option.source === "preco_popular") return option.displayName;
-    const displayName = this.formatCommercialDisplayName(
-      option.displayName || option.productName,
-    );
-    const normalizedDisplay = this.normalize(displayName);
-    const formLabel = this.title(formGroup);
-    const shouldAddForm =
-      formGroup !== "outro" && !normalizedDisplay.includes(this.normalize(formGroup));
-    const shouldAddDosage =
-      option.dosage && !normalizedDisplay.includes(this.normalize(option.dosage));
-    const parts = [
-      displayName,
-      shouldAddForm ? formLabel : undefined,
-      shouldAddDosage ? option.dosage : undefined,
-    ].filter(Boolean);
-
-    return [...new Set(parts)].join(" ");
-  }
-
-  private formatCommercialDisplayName(value: string) {
-    return value
-      .toLowerCase()
-      .split(/\s+/)
-      .map((word) => {
-        if (/^\d+(?:,\d+)?$/.test(word)) {
-          return word;
-        }
-
-        if (/^(mg|ml|g)$/.test(word)) {
-          return word;
-        }
-
-        return word.charAt(0).toUpperCase() + word.slice(1);
-      })
-      .join(" ");
   }
 
   private formatPackageDescription(option: NormalizedMedicineOption) {
@@ -673,16 +285,11 @@ export class MedicineSearchOrchestratorService {
   }
 
   private setCache(key: string, value: MedicineLookupSummary, ttlSeconds: number) {
+    if (this.cache.size >= 200) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(key, {
       value,
       expiresAt: Date.now() + ttlSeconds * 1000,
     });
-  }
-
-  private title(value: string) {
-    return value
-      .toLowerCase()
-      .replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
 
   private normalize(value: string) {

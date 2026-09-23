@@ -244,6 +244,9 @@ async function run() {
 
     await page.click('[data-section="providers"]');
     await page.waitForSelector(".request-log");
+    const providerCards = await page.textContent("#providers-grid");
+    check(providerCards.includes("Preço integral do catálogo"), "Panel shows full catalog price policy");
+    check(!/PharmaDB|BulAPI|Cosmos|Desconto/.test(providerCards), "Retired providers are not advertised as active integrations");
     await page.selectOption("#provider-log-outcome", "errors");
     check(
       (await page.locator(".request-log").count()) === 1,

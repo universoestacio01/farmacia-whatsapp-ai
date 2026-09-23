@@ -23,8 +23,13 @@ import {
 } from "./whatsapp-copy";
 import { ConversationInputService } from "./conversation-input.service";
 import { getConversationOpeningIntent } from "../utils/conversation-opening.util";
+import { addressFieldPrompt, missingAddressField, parseAddressField } from "./delivery-address";
+import { CATALOG_PRICE_POLICY } from "../config/preco-popular.config";
+import { PrecoPopularService } from "../integrations/preco-popular.service";
+import { PackageImageReading, packageImageSchema } from "../ai/package-image.types";
 
 interface CartItem {
+  pricePolicy?: string;
   type: "medicine" | "retail_product";
   medicineName: string;
   name: string;
@@ -69,6 +74,7 @@ export class ConversationEngineService {
     private readonly viaCepService: ViaCepService,
     private readonly paymentsService: PaymentsService,
     private readonly inputService: ConversationInputService = new ConversationInputService(),
+    private readonly catalog?: PrecoPopularService,
   ) {}
 
   async resolveReply(conversation: Conversation, text: string) {
@@ -156,6 +162,19 @@ export class ConversationEngineService {
       });
 
       return "Claro. Me diga qual outro produto você quer incluir no pedido.";
+    }
+
+    if (conversation.lastIntent === "WAITING_PACKAGE_IMAGE_CONFIRMATION" &&
+        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
+      return this.handlePackageImageConfirmation(conversation, text);
+    }
+
+    // Address answers must not become medicine/dosage queries (e.g. Rua 1 de Maio).
+    if (conversation.pendingAction === ConversationState.WAITING_ADDRESS_NUMBER) {
+      return this.handleWaitingAddressNumber(conversation, text);
+    }
+    if (conversation.pendingAction === ConversationState.WAITING_ADDRESS_COMPLEMENT) {
+      return this.handleWaitingAddressComplement(conversation, text);
     }
 
     if (
@@ -249,16 +268,54 @@ export class ConversationEngineService {
         return this.handleWaitingQuantity(conversation, text);
       case ConversationState.WAITING_CEP:
         return this.handleWaitingCep(conversation, text);
-      case ConversationState.WAITING_ADDRESS_NUMBER:
-        return this.handleWaitingAddressNumber(conversation, text);
-      case ConversationState.WAITING_ADDRESS_COMPLEMENT:
-        return this.handleWaitingAddressComplement(conversation, text);
       case ConversationState.WAITING_CONFIRMATION:
         return this.handleWaitingConfirmation(conversation, text);
       case ConversationState.IDLE:
       default:
         return this.handleIdle(conversation, text, medicineQuestion);
     }
+  }
+
+  async requestPackageImageConfirmation(conversation: Conversation, reading: PackageImageReading) {
+    const parsed = packageImageSchema.safeParse(reading);
+    if (!parsed.success || !parsed.data.medicineName || parsed.data.confidence < 0.85) {
+      return WhatsappCopy.packageImageFallback("unreadable");
+    }
+    const query = [parsed.data.medicineName, parsed.data.dosage, parsed.data.form].filter(Boolean).join(" ");
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: "WAITING_PACKAGE_IMAGE_CONFIRMATION",
+        pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        currentMedicineQuery: null,
+        currentRetailCategory: null,
+        lastMedicine: null,
+        selectedPresentation: Prisma.JsonNull,
+        candidateOptions: this.toJson({ packageImageQuery: query }),
+      },
+    });
+    return WhatsappCopy.confirmPackageImage(query);
+  }
+
+  private async handlePackageImageConfirmation(conversation: Conversation, text: string): Promise<string | string[]> {
+    const stored = conversation.candidateOptions;
+    const query = stored && typeof stored === "object" && !Array.isArray(stored) &&
+      typeof stored.packageImageQuery === "string" ? stored.packageImageQuery : null;
+    const yes = /^(1|sim|isso|isso mesmo|correto|confirmo|ok)[.!?]*$/i.test(this.normalize(text).trim());
+    const no = /^(2|nao|corrigir|voltar)[.!?]*$/i.test(this.normalize(text).trim());
+    if (query && !yes && !no && /^\d+$/.test(text.trim())) {
+      return WhatsappCopy.confirmPackageImage(query);
+    }
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { lastIntent: null, candidateOptions: Prisma.JsonNull },
+    });
+    if (!query || no) return "Claro. Escreva o nome e a dosagem como aparecem na embalagem.";
+    // OCR data is only a search term, never a cart choice or a payment instruction.
+    return this.resolveReply(
+      { ...conversation, lastIntent: null, candidateOptions: null },
+      yes ? `Quero comprar ${query}` : text,
+    );
   }
 
   private async handleIdle(
@@ -506,7 +563,15 @@ export class ConversationEngineService {
     }
 
     const cart = this.getCart(conversation.cart);
-    const item = this.buildCartItem(selectedOption, quantity);
+    const currentOption = await this.ensureSelectedOptionPrice(selectedOption);
+    if (!currentOption.pricePf) {
+      return "Não consegui atualizar o valor dessa opção. Me envie o nome do produto para consultar novamente.";
+    }
+    if (currentOption.pricePf !== selectedOption.pricePf) {
+      await this.saveSelectedOption(conversation.id, currentOption);
+      return ["O valor dessa opção foi atualizado.", "", this.formatSelectedOptionReply(currentOption)].join("\n");
+    }
+    const item = this.buildCartItem(currentOption, quantity);
     cart.push(item);
     this.logger.log(`Item adicionado ao carrinho: ${item.name}`);
     if (item.type === "retail_product") {
@@ -575,22 +640,32 @@ export class ConversationEngineService {
       return "Me envie o CEP da entrega para eu continuar. Pode mandar apenas os 8 dígitos.";
     }
 
-    const address = await this.viaCepService.findAddressByCep(cep);
-
-    if (!address) {
-      return "Não consegui localizar esse CEP. Pode conferir os números e enviar novamente?";
-    }
+    const foundAddress = await this.viaCepService.findAddressByCep(cep);
+    const address: PendingAddress = {
+      logradouro: "", bairro: "", localidade: "", uf: "", complemento: "",
+      ...foundAddress,
+      // Retain the CEP supplied by the customer, never a different one from the API.
+      cep,
+    };
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
         pendingAction: ConversationState.WAITING_ADDRESS_NUMBER,
+        lastIntent: this.extractConfirmedOrderId(conversation.lastIntent) ? conversation.lastIntent : "DELIVERY_ADDRESS",
         pendingAddress: this.toJson(address),
       },
     });
 
+    const field = missingAddressField(address);
+    if (field && field !== "number") {
+      const explanation = foundAddress
+        ? "Esse CEP não trouxe o endereço completo. Vamos completar os dados."
+        : "Não consegui consultar esse CEP agora. Confira se os números estão certos. Podemos continuar preenchendo o endereço por aqui.";
+      return [explanation, "", addressFieldPrompt(field)].join("\n");
+    }
     return WhatsappCopy.askAddressNumber(
-      `${address.logradouro}, ${address.bairro}, ${address.localidade}-${address.uf}`,
+      [address.logradouro, address.bairro, `${address.localidade}-${address.uf}`].filter(Boolean).join(", "),
     );
   }
 
@@ -598,12 +673,6 @@ export class ConversationEngineService {
     conversation: Conversation,
     text: string,
   ) {
-    const number = text.trim();
-
-    if (!this.inputService.isLikelyAddressNumber(number)) {
-      return "Qual é o número do endereço?";
-    }
-
     const pendingAddress = this.getPendingAddress(conversation.pendingAddress);
 
     if (!pendingAddress) {
@@ -614,7 +683,13 @@ export class ConversationEngineService {
       return "Não encontrei o endereço anterior. Pode me enviar o CEP novamente?";
     }
 
-    const address = { ...pendingAddress, number };
+    const field = missingAddressField(pendingAddress) || "number";
+    if (field === "cep") return this.requestMissingAddress(conversation, pendingAddress);
+    const value = parseAddressField(field, text);
+    if (!value) return addressFieldPrompt(field);
+    const address = { ...pendingAddress, [field]: value };
+    const nextField = missingAddressField(address);
+    if (nextField) return this.requestMissingAddress(conversation, address);
     await this.prisma.conversation.update({
       where: { id: conversation.id },
       data: {
@@ -632,18 +707,16 @@ export class ConversationEngineService {
   ) {
     const pendingAddress = this.getPendingAddress(conversation.pendingAddress);
 
-    if (!pendingAddress?.number) {
-      await this.prisma.conversation.update({
-        where: { id: conversation.id },
-        data: { pendingAction: ConversationState.WAITING_CEP },
-      });
-      return "Não encontrei o endereço anterior. Pode me enviar o CEP novamente?";
+    if (!pendingAddress || missingAddressField(pendingAddress)) {
+      return this.requestMissingAddress(conversation, pendingAddress);
     }
 
     const address = {
       ...pendingAddress,
       ...this.parseAddressComplement(text),
     };
+    const pricing = await this.refreshCheckoutPrices(conversation);
+    if (pricing.error) return pricing.error;
 
     await this.prisma.conversation.update({
       where: { id: conversation.id },
@@ -653,7 +726,7 @@ export class ConversationEngineService {
       },
     });
 
-    return this.formatOrderConfirmation(conversation, address);
+    return this.formatOrderConfirmation({ ...conversation, cart: this.toJson(pricing.cart) }, address);
   }
 
   private async handleWaitingConfirmation(
@@ -701,12 +774,30 @@ export class ConversationEngineService {
       return "Seu carrinho ainda está vazio. Me diga o que você precisa que eu procuro para você.";
     }
 
+    const address = this.getPendingAddress(conversation.pendingAddress);
+    if (missingAddressField(address)) {
+      return this.requestMissingAddress(conversation, address);
+    }
+    const existingOrderId = this.extractConfirmedOrderId(conversation.lastIntent);
+    // Issued Pix/orders keep their agreed amount. Only unconfirmed carts migrate.
+    const pricing = existingOrderId
+      ? { cart, changed: false, error: null }
+      : await this.refreshCheckoutPrices(conversation);
+    if (pricing.error) return pricing.error;
+    if (pricing.changed) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { pendingAction: ConversationState.WAITING_CONFIRMATION },
+      });
+      return ["Atualizei os valores do carrinho. Confira o total antes de confirmar.", "",
+        this.formatOrderConfirmation({ ...conversation, cart: this.toJson(pricing.cart) }, address!)].join("\n");
+    }
     const payment = await this.paymentsService.confirmCheckout({
       conversationId: conversation.id,
       customerId: conversation.customerId,
-      cart,
-      address: this.getPendingAddress(conversation.pendingAddress),
-      existingOrderId: this.extractConfirmedOrderId(conversation.lastIntent),
+      cart: pricing.cart,
+      address,
+      existingOrderId,
     });
 
     try {
@@ -733,6 +824,21 @@ export class ConversationEngineService {
       payment.pixCopyPaste,
       payment.paymentUrl,
     );
+  }
+
+  private async requestMissingAddress(conversation: Conversation, address: PendingAddress | null) {
+    const field = missingAddressField(address) || "number";
+    await this.prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastIntent: this.extractConfirmedOrderId(conversation.lastIntent) ? conversation.lastIntent : "DELIVERY_ADDRESS",
+        pendingAction: field === "cep"
+          ? ConversationState.WAITING_CEP
+          : ConversationState.WAITING_ADDRESS_NUMBER,
+        pendingAddress: address ? this.toJson(address) : Prisma.JsonNull,
+      },
+    });
+    return addressFieldPrompt(field);
   }
 
   private async handleWaitingPix(conversation: Conversation, text: string) {
@@ -947,7 +1053,9 @@ export class ConversationEngineService {
       return [
         `Entendi. Não localizei uma opção comum para ${symptom.label} neste momento.`,
         "",
-        "Pode me dizer o nome do medicamento que você costuma usar ou enviar uma foto da embalagem?",
+        this.aiService.canReadPackageImages?.()
+          ? "Pode me dizer o nome do medicamento que procura ou enviar uma foto nítida da embalagem?"
+          : "Pode me dizer o nome e a dosagem do medicamento que procura?",
       ].join("\n");
     }
 
@@ -1031,7 +1139,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      return WhatsappCopy.medicineNotFound();
+      return WhatsappCopy.medicineNotFound(this.aiService.canReadPackageImages?.() === true);
     }
 
     const shouldAskQuantity = summary.options.length === 1;
@@ -1445,6 +1553,10 @@ export class ConversationEngineService {
   }
 
   private async handleBackRequest(conversation: Conversation) {
+    if (conversation.lastIntent === "WAITING_PACKAGE_IMAGE_CONFIRMATION" &&
+        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
+      return this.handlePackageImageConfirmation(conversation, "2");
+    }
     if (
       conversation.pendingAction === ConversationState.WAITING_QUANTITY ||
       conversation.pendingAction === ConversationState.WAITING_PRESENTATION
@@ -1867,7 +1979,9 @@ export class ConversationEngineService {
       return [
         `Não encontrei ${formatProductDisplayName(normalizedMedicine)} ${dosage.label} agora.`,
         "",
-        "Pode conferir a dosagem ou enviar uma foto da embalagem?",
+        this.aiService.canReadPackageImages?.()
+          ? "Pode conferir a dosagem ou enviar uma foto nítida da embalagem?"
+          : "Pode escrever a dosagem como aparece na embalagem?",
       ].join("\n");
     }
 
@@ -1942,16 +2056,40 @@ export class ConversationEngineService {
   }
 
   private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
-    if (
-      option.type === "retail_product" ||
-      option.pricePf !== undefined ||
-      option.selectionReason?.includes("fonte pharmadb") ||
-      option.selectionReason?.includes("fonte popular_manual")
-    ) {
-      return option;
-    }
+    if (option.pricePolicy === CATALOG_PRICE_POLICY && option.source === "preco_popular") return option;
+    const offer = await this.catalog?.findCurrentOffer(option);
+    return offer ? {
+      ...option, source: offer.source, sourceId: offer.sourceId, ean: offer.ean,
+      pricePf: offer.price, pricePolicy: CATALOG_PRICE_POLICY,
+    } : { ...option, pricePf: undefined };
+  }
 
-    return this.bulaApiService.priceSelectedOption(option);
+  private async refreshCheckoutPrices(conversation: Conversation) {
+    const cart = this.getCart(conversation.cart).map((item) => ({ ...item }));
+    if (this.extractConfirmedOrderId(conversation.lastIntent)) {
+      return { cart, changed: false, error: null };
+    }
+    let changed = false;
+    for (const [index, item] of cart.entries()) {
+      if (item.pricePolicy === CATALOG_PRICE_POLICY && item.source === "preco_popular") continue;
+      const offer = await this.catalog?.findCurrentOffer(item);
+      if (!offer) {
+        return { cart, changed: false, error:
+          `Não consegui atualizar o item ${index + 1} (${formatProductDisplayName(item.name)}). Para continuar, remova esse item com "remover item ${index + 1}" e consulte o produto novamente. Mantive seu carrinho salvo.` };
+      }
+      Object.assign(item, {
+        source: offer.source, sourceId: offer.sourceId, ean: offer.ean,
+        unitPrice: offer.price, total: Number((offer.price * item.quantity).toFixed(2)),
+        pricePolicy: CATALOG_PRICE_POLICY,
+      });
+      changed = true;
+    }
+    if (changed) {
+      await this.prisma.conversation.update({
+        where: { id: conversation.id }, data: { cart: this.toJson(cart) },
+      });
+    }
+    return { cart, changed, error: null };
   }
 
   private formatSelectedOptionReply(option: CommercialMedicineOption) {
@@ -2053,7 +2191,7 @@ export class ConversationEngineService {
   }
 
   private formatOrderConfirmation(
-    conversation: Conversation,
+    conversation: { cart: unknown },
     address: PendingAddress,
   ) {
     const cart = this.getCart(conversation.cart);
@@ -2129,6 +2267,7 @@ export class ConversationEngineService {
       dosage: sanitizeCustomerText(option.strength),
       packageInfo: sanitizeCustomerText(option.packageDescription),
       unitPrice: option.pricePf,
+      pricePolicy: option.pricePolicy,
       quantity,
       total,
       imageUrl: option.imageUrl,

@@ -16,6 +16,7 @@ import {
 } from "../webhooks/dto/whatsapp-webhook.dto";
 import { ConversationEngineService } from "./conversation-engine.service";
 import { WhatsappMediaService } from "./whatsapp-media.service";
+import { WhatsappCopy } from "./whatsapp-copy";
 
 interface WhatsappSendResult {
   whatsappMessageId?: string;
@@ -211,17 +212,16 @@ export class WhatsappService {
           return;
         }
 
-        const imageSearchText = await this.extractSearchTextFromImage(message);
-
-        if (imageSearchText) {
-          const reply = await this.prisma.safePrismaCall(
-            "whatsapp.conversationEngine.resolveReply.image",
-            () =>
-              this.conversationEngine.resolveReply(
-                activeConversation,
-                imageSearchText,
-              ),
-          );
+        if (message.type === "image") {
+          const analysis = message.image?.id
+            ? await this.whatsappMediaService.extractMedicineFromImage(message.image.id, message.image.mime_type)
+            : { status: "failed" as const };
+          const reply = analysis.status === "identified"
+            ? await this.prisma.safePrismaCall(
+                "whatsapp.conversationEngine.confirmPackageImage",
+                () => this.conversationEngine.requestPackageImageConfirmation(activeConversation, analysis.reading),
+              )
+            : WhatsappCopy.packageImageFallback(analysis.status);
           await this.replyAndRecord(activeConversation.id, message.from, reply);
           return;
         }
@@ -229,7 +229,9 @@ export class WhatsappService {
         await this.replyAndRecord(
           activeConversation.id,
           message.from,
-          "No momento consigo responder apenas mensagens de texto. Pode me enviar sua dúvida por escrito?",
+          message.type === "document"
+            ? "Recebi seu documento. Para buscar um produto, escreva o nome e a dosagem que aparecem na embalagem."
+            : "Recebi sua mensagem. Pode escrever o nome do produto ou sua dúvida para eu continuar?",
         );
         return;
       }
@@ -482,24 +484,6 @@ export class WhatsappService {
     }
 
     return message.text?.body?.trim() || null;
-  }
-
-  private async extractSearchTextFromImage(message: WhatsappIncomingMessage) {
-    if (message.type !== "image" || !message.image?.id) {
-      return null;
-    }
-
-    const extracted = await this.whatsappMediaService.extractMedicineFromImage(
-      message.image.id,
-      message.image.mime_type,
-    );
-
-    if (!extracted) {
-      return null;
-    }
-
-    this.logger.log(`Texto extraído da embalagem: ${extracted}`);
-    return extracted;
   }
 
   private describeNonTextMessage(message: WhatsappIncomingMessage) {

@@ -145,6 +145,10 @@ async function run() {
     },
   ];
   const prisma = new FakePrisma();
+  const address = {
+    cep: "88301080", logradouro: "Rua Teste", bairro: "Centro",
+    localidade: "Itajai", uf: "SC", number: "10",
+  };
   const service = new PaymentsService(
     prisma,
     legacySigiloPayStub(),
@@ -155,6 +159,7 @@ async function run() {
     conversationId: "conv_direct_pix",
     customerId: "customer_1",
     cart,
+    address,
   });
 
   assert.equal(payment.provider, "pix_direct");
@@ -173,6 +178,7 @@ async function run() {
     conversationId: "conv_direct_pix",
     customerId: "customer_1",
     cart,
+    address,
     existingOrderId: payment.orderId,
   });
 
@@ -200,6 +206,7 @@ async function run() {
   );
   const failed = await failingService.confirmCheckout({
     conversationId: "conv_failure",
+    address,
     customerId: "customer_1",
     cart,
   });

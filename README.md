@@ -1,6 +1,6 @@
 ﻿# farmacia-whatsapp-ai
 
-API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, BulaAPI, ViaCEP e Pix direto.
+API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, com Prisma/MySQL, OpenAI, catálogo Preço Popular, ViaCEP e Pix direto.
 
 ## Stack
 
@@ -8,7 +8,7 @@ API NestJS em TypeScript para atendimento de farmácia pelo WhatsApp Cloud API, 
 - Prisma + MySQL
 - WhatsApp Cloud API
 - OpenAI
-- BulaAPI
+- Catálogo Preço Popular (VTEX)
 - ViaCEP
 - Pix direto com valor e identificador gerados para cada pedido
 
@@ -40,19 +40,19 @@ Endpoints principais:
 
 ### Catálogo Preço Popular
 
-O catálogo VTEX do Preço Popular é consultado primeiro para medicamentos e produtos
+O catálogo VTEX do Preço Popular é a única fonte de medicamentos, preços e produtos
 de higiene/perfumaria. A integração roda no próprio NestJS; não é necessário
 publicar ou executar a pasta `api-busca` em PHP. Não precisa de chave de API.
 
 ```dotenv
 PRECO_POPULAR_ENABLED=true
-PRECO_POPULAR_PRICE_MULTIPLIER=0.9
 ```
 
-Esses são os padrões mesmo quando as variáveis não estão cadastradas. O valor de
-venda é `Price * 0.9`, arredondado para centavos (10% de desconto). `ListPrice` não
-é usado como preço de venda, e a regra de 50% do PMC da PharmaDB não se aplica a
-essa fonte. O preço final é preservado na seleção, no carrinho e no checkout.
+O catálogo fica habilitado por padrão. O valor de venda é o campo `Price` da oferta,
+arredondado para centavos, sem desconto adicional. `ListPrice` não é usado como
+preço de venda. A variável antiga `PRECO_POPULAR_PRICE_MULTIPLIER` é ignorada,
+inclusive se ainda estiver com `0.9` na Hostinger. O preço integral é preservado
+na seleção, no carrinho e no checkout.
 
 O serviço preserva as variações/SKUs, EAN e imagem, ignora ofertas sem preço positivo
 ou explicitamente indisponíveis e limita cada busca a duas páginas de 50 produtos,
@@ -60,16 +60,38 @@ com um timeout total HTTP de 8 segundos. Há cache de 5 minutos, compartilhament
 de consultas simultâneas iguais e pausa temporária após falhas. Nada é consultado
 no bootstrap nem em `/health/providers`.
 
-Se não houver resultado comercial válido, são usados os fluxos anteriores:
-`MEDICINE_PRIMARY_PROVIDER` define a preferência PharmaDB/BulAPI antes do catálogo
-manual; produtos de higiene usam Cosmos e depois catálogo manual. Os preços dos
-fallbacks seguem suas próprias regras. A resposta genérica "qualquer marca" mantém
-o catálogo manual curado já existente.
+PharmaDB, BulAPI e Cosmos não são mais consultados. Não existe fallback de produto
+ou preço para esses serviços nem para preços tabelados do catálogo manual.
+As listas locais continuam apenas para reconhecer nomes, categorias, marcas e prioridades.
+"Qualquer marca" também consulta a nova API. Se não houver oferta válida, o bot não
+inventa produto, disponibilidade ou preço. Os adaptadores antigos foram mantidos
+como código legado, fora do fluxo de consultas; BulAPI permanece apenas como
+utilitário local de interpretação e formatação, com transporte HTTP bloqueado.
 
 `GET /health/providers` mostra `primaryProvider: "preco_popular"` e
-`providers.preco_popular.priceMultiplier: 0.9`; o painel também identifica a fonte.
-Para reverter ao fluxo anterior, configure `PRECO_POPULAR_ENABLED=false` e reinicie.
-Não há migração de banco específica para essa integração.
+`providers.preco_popular.priceMultiplier: 1`; os provedores antigos aparecem
+desativados. `PRECO_POPULAR_ENABLED=false` desliga as buscas, sem reativar os antigos.
+O painel mostra somente o catálogo ativo. As variáveis `PHARMADB_*`, `BULA_API_BASE_URL`,
+`COSMOS_*` e `MEDICINE_PRIMARY_PROVIDER` podem ser removidas da Hostinger.
+Não há nova migração de banco.
+
+Carrinhos iniciados na política anterior têm os itens conferidos por EAN/SKU na
+nova fonte antes da confirmação. Se o valor mudar, o resumo é reapresentado.
+Se não for possível identificar um item, o bot solicita removê-lo e consultá-lo
+novamente, sem apagar o carrinho. Pedidos/Pix já emitidos preservam o valor acordado.
+
+### CEP e endereço de entrega
+
+CEP completo continua seguindo para número e complemento. CEP genérico, como
+`23860-000`, solicita rua/estrada e bairro/localidade rural quando estiverem
+ausentes. Se o ViaCEP não responder ou não localizar o CEP, o cliente pode
+preencher rua, bairro, cidade, UF e número manualmente; `s/n` é aceito.
+A consulta tem limite de 5 segundos. CEP digitado incorretamente precisa ser corrigido.
+
+Não são exibidos campos vazios separados por vírgulas. O resumo e a criação do
+pedido/Pix exigem endereço completo, inclusive para conversas antigas.
+O preenchimento manual não comprova existência do endereço nem cobertura de entrega;
+a equipe deve conferir os dados no resumo/painel. `voltar` permite corrigir o CEP.
 
 Os preços e a disponibilidade consultados pertencem à loja de origem, não ao
 estoque da farmácia. Não representam uma recomendação médica nem dispensam as
@@ -81,7 +103,35 @@ Teste offline, sem consumir APIs:
 ```bash
 npm run build
 npm run test:preco-popular
+npm run test:catalog-checkout
 ```
+
+### Fotos de embalagens
+
+O bot só oferece leitura de foto quando `OPENAI_API_KEY` está configurada.
+`OPENAI_VISION_MODEL` é opcional; sem ele, usa `OPENAI_MODEL` e, na ausência
+deste, o padrão `gpt-4o-mini`. O modelo selecionado precisa aceitar imagens
+e saída JSON. A presença da chave não comprova acesso, saldo ou disponibilidade.
+
+O fluxo é: foto recebida, leitura da embalagem, confirmação do nome/dosagem
+pelo cliente e busca normal no Preço Popular. A imagem nunca adiciona itens ao
+carrinho nem confirma pedidos sozinha. Não são feitas recomendações de dose,
+reconhecimento de comprimidos soltos nem interpretação de receitas/exames.
+
+Se a leitura falhar, o bot reconhece que recebeu a imagem e pede o nome e a
+dosagem por escrito. Não informa que aceita apenas texto. Imagens/PDFs em
+`WAITING_PIX` continuam como comprovantes para conferência humana, sem OCR
+de produtos e sem confirmação automática do pagamento.
+
+O download usa somente HTTPS em domínios de mídia da Meta, sem redirecionamentos,
+até 5 MiB, e timeout compartilhado de 8 segundos. A leitura por IA tem timeout
+de 15 segundos e não faz retentativas automáticas. Fotos são enviadas ao modelo
+configurado para transcrição; não são gravadas em disco por esse fluxo.
+Logs de falha mostram etapa/status, sem token, URL temporária ou conteúdo da imagem.
+
+Referências: [imagens na API OpenAI](https://developers.openai.com/api/docs/guides/images-vision)
+e [saída JSON](https://developers.openai.com/api/docs/guides/structured-outputs).
+Teste sem APIs reais: `npm run test:package-images`.
 
 ### Demais variáveis
 
@@ -93,7 +143,6 @@ Copie `.env.example` para `.env` e ajuste:
 - `WHATSAPP_PHONE_NUMBER_ID`: ID do numero do WhatsApp no painel da Meta.
 - `WHATSAPP_APP_SECRET`: segredo do app da Meta, usado para validar o header `X-Hub-Signature-256` nos webhooks recebidos.
 - `OPENAI_API_KEY`: chave da OpenAI.
-- `BULA_API_BASE_URL`: URL base da Bulapi, por padrão `https://bulapi.com.br/api/v1`.
 - `PIX_PROVIDER`: use `pix_direct`.
 - `PIX_KEY`: chave Pix aleatória da empresa.
 - `PIX_MERCHANT_NAME`: nome do recebedor usado no código Pix.
