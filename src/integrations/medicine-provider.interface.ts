@@ -1,4 +1,5 @@
-export type MedicineProviderName = "preco_popular" | "pharmadb" | "bulapi" | "popular_manual";
+import type { WebMedicineQuote } from "../config/web-medicine.config";
+export type MedicineProviderName = "preco_popular" | "openai_web" | "pharmadb" | "bulapi" | "popular_manual";
 
 export interface MedicineProvider {
   name: MedicineProviderName;
@@ -8,6 +9,7 @@ export interface MedicineProvider {
 export interface NormalizedMedicineOption {
   source: MedicineProviderName;
   sourceId?: string;
+  webQuote?: WebMedicineQuote;
 
   productName: string;
   displayName: string;

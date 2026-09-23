@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { hasBackupPrice } from "../config/medicine-backups.config";
+import { validWebQuote, WEB_MEDICINE_PRICE_POLICY, WebMedicineQuote } from "../config/web-medicine.config";
+import { OpenAiWebMedicineService } from "../integrations/openai-web-medicine.service";
 import { Conversation, ConversationState, Prisma } from "@prisma/client";
 import { AiService } from "../ai/ai.service";
 import { SymptomMedicineRule } from "../config/symptom-medicine.config";
@@ -35,6 +36,7 @@ import { explicitRetailCategories, isGenericRetailCategoryQuery, normalizeRetail
 import { foldCustomerQuery, hasMultipleProductRequests, namedQueryBeforeSymptom } from "../utils/customer-query.util";
 
 interface CartItem {
+  webQuote?: WebMedicineQuote;
   pricePolicy?: string;
   type: "medicine" | "retail_product";
   medicineName: string;
@@ -82,6 +84,7 @@ export class ConversationEngineService {
     private readonly inputService: ConversationInputService = new ConversationInputService(),
     private readonly catalog?: PrecoPopularService,
     @Optional() private readonly config?: ConfigService,
+    @Optional() private readonly webMedicine?: OpenAiWebMedicineService,
   ) {}
 
   async resolveReply(conversation: Conversation, text: string) {
@@ -1857,7 +1860,7 @@ export class ConversationEngineService {
         const price = option.pricePf
           ? ` - ${this.formatCurrency(option.pricePf)}`
           : "";
-        return `${option.optionId}. ${formatProductDisplayName(option.label)}${price}`;
+        return `${option.optionId}. ${formatProductDisplayName(option.label)}${price}${option.source === "openai_web" && option.webQuote ? `\nFonte do preço: ${option.webQuote.sourceUrl}` : ""}`;
       })
       .join("\n");
   }
@@ -2163,7 +2166,13 @@ export class ConversationEngineService {
   private async ensureSelectedOptionPrice(option: CommercialMedicineOption) {
     if (catalogQuarantineReason(option)) return { ...option, pricePf: undefined };
     if (option.pricePolicy === CATALOG_PRICE_POLICY && option.source === "preco_popular") return option;
-    if (hasBackupPrice(option, this.config)) return option;
+    if (option.source === "openai_web") {
+      if (this.webMedicine?.isEnabled() && validWebQuote(option)) return option;
+      const verified = option.webQuote ? await this.webMedicine?.revalidate(option.webQuote) : null;
+      return verified && verified.sourceId === option.sourceId
+        ? { ...option, pricePf: verified.salePrice, pricePolicy: WEB_MEDICINE_PRICE_POLICY, webQuote: verified.webQuote }
+        : { ...option, pricePf: undefined };
+    }
     const offer = await this.catalog?.findCurrentOffer(option);
     return offer ? {
       ...option, source: offer.source, sourceId: offer.sourceId, ean: offer.ean,
@@ -2177,12 +2186,23 @@ export class ConversationEngineService {
       return { cart, changed: false, error: null };
     }
     let changed = false;
+    let quotesRefreshed = false;
     for (const [index, item] of cart.entries()) {
       if (catalogQuarantineReason(item)) {
         return { cart, changed: false, error: `O item ${index + 1} precisa de conferência do cadastro pela equipe. Para continuar com os demais produtos, envie "remover item ${index + 1}". Mantive seu carrinho salvo.` };
       }
       if (item.pricePolicy === CATALOG_PRICE_POLICY && item.source === "preco_popular") continue;
-      if (hasBackupPrice(item, this.config)) continue;
+      if (item.source === "openai_web") {
+        const verified = item.webQuote ? await this.webMedicine?.revalidate(item.webQuote) : null;
+        if (!verified?.salePrice || verified.sourceId !== item.sourceId) {
+          return { cart, changed: false, error: `Não consegui confirmar o preço e a disponibilidade na fonte do item ${index + 1} (${formatProductDisplayName(item.name)}). Não gerei cobrança. Consulte esse produto novamente ou remova com "remover item ${index + 1}". Mantive seu carrinho salvo.` };
+        }
+        changed ||= Math.round((item.unitPrice || 0) * 100) !== Math.round(verified.salePrice * 100);
+        Object.assign(item, { unitPrice: verified.salePrice, total: Number((verified.salePrice * item.quantity).toFixed(2)),
+          pricePolicy: WEB_MEDICINE_PRICE_POLICY, webQuote: verified.webQuote });
+        quotesRefreshed = true;
+        continue;
+      }
       const offer = await this.catalog?.findCurrentOffer(item);
       if (!offer) {
         return { cart, changed: false, error:
@@ -2195,7 +2215,7 @@ export class ConversationEngineService {
       });
       changed = true;
     }
-    if (changed) {
+    if (changed || quotesRefreshed) {
       await this.prisma.conversation.update({
         where: { id: conversation.id }, data: { cart: this.toJson(cart) },
       });
@@ -2379,6 +2399,7 @@ export class ConversationEngineService {
       packageInfo: sanitizeCustomerText(option.packageDescription),
       unitPrice: option.pricePf,
       pricePolicy: option.pricePolicy,
+      webQuote: option.webQuote,
       quantity,
       total,
       imageUrl: option.imageUrl,

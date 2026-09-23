@@ -184,7 +184,7 @@ export const WhatsappCopy = {
     formatCurrency: (value: number | undefined) => string,
   ) {
     const lines = [
-      "Perfeito, deixei esta opção separada:",
+      product.source === "openai_web" ? "Encontrei esta apresentação:" : "Perfeito, deixei esta opção separada:",
       "",
       formatProductDisplayName(product.label),
     ];
@@ -224,6 +224,10 @@ export const WhatsappCopy = {
 
     if (product.pricePf !== undefined) {
       lines.push(`Valor: ${formatCurrency(product.pricePf)}`);
+    }
+
+    if (product.source === "openai_web" && product.webQuote) {
+      lines.push(`Fonte do preço: ${product.webQuote.sourceUrl}`, "Vou conferir novamente essa oferta antes de gerar o Pix.");
     }
 
     lines.push("", this.askQuantity());

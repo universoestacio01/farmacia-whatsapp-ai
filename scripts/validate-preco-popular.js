@@ -454,22 +454,21 @@ test("mixed cart preserves final price, image, EAN and subtotal without discount
 
 test("health is config-only, exposes primary catalog and lazy medicine backups without fetching", () => {
   const health = new HealthController(
-    config({ MEDICINE_PRIMARY_PROVIDER: "pharmadb" }),
+    config({ MEDICINE_PRIMARY_PROVIDER: "pharmadb", OPENAI_API_KEY: "test-key" }),
     {},
   );
   const result = health.providers();
   assert.equal(result.primaryProvider, "preco_popular");
-  assert.equal(result.medicineFallbackProvider, "bulapi");
+  assert.equal(result.medicineFallbackProvider, "openai_web");
   assert.equal(result.connectivityChecked, false);
   assert.equal(result.retailPrimaryProvider, "preco_popular");
   assert.equal(result.providers.preco_popular.priceMultiplier, 1);
   assert.equal(result.providers.preco_popular.lazy, true);
-  for (const provider of ["cosmos"]) {
+  for (const provider of ["cosmos", "pharmadb", "bulapi"]) {
     assert.equal(result.providers[provider].enabled, false);
     assert.equal(result.providers[provider].retired, true);
   }
-  assert.equal(result.providers.pharmadb.enabled, true);
-  assert.equal(result.providers.bulapi.enabled, true);
+  assert.equal(result.providers.openai_web.enabled, true);
   const disabled = new HealthController(
     config({ PRECO_POPULAR_ENABLED: false }),
     {},
@@ -618,13 +617,14 @@ test("Nest module registers and injects new provider without network or database
     await module.init();
     const service = module.get(PrecoPopularService);
     for (const [path, name] of [
-      ["pharmadb.service", "PharmaDbService"],
-      ["bulapi-catalog.service", "BulapiCatalogService"],
+      ["openai-web-medicine.service", "OpenAiWebMedicineService"],
     ]) {
       assert.ok(module.get(require(`../dist/integrations/${path}`)[name]));
     }
     for (const [path, name] of [
       ["cosmos.service", "CosmosService"],
+      ["pharmadb.service", "PharmaDbService"],
+      ["bulapi-catalog.service", "BulapiCatalogService"],
       ["cosmos-token-pool.service", "CosmosTokenPoolService"],
     ]) {
       const retired = require(`../dist/integrations/${path}`)[name];

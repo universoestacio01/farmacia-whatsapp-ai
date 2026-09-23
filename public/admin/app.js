@@ -1242,10 +1242,10 @@ function renderProviders(data) {
         : "Desativado",
     ],
     ...Object.entries(data.medicines?.backups || {}).map(([name, provider]) => [
-      name === "pharmadb" ? "PharmaDB" : "BulAPI",
+      name === "openai_web" ? "OpenAI · busca web" : name === "pharmadb" ? "PharmaDB (legado)" : "BulAPI (legado)",
       Boolean(provider.enabled && provider.configured),
       !provider.enabled ? "Reserva desativada" : !provider.configured ? "Chave ausente" :
-        name === "pharmadb" ? `Reserva: PF ou ${Math.round(provider.pmcMultiplier * 100)}% do PMC. Conectividade não verificada.` :
+        name === "openai_web" ? `Reserva: preço público verificado, sem desconto. Modelo ${provider.model}. Limite ${provider.dailyLimit} buscas/dia por processo. Conectividade não verificada.` : name === "pharmadb" ? `Reserva: PF ou ${Math.round(provider.pmcMultiplier * 100)}% do PMC. Conectividade não verificada.` :
           "Reserva: maior PF da apresentação. Conectividade não verificada.",
     ]),
     [
@@ -1578,6 +1578,7 @@ function providerName(value) {
     {
       preco_popular: "Preço Popular",
       pharmadb: "PharmaDB",
+      openai_web: "OpenAI · busca web",
       bulapi: "BulAPI",
       cosmos: "Cosmos",
       whatsapp: "WhatsApp",

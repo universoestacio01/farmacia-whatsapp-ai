@@ -7,7 +7,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { backupProviderConfig } from "../config/medicine-backups.config";
+import { webMedicineConfig } from "../config/web-medicine.config";
 import {
   ConversationStatus,
   ConversationState,
@@ -853,7 +853,7 @@ export class AdminService {
 
   providers() {
     const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
-    const backups = backupProviderConfig(this.configService);
+    const backups = { openai_web: webMedicineConfig(this.configService) };
 
     return {
       database: {
@@ -871,8 +871,8 @@ export class AdminService {
       },
       medicines: {
         primaryProvider: precoPopularEnabled ? "preco_popular" : null,
-        pharmadbConfigured: backups.pharmadb.configured,
-        bulapiConfigured: backups.bulapi.configured,
+        pharmadbConfigured: false,
+        bulapiConfigured: false,
         backups,
         connectivityChecked: false,
         manualFallback: false,

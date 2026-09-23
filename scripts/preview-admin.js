@@ -282,11 +282,10 @@ function createAdminPreview() {
         precoPopular: { enabled: true, priceMultiplier: 1 },
           medicines: {
             primaryProvider: "preco_popular",
-            pharmadbConfigured: true,
-            bulapiConfigured: true,
+            pharmadbConfigured: false,
+            bulapiConfigured: false,
             backups: {
-              pharmadb: { enabled: true, configured: true, pmcMultiplier: 0.5 },
-              bulapi: { enabled: true, configured: true },
+              openai_web: { enabled: true, configured: true, model: "gpt-5-mini", dailyLimit: 40 },
             },
         },
         retailProducts: { primaryProvider: "preco_popular", cosmosConfigured: false, cosmosTokenCount: 0 },

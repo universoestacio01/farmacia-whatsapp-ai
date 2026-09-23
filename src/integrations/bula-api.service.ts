@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import type { WebMedicineQuote } from "../config/web-medicine.config";
 import {
   choicePrompt,
   formatProductDisplayName,
@@ -30,6 +31,7 @@ export interface MedicineQuestion {
 }
 
 export interface CommercialMedicineOption {
+  webQuote?: WebMedicineQuote;
   pricePolicy?: string;
   optionId: number;
   productId: number;

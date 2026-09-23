@@ -48,7 +48,7 @@ function harness(t, backups = false) {
   const popular = { findSymptomSuggestion: text => SYMPTOM_MEDICINE_RULES.find(r => r.patterns.some(p => text.toLowerCase().includes(p))) || null };
   const backup = name => ({ name, isEnabled: () => true, searchWithStatus: async () => ({ status: 'unavailable', options: [], failureReason: 'authentication_failed', statusCode: 401 }) });
   const medicine = new MedicineSearchOrchestratorService(selector, popular, rules, provider,
-    backups ? backup('pharmadb') : undefined, backups ? backup('bulapi') : undefined, config, { record: async event => events.push(event) });
+    backups ? backup('openai_web') : undefined, { record: async event => events.push(event) });
   const originalSearch = medicine.searchMedicine.bind(medicine);
   medicine.searchMedicine = query => { searches.push(query); return originalSearch(query); };
   const retail = new ProductSearchOrchestratorService(new ManualRetailProductService(), provider);
@@ -156,8 +156,8 @@ test('duplicate generic brands do not repeat an identical known presentation', (
 test('backup error records preserve actionable failure without misreporting the primary', async t => {
   const f = harness(t, true); const reply = await f.send('produtoausente');
   assert.match(reply, /consulta complementar/);
-  const event = f.events.find(e => e.provider === 'pharmadb');
-  assert.equal(event.statusCode, 401); assert.equal(event.failureReason, 'authentication_failed');
+  const event = f.events.find(e => e.operation === 'search_outcome');
+  assert.match(event.failureReason, /authentication_failed/);
   assert.ok(f.events.some(e => e.operation === 'search_outcome' && /primary=not_found/.test(e.failureReason)));
 });
 test('OCR correction changes form without retaining the old tablet dose', async t => {

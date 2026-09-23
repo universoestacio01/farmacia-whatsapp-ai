@@ -42,7 +42,7 @@ function harness(t, { responder, backups = false } = {}) {
     return { options: [], status: "unavailable" };
   } });
   const search = new MedicineSearchOrchestratorService(selector, { findSymptomSuggestion: () => null }, rules, provider,
-    backups ? backup("pharmadb") : undefined, backups ? backup("bulapi") : undefined);
+    backups ? backup("openai_web") : undefined, { record: async (event) => events.push(event) });
   const conversation = { id: "offline", customerId: "offline", pendingAction: State.WAITING_MEDICINE_NAME,
     lastIntent: null, lastMedicine: null, currentMedicineQuery: null, currentRetailCategory: null,
     selectedPresentation: null, candidateOptions: [], cart: [], pendingAddress: null };

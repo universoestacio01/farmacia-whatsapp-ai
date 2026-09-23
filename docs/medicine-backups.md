@@ -1,5 +1,9 @@
 # Reservas de medicamentos
 
+> HISTORICO SUPERADO: PharmaDB e BulAPI foram retiradas do fluxo ativo em 23/09/2026.
+> A configuracao vigente esta em [openai-web-medicine.md](openai-web-medicine.md).
+> Nao reative as configuracoes antigas descritas abaixo.
+
 ## Regra restaurada em 23/09/2026
 
 Ordem: Preco Popular -> PharmaDB -> BulAPI. Cosmos continua fora do fluxo.

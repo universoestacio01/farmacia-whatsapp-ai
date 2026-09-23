@@ -10,16 +10,12 @@ import { PopularManualMedicineService } from "./popular-manual-medicine.service"
 import { ProductSearchOrchestratorService } from "./product-search-orchestrator.service";
 import { ViaCepService } from "./via-cep.service";
 import { PrecoPopularService } from "./preco-popular.service";
-import { PharmaDbAuthService } from "./pharmadb-auth.service";
-import { PharmaDbService } from "./pharmadb.service";
-import { BulapiCatalogService } from "./bulapi-catalog.service";
+import { OpenAiWebMedicineService } from "./openai-web-medicine.service";
 
 @Module({
   imports: [PrismaModule, ObservabilityModule],
   providers: [
-    PharmaDbAuthService,
-    PharmaDbService,
-    BulapiCatalogService,
+    OpenAiWebMedicineService,
     PrecoPopularService,
     BulaApiService,
     CommercialMedicineSelector,
@@ -31,8 +27,7 @@ import { BulapiCatalogService } from "./bulapi-catalog.service";
     ViaCepService,
   ],
   exports: [
-    PharmaDbService,
-    BulapiCatalogService,
+    OpenAiWebMedicineService,
     PrecoPopularService,
     BulaApiService,
     CommercialMedicineSelector,

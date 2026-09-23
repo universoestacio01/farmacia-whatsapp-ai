@@ -60,39 +60,37 @@ com um timeout total HTTP de 8 segundos. Há cache de 5 minutos, compartilhament
 de consultas simultâneas iguais e pausa temporária após falhas. Nada é consultado
 no bootstrap nem em `/health/providers`.
 
-Para medicamentos, as reservas seguem a ordem **Preço Popular -> PharmaDB -> BulAPI**.
-Uma resposta válida da principal não consulta as reservas. Elas são usadas se a
-principal falhar ou não encontrar a apresentação solicitada, preservando os filtros
-de dosagem, forma, quantidade e segurança. Buscas encaminhadas para higiene e
-primeiros socorros continuam somente na principal. Cosmos continua desativado.
-As listas locais reconhecem nomes e prioridades, mas não fabricam ofertas.
+Para medicamentos, a ordem é **Preço Popular -> OpenAI Web Search**. Uma oferta
+válida da principal não gasta busca web. Falha, ausência ou falta da apresentação
+podem acionar a reserva, sem relaxar dosagem, forma, embalagem ou restrições.
+Higiene e consultas encaminhadas ao catálogo de varejo continuam na principal.
 
-A regra anterior de preço foi restaurada somente nas reservas:
-- PharmaDB: PF positivo, quando disponível; caso contrário, PMC com ICMS (ou PMC)
-  multiplicado por `PHARMADB_PMC_PRICE_MULTIPLIER`, padrão `0.5`.
-- BulAPI: maior PF positivo da apresentação exata, sem misturar outras dosagens.
-- Sem preço ou apresentação verificável, o item não pode entrar no pedido.
+PharmaDB, BulAPI e Cosmos não são consultados. Os adaptadores antigos permanecem
+desativados para compatibilidade; flags antigas da Hostinger não os reativam.
+`BulaApiService` continua somente como utilitário local de interpretação/formatação.
 
-Esses valores são uma política comercial configurada, não confirmação de estoque
-nem de custo de aquisição. A operação deve conferir disponibilidade e margem.
-O preço integral da principal permanece inalterado, sem o antigo desconto de 10%.
+Regra comercial: **100% do preço público BRL da embalagem exata**, sem desconto
+adicional. A OpenAI localiza páginas; o código verifica Product/Offer JSON-LD,
+disponibilidade e condições. Não aceita preço de memória, apenas trecho de busca,
+"a partir de", parcelamento, clube/CPF/convênio ou oferta sem identificação segura.
+O link da fonte acompanha a opção. Oferta externa não comprova estoque próprio
+nem margem: a operação continua responsável pela disponibilidade e aquisição.
 
-Configure `PHARMADB_API_KEY`, `PHARMADB_ENABLED=true` e `BULAPI_ENABLED=true`.
-As flags são verdadeiras por padrão; PharmaDB sem chave é ignorada.
-As URLs padrão estão em `.env.example`. Desligar a principal não desliga as reservas;
-para isso, desative as duas flags. Nunca publique `.env` ou `.env.hostinger` no GitHub.
-
-As reservas têm cache de 5 minutos (vazio: 1 minuto), consultas simultâneas agrupadas
-e pausa de 1 minuto após falhas (5 minutos para HTTP 429). A PharmaDB lê no máximo
-2 páginas e 3 detalhes: até 6 requisições protegidas, incluindo uma retentativa 401,
-mais autenticação quando necessária. BulAPI faz até 9 requisições. Cada reserva
-tem orçamento de 6 segundos; resultados não cobrem necessariamente todo o catálogo.
-`BulaApiService` continua como utilitário local; o transporte externo limitado é
-`BulapiCatalogService`. Não há sondagens externas no bootstrap ou no health.
+Configure `OPENAI_API_KEY`, `OPENAI_WEB_SEARCH_ENABLED=true`,
+`OPENAI_WEB_SEARCH_MODEL=gpt-5-mini` e `OPENAI_WEB_SEARCH_DAILY_LIMIT=40`.
+O limite é de requisições de descoberta por processo e dia UTC (até 2 ferramentas
+de busca por requisição); não é um teto financeiro global. Reinício zera esse
+contador. Configure também limites/alertas no projeto OpenAI. A reserva tem custo.
+Cache de 5 minutos, agrupamento de buscas iguais, até 2 buscas simultâneas,
+pausa após falhas e no máximo 4 páginas por descoberta. Nenhuma chamada no bootstrap.
+Detalhes e limitações: [reserva web](docs/openai-web-medicine.md).
 
 `GET /health/providers` e o painel mostram configuração e habilitação, **não**
 confirmação de conectividade (`connectivityChecked: false`). Não há migração de banco.
 Teste offline das reservas: `npm run build && npm run test:medicine-backups`.
+
+Itens da web são conferidos novamente na fonte antes do Pix; mudança de preço
+exige nova confirmação do cliente. Falha na verificação bloqueia a cobrança.
 
 Carrinhos iniciados na política anterior têm os itens conferidos por EAN/SKU na
 nova fonte antes da confirmação. Se o valor mudar, o resumo é reapresentado.

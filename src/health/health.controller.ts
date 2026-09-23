@@ -2,7 +2,7 @@
 import { ConfigService } from "@nestjs/config";
 import { existsSync } from "node:fs";
 import { ModuleRef } from "@nestjs/core";
-import { backupProviderConfig } from "../config/medicine-backups.config";
+import { webMedicineConfig } from "../config/web-medicine.config";
 import {
   DEFAULT_PIX_KEY,
   DEFAULT_PIX_MERCHANT_CITY,
@@ -27,7 +27,7 @@ export class HealthController {
   @Get("providers")
   providers() {
     const precoPopularEnabled = isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED"));
-    const backups = backupProviderConfig(this.configService);
+    const backups = { openai_web: webMedicineConfig(this.configService) };
     const fallbackProviders = Object.entries(backups).filter(([, provider]) => provider.enabled && provider.configured).map(([name]) => name);
 
     return {
@@ -54,6 +54,8 @@ export class HealthController {
           lazy: true,
         },
         ...backups,
+        pharmadb: { configured: false, enabled: false, retired: true },
+        bulapi: { configured: false, enabled: false, retired: true },
         cosmos: {
           configured: false,
           enabled: false,
@@ -69,7 +71,8 @@ export class HealthController {
       precoPopularEnabled: isPrecoPopularEnabled(this.configService.get("PRECO_POPULAR_ENABLED")),
       cosmosConfigured: false,
       cosmosTokenCount: 0,
-      pharmadbConfigured: backupProviderConfig(this.configService).pharmadb.configured,
+      pharmadbConfigured: false,
+      openaiWebConfigured: webMedicineConfig(this.configService).configured,
       databaseConfigured: Boolean(
         this.configService.get<string>("DATABASE_URL")?.trim(),
       ),

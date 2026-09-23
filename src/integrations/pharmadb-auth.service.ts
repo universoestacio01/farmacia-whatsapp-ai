@@ -24,7 +24,7 @@ export class PharmaDbAuthService {
   constructor(private readonly configService: ConfigService) {}
 
   hasApiKey() {
-    return Boolean(sanitizeEnv(this.configService.get("PHARMADB_API_KEY")));
+    return false;
   }
 
   async getAccessToken(forceRefresh = false) {

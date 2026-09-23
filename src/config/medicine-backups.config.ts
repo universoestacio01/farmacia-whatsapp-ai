@@ -4,9 +4,9 @@ type Config = { get(key: string): unknown };
 export const PHARMADB_BASE_URL = "https://api.pharmadb.com.br/v1";
 export const BULAPI_BASE_URL = "https://bulapi.com.br/api/v1";
 export function backupEnabled(value: unknown) {
-  return !["false", "0", "no", "nao", "não"].includes(
-    sanitizeEnv(value).toLowerCase(),
-  );
+  // Retired providers cannot be reactivated by old Hostinger environment values.
+  void value;
+  return false;
 }
 export function pharmaDbMultiplier(config?: Config) {
   const value = Number(
@@ -29,15 +29,9 @@ export function hasBackupPrice(
   },
   config?: Config,
 ) {
-  const policy = backupPricePolicy(item.source || "", config);
-  const price = item.pricePf ?? item.unitPrice;
-  return Boolean(
-    policy &&
-    policy === item.pricePolicy &&
-    typeof price === "number" &&
-    Number.isFinite(price) &&
-    price > 0,
-  );
+  void item;
+  void config;
+  return false;
 }
 export function backupProviderConfig(config: Config) {
   return {
