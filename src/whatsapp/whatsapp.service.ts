@@ -212,12 +212,6 @@ export class WhatsappService {
           return;
         }
 
-        if (["CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"].includes(activeConversation.lastIntent || "")) {
-          await this.replyAndRecord(activeConversation.id, message.from,
-            "Recebi seu arquivo e ele ficou registrado na conversa para a equipe. Para voltar à busca automática, escreva voltar.");
-          return;
-        }
-
         if (message.type === "image") {
           const analysis = message.image?.id
             ? await this.whatsappMediaService.extractMedicineFromImage(message.image.id, message.image.mime_type)

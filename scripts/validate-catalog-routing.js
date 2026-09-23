@@ -122,14 +122,14 @@ test("retail misses retain the requested volume instead of offering another pack
 for (const status of [429, 500]) test(`HTTP ${status} is not reported as a missing product and is not retried`, async (t) => {
   const h = harness(t, { status });
   const reply = await h.send("Soro fisiologico");
-  assert.match(reply, /Solicitar atendimento/);
+  assert.match(reply, /Não consegui consultar/);
   assert.doesNotMatch(reply, /Não localizei/);
   assert.equal(h.calls.length, 1);
 });
 
 test("network failure remains an availability error, not a catalog miss", async (t) => {
   const h = harness(t, { error: new Error("offline") });
-  assert.match(await h.send("Tem gaze?"), /Solicitar atendimento/);
+  assert.match(await h.send("Tem gaze?"), /Não consegui consultar/);
   assert.equal(h.calls.length, 1);
 });
 

@@ -293,17 +293,13 @@ export const WhatsappCopy = {
     return "Encontrei o medicamento, mas não essa dosagem ou apresentação no catálogo agora. Pode conferir os detalhes da embalagem ou me dizer outra apresentação que você procura?";
   },
 
-  catalogSearchProblem(status?: string, productName?: string) {
+  catalogSearchProblem(status?: string, _productName?: string) {
     if (["not_found", "search_unverified", "offer_unavailable"].includes(status || "")) return WhatsappCopy.productUnavailable();
-    if (!["search_unverified", "backup_unavailable", "unavailable", "incomplete", "attributes_unverified", "restricted", "offer_unavailable"].includes(status || "")) return null;
-    const product = productName ? formatProductDisplayName(sanitizeCustomerText(productName).slice(0, 100)) : "esse item";
-    return [
-      `Para seguir com ${product}, preciso de uma conferência da equipe.`,
-      "Como prefere continuar?",
-      "",
-      "1. Solicitar atendimento",
-      "2. Buscar outro produto",
-    ].join("\n");
+    if (["restricted", "attributes_unverified"].includes(status || "")) return WhatsappCopy.productUnavailable();
+    if (["backup_unavailable", "unavailable", "incomplete"].includes(status || "")) {
+      return "Não consegui consultar esse produto agora. Você gostaria de buscar outro produto?";
+    }
+    return null;
   },
 
   packageImageFallback(status: "unavailable" | "unreadable" | "failed" | "unsupported") {

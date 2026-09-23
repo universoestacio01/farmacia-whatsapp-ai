@@ -155,7 +155,7 @@ test('duplicate generic brands do not repeat an identical known presentation', (
 });
 test('backup error records preserve actionable failure without misreporting the primary', async t => {
   const f = harness(t, true); const reply = await f.send('produtoausente');
-  assert.match(reply, /Solicitar atendimento/);
+  assert.match(reply, /Não consegui consultar/);
   const event = f.events.find(e => e.operation === 'search_outcome');
   assert.match(event.failureReason, /authentication_failed/);
   assert.ok(f.events.some(e => e.operation === 'search_outcome' && /primary=not_found/.test(e.failureReason)));

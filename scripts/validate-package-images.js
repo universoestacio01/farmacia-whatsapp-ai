@@ -122,16 +122,16 @@ test("identified image requires confirmation; exact extracted dose goes through 
 });
 
 for (const intent of ["CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"]) {
-  test(`human catalog review ${intent} keeps image in history without restarting OCR/search`, async () => {
+  test(`retired catalog review ${intent} does not block image identification`, async () => {
     const f = fixture();
     f.conversation.lastIntent = intent;
     await f.receive(image);
-    assert.equal(f.analyses.length, 0);
+    assert.equal(f.analyses.length, 1);
     assert.equal(f.searches.length, 0);
-    assert.equal(f.conversation.lastIntent, intent);
+    assert.equal(f.conversation.lastIntent, "WAITING_PACKAGE_IMAGE_CONFIRMATION");
     assert.equal(f.conversation.cart.length, 1);
     assert.ok(f.messages.some((m) => m.direction === "INBOUND"));
-    assert.match(f.replies[0], /registrado na conversa para a equipe/);
+    assert.match(f.replies[0], /Confere/);
   });
 }
 

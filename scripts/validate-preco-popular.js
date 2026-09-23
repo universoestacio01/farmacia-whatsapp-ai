@@ -135,6 +135,30 @@ test("full catalog prices are rounded in cents; old discount settings are ignore
     assert.throws(() => calculatePrecoPopularSalePrice(price));
 });
 
+test("empty brand index retries active ingredient but preserves requested brand", async (t) => {
+  const calls = mockFetch(t, (url) => new URL(url).searchParams.get("ft") === "novalgina"
+    ? respond([]) : respond([product(1, "Novalgina 1g 10 Comprimidos", 20, "Novalgina"), product(2, "Dipirona 1g 10 Comprimidos", 5, "Generico")]));
+  const result = await new PrecoPopularService(config(), selector).searchMedicinesWithStatus("Novalgina 1g");
+  assert.deepEqual(calls.map((c) => c.url.searchParams.get("ft")), ["novalgina", "dipirona"]);
+  assert.equal(result.options.length, 1);
+  assert.match(result.options[0].productName, /Novalgina/);
+});
+
+test("simplified query does not replace a combination with a single ingredient", async (t) => {
+  const calls = mockFetch(t, (url) => new URL(url).searchParams.get("ft") === "allegra d"
+    ? respond([]) : respond([product(1, "Allegra 120mg 10 Comprimidos", 20, "Allegra")]));
+  const result = await new PrecoPopularService(config(), selector).searchMedicinesWithStatus("Allegra D");
+  assert.equal(result.options.length, 0);
+  assert.equal(calls.length, 2);
+});
+
+test("provider outage does not trigger broader primary queries", async (t) => {
+  const calls = mockFetch(t, () => respond({}, 503));
+  const result = await new PrecoPopularService(config(), selector).searchMedicinesWithStatus("Novalgina");
+  assert.equal(result.status, "unavailable");
+  assert.equal(calls.length, 1);
+});
+
 test("enabled by default; lazy construction and disabled switch never fetch", async (t) => {
   const calls = mockFetch(t, never);
   new PrecoPopularService(config(), selector);

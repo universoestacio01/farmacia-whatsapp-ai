@@ -35,7 +35,7 @@ test("long conversations show the latest 100 messages in chronological order", a
   assert.equal(result[99].content, "Message 139");
 });
 
-test("requested catalog reviews appear before ordinary pending chats and identify the product", async () => {
+test("attention no longer creates a separate catalog human-review queue", async () => {
   const calls = [];
   const row = (id, extra = {}) => ({ id, status: "OPEN", pendingAction: "WAITING_MEDICINE_NAME",
     updatedAt: new Date(), customer: { name: "Teste", whatsappNumber: "test" }, messages: [], ...extra });
@@ -46,14 +46,13 @@ test("requested catalog reviews appear before ordinary pending chats and identif
     },
   } }) });
   const result = await service.attentionQueue(2);
-  assert.deepEqual(result.map((r) => r.id), ["review", "ordinary"]);
-  assert.match(result[0].reason, /Conferir produto e valor: Neosulida 100mg/);
-  assert.equal(calls[0].where.lastIntent, "CATALOG_REVIEW_REQUESTED");
-  assert.equal(calls[1].take, 1);
-  assert.deepEqual(calls[1].where.id.notIn, ["review"]);
+  assert.deepEqual(result.map((r) => r.id), ["ordinary"]);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].where.lastIntent, undefined);
+  assert.equal(calls[0].take, 2);
 });
 
-for (const fails of [false, true]) test(`manual operator reply ${fails ? "failure preserves review" : "success marks request answered"}`, async () => {
+for (const fails of [false, true]) test(`existing manual messaging ${fails ? "failure" : "success"} does not restore retired handoff states`, async () => {
   const updates = [], messages = [];
   const client = {
     conversation: {
@@ -70,8 +69,7 @@ for (const fails of [false, true]) test(`manual operator reply ${fails ? "failur
     assert.equal(updates.length, 0);
   } else {
     assert.equal((await service.sendManualMessage("chat", "Vou conferir")).sent, true);
-    assert.equal(updates[0].where.lastIntent, "CATALOG_REVIEW_REQUESTED");
-    assert.equal(updates[0].data.lastIntent, "CATALOG_REVIEW_HANDLED");
+    assert.equal(updates.length, 0);
   }
   assert.equal(messages.length, 1);
 });

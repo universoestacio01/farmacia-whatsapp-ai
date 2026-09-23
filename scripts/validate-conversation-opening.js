@@ -139,52 +139,50 @@ for (const status of ["backup_unavailable", "unavailable", "incomplete", "attrib
   test(`sales recovery for ${status} offers a real next step without technical language`, async () => {
     const f = createFixture(ConversationState.IDLE, {}, status);
     const reply = await f.send("Tem neosulida?");
-    assert.match(reply, /seguir com Neosulida/);
-    assert.match(reply, /1\. Solicitar atendimento/);
-    assert.match(reply, /2\. Buscar outro produto/);
+    assert.match(reply, /buscar outro produto/);
+    assert.doesNotMatch(reply, /equipe|atendimento|conferência/i);
     assert.doesNotMatch(reply, /fontes|catálogo|API|OpenAI|consulta principal|em falta|Pode conferir o nome/i);
     assert.ok(reply.length < 230);
-    assert.equal(f.conversation.lastIntent, "CATALOG_HELP_OPTIONS");
+    assert.equal(f.conversation.lastIntent, "CATALOG_UNAVAILABLE");
     assert.equal(f.conversation.selectedPresentation, null);
   });
 }
 
-test("human review is persisted only when requested, keeps cart and stops automatic lookups", async () => {
+test("technical failures keep cart and permit an explicit automated retry", async () => {
   const cart = [{ name: "Item existente", quantity: 1, unitPrice: 10 }];
   const f = createFixture(ConversationState.IDLE, { cart }, "backup_unavailable");
   await f.send("Tem neosulida?");
   assert.notEqual(f.conversation.lastIntent, "CATALOG_REVIEW_REQUESTED");
-  assert.match(await f.send("1"), /Solicitação registrada/);
-  assert.equal(f.conversation.lastIntent, "CATALOG_REVIEW_REQUESTED");
-  assert.match(f.conversation.currentMedicineQuery, /neosulida/i);
-  assert.match(await f.send("100mg 12 comprimidos"), /registrada para a equipe/);
-  assert.equal(f.queries.medicines.length, 1);
-  assert.deepEqual(f.conversation.cart, cart);
-  await f.send("voltar");
-  assert.equal(f.conversation.lastIntent, null);
+  assert.match(await f.send("tentar novamente"), /Não consegui consultar/);
+  assert.equal(f.conversation.lastIntent, "CATALOG_UNAVAILABLE");
+  assert.equal(f.queries.medicines.length, 2);
   assert.deepEqual(f.conversation.cart, cart);
 });
 
 test("recovery accepts another product or a new query without interpreting 1 as a cart item", async () => {
   const f = createFixture(ConversationState.IDLE, {}, "backup_unavailable");
   await f.send("Tem neosulida?");
-  assert.match(await f.send("3"), /Solicitar atendimento/);
-  assert.equal(f.queries.medicines.length, 1);
-  assert.match(await f.send("2"), /Qual outro produto/);
+  assert.match(await f.send("sim"), /Qual produto/);
   assert.equal(f.conversation.lastIntent, "ADD_ITEM");
   await f.send("Dramin");
   assert.match(f.queries.medicines[1], /dramin/i);
   assert.equal(f.conversation.cart.length, 0);
 });
 
-test("operator answer does not let the bot interrupt the ongoing human conversation", async () => {
-  const f = createFixture(ConversationState.WAITING_MEDICINE_NAME, { lastIntent: "CATALOG_REVIEW_HANDLED", currentMedicineQuery: "neosulida" });
-  assert.match(await f.send("sao 12 comprimidos"), /registrada para a equipe/);
-  assert.equal(f.queries.medicines.length, 0);
-  await f.send("voltar");
-  await f.send("Tem Dramin?");
-  assert.equal(f.queries.medicines.length, 1);
-});
+for (const intent of ["CATALOG_HELP_OPTIONS", "CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"]) {
+  test(`retired ${intent} resumes automatically and preserves cart`, async () => {
+    const cart = [{ name: "Sabonete", quantity: 1, unitPrice: 5 }];
+    const f = createFixture(ConversationState.WAITING_MEDICINE_NAME, { cart, lastIntent: intent, currentMedicineQuery: "ozempic" }, "restricted");
+    const reply = await f.send("1");
+    assert.match(f.queries.medicines[0], /ozempic/i);
+    assert.match(reply, /não está disponível para pedido/);
+    assert.doesNotMatch(reply, /equipe|atendimento|registrada/);
+    assert.equal(f.conversation.lastIntent, "CATALOG_UNAVAILABLE");
+    assert.deepEqual(f.conversation.cart, cart);
+    await f.send("Dramin");
+    assert.match(f.queries.medicines[1], /dramin/i);
+  });
+}
 
 for (const status of ["not_found", "search_unverified", "offer_unavailable"]) {
   test(`no sellable product (${status}) asks for another product without human menu or stock claim`, async () => {

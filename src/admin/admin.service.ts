@@ -152,21 +152,12 @@ export class AdminService {
   async attentionQueue(limit = 30) {
     const take = this.clampLimit(limit, 100);
     const staleDate = new Date(Date.now() - 20 * 60 * 1000);
-    const reviewRequests = await this.prisma.safePrismaCall(
-      "admin.conversation.findMany.catalog_review",
-      (prisma) => prisma.conversation.findMany({
-        where: { status: ConversationStatus.OPEN, lastIntent: "CATALOG_REVIEW_REQUESTED" },
-        orderBy: { updatedAt: "asc" }, take,
-        include: { customer: true, messages: { orderBy: { createdAt: "desc" }, take: 1 } },
-      }), [],
-    );
-    const conversations = reviewRequests.length >= take ? [] : await this.prisma.safePrismaCall(
+    const conversations = await this.prisma.safePrismaCall(
       "admin.conversation.findMany.attention",
       (prisma) =>
         prisma.conversation.findMany({
           where: {
             status: ConversationStatus.OPEN,
-            id: { notIn: reviewRequests.map((conversation) => conversation.id) },
             OR: [
               { pendingAction: { not: ConversationState.IDLE } },
               { updatedAt: { lt: staleDate } },
@@ -174,7 +165,7 @@ export class AdminService {
             ],
           },
           orderBy: { updatedAt: "asc" },
-          take: take - reviewRequests.length,
+          take,
           include: {
             customer: true,
             messages: { orderBy: { createdAt: "desc" }, take: 1 },
@@ -183,7 +174,7 @@ export class AdminService {
       [],
     );
 
-    return [...reviewRequests, ...conversations].map((conversation) => ({
+    return conversations.map((conversation) => ({
       id: conversation.id,
       customerName: conversation.customer.name,
       whatsappNumber: conversation.customer.whatsappNumber,
@@ -673,14 +664,6 @@ export class AdminService {
           }),
       );
 
-      // Mark the request answered only after sending. The customer can resume with "voltar".
-      if (conversation.lastIntent === "CATALOG_REVIEW_REQUESTED") {
-        await this.prisma.safePrismaCall("admin.conversation.update.catalog_review_handled", (prisma) =>
-          prisma.conversation.updateMany({
-            where: { id: conversationId, lastIntent: "CATALOG_REVIEW_REQUESTED" },
-            data: { lastIntent: "CATALOG_REVIEW_HANDLED" },
-          }));
-      }
       return { sent: true, whatsappMessageId: result.whatsappMessageId };
     } catch (error) {
       await this.prisma.safePrismaCall(
@@ -1041,16 +1024,10 @@ export class AdminService {
   }
 
   private resolveAttentionReason(conversation: {
-    lastIntent?: string | null;
-    currentMedicineQuery?: string | null;
     pendingAction: ConversationState;
     updatedAt: Date;
     messages: Array<{ status: MessageStatus }>;
   }) {
-    if (conversation.lastIntent === "CATALOG_REVIEW_REQUESTED") {
-      return `Conferir produto e valor: ${this.truncate(conversation.currentMedicineQuery || "ver conversa", 100)}`;
-    }
-    if (conversation.lastIntent === "CATALOG_REVIEW_HANDLED") return "Atendimento com a equipe";
     if (conversation.messages.some((message) => message.status === MessageStatus.FAILED)) {
       return "Mensagem com falha";
     }

@@ -99,7 +99,22 @@ export class PrecoPopularService {
     const parsed = this.selector.parseMedicineQuery(query);
     const term = parsed.medicineName || parsed.canonicalName || "";
     this.logger.log(JSON.stringify({ event: "MEDICINE_QUERY_NORMALIZED", provider: this.name, receivedQuery: query, term }));
-    const result = await this.searchCatalog(term);
+    let result = await this.searchCatalog(term);
+    // One bounded broader lookup can recover a catalog indexing miss. It must
+    // still contain the original name, so a brand never silently becomes a generic.
+    if (result.status === "ok" && !result.products.length && !result.failureReason) {
+      const broader = parsed.canonicalName !== term ? parsed.canonicalName : term.split(" ")[0];
+      if (broader && broader !== term && broader.length >= 3) {
+        const retry = await this.searchCatalog(broader);
+        const words = this.normalize(term).split(/\s+/).filter(Boolean);
+        result = { ...retry, products: retry.products.filter((product) => {
+          const nameWords = this.normalize(product.name).split(/[^a-z0-9]+/);
+          return product.isMedicine && words.every((word) => nameWords.includes(word));
+        }) };
+        this.logger.log(JSON.stringify({ event: "MEDICINE_QUERY_FALLBACK", provider: this.name,
+          receivedQuery: query, term, consultedTerm: broader, resultsAfterFilter: result.products.length }));
+      }
+    }
     const options: NormalizedMedicineOption[] = result.products
       .filter((product) => product.isMedicine)
       .map((product) => {

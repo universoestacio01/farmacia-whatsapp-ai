@@ -101,15 +101,18 @@ export class ConversationEngineService {
       return this.handleWaitingPix(conversation, text);
     }
 
-    if (["CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"].includes(conversation.lastIntent || "") && !this.isGlobalCancelRequest(text)) {
-      if (this.isViewCartRequest(text)) return this.formatCartStatus(conversation);
-      if (this.isBackRequest(text)) {
-        await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
-          lastIntent: null, currentMedicineQuery: null, lastMedicine: null, candidateOptions: Prisma.JsonNull,
-        } });
-        return "Vamos continuar. Qual produto você quer buscar? Seu carrinho continua salvo.";
+    // Resume chats left by the retired handoff flow without losing cart/address.
+    if (["CATALOG_HELP_OPTIONS", "CATALOG_REVIEW_REQUESTED", "CATALOG_REVIEW_HANDLED"].includes(conversation.lastIntent || "")) {
+      const patch = { lastIntent: "CATALOG_UNAVAILABLE", pendingAction: ConversationState.WAITING_MEDICINE_NAME,
+        selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull };
+      await this.prisma.conversation.update({ where: { id: conversation.id }, data: patch });
+      conversation = { ...conversation, ...patch, selectedPresentation: null, candidateOptions: null };
+      if (/^(?:1|sim|atendimento|atendente|solicitar atendimento)[.!?]*$/i.test(text.trim())) {
+        const query = conversation.currentMedicineQuery || conversation.lastMedicine;
+        return query ? this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: query, searchQuery: query })
+          : "Qual produto você procura?";
       }
-      return "Sua mensagem ficou registrada para a equipe. Seu carrinho continua salvo. Para voltar à busca automática, escreva voltar.";
+      if (/^[2-9]$/.test(text.trim())) return "Qual outro produto você procura?";
     }
 
     const openingIntent = getConversationOpeningIntent(text);
@@ -124,7 +127,7 @@ export class ConversationEngineService {
     const plain = foldCustomerQuery(text).replace(/[?!.]/g, "").trim();
     if (/\b(?:entrega|entregam|delivery|pedido minimo|valor minimo|minimo do pedido)\b/.test(plain) &&
         /^(?:voces|vcs|qual|a partir|entrega|entregam|fazem|tem delivery|pedido minimo)/.test(plain)) {
-      return "Para confirmar a disponibilidade de entrega e o valor mínimo na sua região, é necessária a conferência da equipe. Podemos continuar montando seu pedido: qual produto você precisa?";
+      return "Ainda não consigo confirmar entrega ou pedido mínimo para essa região. Qual produto você procura?";
     }
     if (/^(?:vc|vcs|voce|voces)?\s*(?:tem|tem esse|tem essa)?\s*(?:esse|essa|este|esta)?\s*(?:remedio|medicamento|produto)$/.test(plain) ||
         /^(?:serio|drogaria|oie|oii+|qual opcao|qual opcao 👆|nao tem dessa|nao tem desse)$/.test(plain)) {
@@ -205,6 +208,11 @@ export class ConversationEngineService {
     if (conversation.lastIntent === "CATALOG_UNAVAILABLE" &&
         conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
       const answer = this.normalize(text).trim().replace(/[.!?]+$/, "");
+      if (/^(tentar novamente|tente novamente|buscar novamente|tenta de novo)$/.test(answer)) {
+        const query = conversation.currentMedicineQuery || conversation.lastMedicine;
+        return query ? this.handleMedicineQuestion(conversation.id, { intent: "purchase", medicineName: query, searchQuery: query })
+          : "Qual produto você procura?";
+      }
       if (/^(sim|quero|quero sim|pode ser|outro produto|buscar outro produto)$/.test(answer)) {
         await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
           lastIntent: "ADD_ITEM", currentMedicineQuery: null, currentRetailCategory: null,
@@ -215,22 +223,6 @@ export class ConversationEngineService {
       if (/^(nao|nao obrigado|nao obrigada|agora nao|por enquanto nao)$/.test(answer)) {
         return "Tudo bem! Quando precisar, é só me chamar por aqui.";
       }
-    }
-
-    if (conversation.lastIntent === "CATALOG_HELP_OPTIONS" &&
-        conversation.pendingAction === ConversationState.WAITING_MEDICINE_NAME) {
-      const choice = this.normalize(text).trim().replace(/[.!?]+$/, "");
-      if (/^(1|sim|atendente|atendimento|solicitar atendimento|falar com (?:a equipe|atendente)|quero atendimento)$/.test(choice)) {
-        await this.prisma.conversation.update({ where: { id: conversation.id }, data: { lastIntent: "CATALOG_REVIEW_REQUESTED" } });
-        return "Solicitação registrada para a equipe conferir esse item com você. Seu carrinho continua salvo. Se souber a dosagem e a embalagem, pode enviar por aqui.";
-      }
-      if (/^(2|nao|outro produto|buscar outro produto)$/.test(choice)) {
-        await this.prisma.conversation.update({ where: { id: conversation.id }, data: {
-          lastIntent: "ADD_ITEM", currentMedicineQuery: null, lastMedicine: null, candidateOptions: Prisma.JsonNull,
-        } });
-        return "Claro. Qual outro produto você procura?";
-      }
-      if (/^\d+$/.test(choice)) return WhatsappCopy.catalogSearchProblem("backup_unavailable", this.bulaApiService.normalizeMedicineName(conversation.currentMedicineQuery || "") || undefined)!;
     }
 
     if (conversation.lastIntent === "WAITING_PACKAGE_IMAGE_CONFIRMATION" &&
@@ -1238,11 +1230,11 @@ export class ConversationEngineService {
     return this.formatSymptomOptionsReply(symptom, options);
   }
 
-  private async offerCatalogHelp(conversationId: string, status: string | undefined, query: string) {
+  private async handleCatalogSearchFailure(conversationId: string, status: string | undefined, query: string) {
     const reply = WhatsappCopy.catalogSearchProblem(status, this.bulaApiService.normalizeMedicineName(query) || query);
     if (!reply) return null;
     await this.prisma.conversation.update({ where: { id: conversationId }, data: {
-      lastIntent: ["not_found", "search_unverified", "offer_unavailable"].includes(status || "") ? "CATALOG_UNAVAILABLE" : "CATALOG_HELP_OPTIONS",
+      lastIntent: "CATALOG_UNAVAILABLE",
       pendingAction: ConversationState.WAITING_MEDICINE_NAME,
       currentMedicineQuery: query,
       selectedPresentation: Prisma.JsonNull, candidateOptions: Prisma.JsonNull,
@@ -1310,7 +1302,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      return await this.offerCatalogHelp(conversationId, summary.searchStatus || "not_found", searchQuery) ||
+      return await this.handleCatalogSearchFailure(conversationId, summary.searchStatus || "not_found", searchQuery) ||
         (summary.searchStatus === "presentation_not_found" ? WhatsappCopy.medicinePresentationNotFound() :
           WhatsappCopy.medicineNotFound(this.aiService.canReadPackageImages?.() === true));
     }
@@ -1480,7 +1472,7 @@ export class ConversationEngineService {
         },
       });
 
-      return await this.offerCatalogHelp(conversationId, orderedSummary.searchStatus || "not_found", productQuery) || WhatsappCopy.productNotFound(productQuery);
+      return await this.handleCatalogSearchFailure(conversationId, orderedSummary.searchStatus || "not_found", productQuery) || WhatsappCopy.productNotFound(productQuery);
     }
 
     const shouldAskQuantity = orderedSummary.options.length === 1;
@@ -2138,7 +2130,7 @@ export class ConversationEngineService {
           candidateOptions: Prisma.JsonNull,
         },
       });
-      const searchProblem = await this.offerCatalogHelp(conversation.id, summary?.searchStatus, `${normalizedMedicine} ${dosage.label}`);
+      const searchProblem = await this.handleCatalogSearchFailure(conversation.id, summary?.searchStatus, `${normalizedMedicine} ${dosage.label}`);
       if (searchProblem) return searchProblem;
       const alternatives = (summary?.options || []).map((option, index) => ({
         ...option,
@@ -2275,7 +2267,7 @@ export class ConversationEngineService {
     let quotesRefreshed = false;
     for (const [index, item] of cart.entries()) {
       if (catalogQuarantineReason(item)) {
-        return { cart, changed: false, error: `O item ${index + 1} precisa de conferência do cadastro pela equipe. Para continuar com os demais produtos, envie "remover item ${index + 1}". Mantive seu carrinho salvo.` };
+        return { cart, changed: false, error: `O item ${index + 1} não está disponível para pedido no momento. Para continuar com os demais produtos, envie "remover item ${index + 1}". Mantive seu carrinho salvo.` };
       }
       if (item.pricePolicy === CATALOG_PRICE_POLICY && item.source === "preco_popular") continue;
       if (item.source === "openai_web") {

@@ -137,7 +137,7 @@ for (const query of [...medicines, ...variations]) {
     if (["dorflex 30 comprimidos", "allegra suspensao oral", "neosoro 0,5mg/ml"].includes(query)) {
       assert.equal(options.length, 0);
       assert.equal(h.conversation.selectedPresentation, null);
-      if (query !== "dorflex 30 comprimidos") assert.match(reply, /Solicitar atendimento/);
+      if (query !== "dorflex 30 comprimidos") assert.match(reply, /não está disponível para pedido/);
       else assert.match(reply, /não essa dosagem ou apresentação/);
       return;
     }
@@ -244,13 +244,13 @@ test("quarantined SKU/EAN cannot be recovered through exact checkout refresh", a
   const h = harness(t, () => response([quarantined]));
   assert.equal(await h.provider.findCurrentOffer({source: "preco_popular", sourceId: "6291", ean: "7891058003555"}), null);
   h.conversation.cart = [{source: "preco_popular", sourceId: "6291", ean: "7891058003555", pricePolicy: "preco_popular_full_v1", name: "Puran", quantity: 1, total: 10}];
-  assert.match((await h.engine.refreshCheckoutPrices(h.conversation)).error, /conferência/);
+  assert.match((await h.engine.refreshCheckoutPrices(h.conversation)).error, /não está disponível para pedido/);
 });
 
 test("HTTP failure and cooldown are unavailable, not product absence, and recover", async (t) => {
   const h = harness(t, (url, _init, count) => count === 1 ? response({}, 500) : response([fakeProduct(1, url.searchParams.get("ft") + " 50mg 10 comprimidos")]));
-  assert.match(await h.send("Tem dipirona?"), /Solicitar atendimento/);
-  assert.match(await h.send("Tem novalgina?"), /Solicitar atendimento/);
+  assert.match(await h.send("Tem dipirona?"), /Não consegui consultar/);
+  assert.match(await h.send("Tem novalgina?"), /Não consegui consultar/);
   assert.equal(h.calls.length, 1);
   h.provider.cooldownUntil = 0;
   assert.equal((await h.search.searchMedicine("dipirona")).options.length, 1);
@@ -259,7 +259,7 @@ test("HTTP failure and cooldown are unavailable, not product absence, and recove
 
 test("retail outage gets the same honest failure message", async (t) => {
   const h = harness(t, () => response({}, 500));
-  assert.match(await h.send("Tem sabonete Dove?"), /Solicitar atendimento/);
+  assert.match(await h.send("Tem sabonete Dove?"), /Não consegui consultar/);
 });
 
 test("pagination reaches third page while staying bounded at four pages", async (t) => {
